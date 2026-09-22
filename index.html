@@ -1,0 +1,1964 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Street Review · Riviera delle Palme</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- 1. Firebase App, Firestore Database & Auth SDK (v10 compat) caricati prima degli script dell'app -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+
+  <!-- Inizializzazione Globale Immediata Firebase -->
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyApoHu8K1NC9wwt5Ky39yXSG9X-lJhCjQU",
+      authDomain: "project-edcfad76-a798-46c6-b92.firebaseapp.com",
+      projectId: "project-edcfad76-a798-46c6-b92",
+      storageBucket: "project-edcfad76-a798-46c6-b92.firebasestorage.app",
+      messagingSenderId: "512832291400",
+      appId: "1:512832291400:web:06e372896f87b90c49ce7d",
+      measurementId: "G-6M95JQ6883"
+    };
+
+    try {
+      if (window.firebase) {
+        const app = !firebase.apps.length ? firebase.initializeApp(firebaseConfig) : firebase.app();
+        window.firebaseApp = app;
+
+        // Intercettiamo il container interno dei provider per reindirizzare ogni richiesta di 'firestore' verso 'street-review-database'
+        const container = (app._delegate && app._delegate.container) || app.container;
+        if (container) {
+          const firestoreProvider = container.getProvider("firestore");
+          if (firestoreProvider) {
+            const origGetImmediate = firestoreProvider.getImmediate.bind(firestoreProvider);
+            firestoreProvider.getImmediate = function(options) {
+              const opt = options ? { ...options } : {};
+              if (!opt.identifier || opt.identifier === "[DEFAULT]") {
+                opt.identifier = "street-review-database";
+              }
+              return origGetImmediate(opt);
+            };
+
+            const origGet = firestoreProvider.get.bind(firestoreProvider);
+            firestoreProvider.get = function(identifier) {
+              if (!identifier || identifier === "[DEFAULT]") {
+                identifier = "street-review-database";
+              }
+              return origGet(identifier);
+            };
+          }
+        }
+
+        // Istanza vincolata al database personalizzato
+        const customDb = app.firestore('street-review-database');
+        window.db = customDb;
+
+        // Sovrascrivi il metodo standard per intercettare qualsiasi chiamata orfana:
+        firebase.firestore = () => customDb;
+        app.firestore = () => customDb;
+
+        console.log("Firebase App, Auth e Firestore ('street-review-database') inizializzati con successo in <head>.");
+        console.log("Database target confermato:", (customDb._databaseId && customDb._databaseId.database) || 'street-review-database');
+      } else {
+        console.error("SDK Firebase non trovato in window.firebase!");
+      }
+    } catch (e) {
+      console.error("Errore inizializzazione Firebase in <head>:", e);
+    }
+  </script>
+
+  <!-- Leaflet CDN come fallback istantaneo -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- React 18 & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <!-- Babel per JSX nel browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Google Maps Platform JavaScript API con API Key dell'utente -->
+  <script>
+    window.GOOGLE_MAPS_API_KEY = "AIzaSyBG2o1VXtr2YPvW4Jj0OixX8rgep0W0Nuk";
+    window.gm_authFailure = function() {
+      console.warn("Google Maps Auth Notice: Attivazione fallback cartografico per garantire funzionamento continuo.");
+      window.googleMapsAuthError = true;
+      if (window.onGoogleMapsAuthError) window.onGoogleMapsAuthError();
+    };
+  </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBG2o1VXtr2YPvW4Jj0OixX8rgep0W0Nuk&libraries=places,marker&language=it&v=weekly"></script>
+  <!-- Google Identity Services (GIS) per Google Sign-In OAuth 2.0 -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <style>
+    html, body, #root { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
+    .animate-slide-up { animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+    .custom-street-marker { background: transparent; border: none; }
+    .pac-container {
+      z-index: 99999 !important;
+      border-radius: 1rem !important;
+      margin-top: 6px !important;
+      border: 1px solid #e2e8f0 !important;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15) !important;
+      font-family: inherit !important;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 antialiased overflow-hidden select-none font-sans">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    const db = window.db;
+
+    // --- ICONE SVG ---
+    const IconStar = ({ filled, size = 16, className = "" }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+      </svg>
+    );
+
+    const IconSearch = ({ size = 18, className = "" }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+      </svg>
+    );
+
+    const IconClose = ({ size = 18, className = "" }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    );
+
+    const IconBike = ({ size = 16, className = "" }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <circle cx="18.5" cy="17.5" r="3.5" /><circle cx="5.5" cy="17.5" r="3.5" /><circle cx="15" cy="5" r="1" /><path d="M12 17.5V14l-3-3 4-3 2 3h2" />
+      </svg>
+    );
+
+    const IconCar = ({ size = 16, className = "" }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.5 2.8C2.1 11.2 2 11.6 2 12v4c0 .6.4 1 1 1h2" /><circle cx="7" cy="17" r="2" /><path d="M9 17h6" /><circle cx="17" cy="17" r="2" />
+      </svg>
+    );
+
+    // --- GEOFENCING CONFIG ---
+    const GEOFENCE = {
+      center: { lat: 42.9436, lng: 13.8829 }, // San Benedetto del Tronto
+      bounds: {
+        south: 42.8850,
+        west: 13.7800,
+        north: 43.0100,
+        east: 13.9250,
+      },
+      leafletBounds: [
+        [42.8850, 13.7800],
+        [43.0100, 13.9250]
+      ],
+      defaultZoom: 14,
+      minZoom: 12,
+      maxZoom: 19,
+    };
+
+    const isInsideBounds = (lat, lng) => {
+      return lat >= GEOFENCE.bounds.south && lat <= GEOFENCE.bounds.north &&
+             lng >= GEOFENCE.bounds.west && lng <= GEOFENCE.bounds.east;
+    };
+
+    // --- STRADARIO LOCALE PER L'AUTOCOMPLETE (GEOFENCING PILOTA) ---
+    const LOCAL_GAZETTEER = [
+      { name: 'Viale Secondo Moretti', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9460, lng: 13.8812 },
+      { name: 'Lungomare San Benedetto del Tronto', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9380, lng: 13.8890 },
+      { name: 'Lungomare Nord (Giardini Tematici)', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9510, lng: 13.8860 },
+      { name: 'Lungomare Sud (Rotonda Porto d\'Ascoli)', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9180, lng: 13.8970 },
+      { name: 'Via Mare (Porto d\'Ascoli)', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9120, lng: 13.8880 },
+      { name: 'Corso Mazzini', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9475, lng: 13.8780 },
+      { name: 'Piazza Carlo Giorgini', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9436, lng: 13.8829 },
+      { name: 'Lungomare Alcide De Gasperi', city: 'Grottammare', postalCode: '63066', lat: 42.9850, lng: 13.8720 },
+      { name: 'Corso Giuseppe Mazzini', city: 'Grottammare', postalCode: '63066', lat: 42.9880, lng: 13.8700 },
+      { name: 'Piazza Pericle Fazzini', city: 'Grottammare', postalCode: '63066', lat: 42.9830, lng: 13.8710 },
+      { name: 'Via Salaria (Centobuchi)', city: 'Monteprandone', postalCode: '63076', lat: 42.9160, lng: 13.8640 },
+      { name: 'Piazza dell\'Aquila (Borgo Storico)', city: 'Monteprandone', postalCode: '63076', lat: 42.9215, lng: 13.8340 },
+      { name: 'Piazza del Forte', city: 'Acquaviva Picena', postalCode: '63075', lat: 42.9430, lng: 13.8140 },
+    ];
+
+    function App() {
+      // 1. ELIMINAZIONE DATI FITTIZI: L'app parte con 0 PIN fittizi!
+      const [streets, setStreets] = useState([]);
+      const [selectedStreet, setSelectedStreet] = useState(null);
+      const [sheetSnap, setSheetSnap] = useState('hidden');
+      const [isReviewOpen, setIsReviewOpen] = useState(false);
+      const [isOutOfAreaOpen, setIsOutOfAreaOpen] = useState(false);
+      const [searchQuery, setSearchQuery] = useState('');
+      const [isSearchFocused, setIsSearchFocused] = useState(false);
+      const [mapEngine, setMapEngine] = useState('loading'); // 'google' | 'leaflet'
+
+      // Stato Autenticazione (Modalità Ospite di default o ripristino sessione)
+      const [currentUser, setCurrentUser] = useState(() => {
+        try {
+          const saved = localStorage.getItem('sr_auth_user');
+          return saved ? JSON.parse(saved) : null;
+        } catch (e) {
+          return null;
+        }
+      });
+      const [isAuthOpen, setIsAuthOpen] = useState(false);
+      const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+      const [editingReview, setEditingReview] = useState(null);
+      const userMenuRef = useRef(null);
+
+      // Ascolto automatico dello stato di autenticazione Firebase
+      useEffect(() => {
+        if (!window.firebase || !window.firebase.auth) return;
+        const unsubscribe = firebase.auth().onAuthStateChanged((user) => {
+          if (user) {
+            console.log("Sessione Firebase Auth attiva per utente UID:", user.uid);
+            const profile = {
+              id: user.uid,
+              name: user.displayName || 'Utente Google',
+              email: user.email || '',
+              avatarUrl: user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
+            };
+            setCurrentUser(profile);
+            try {
+              localStorage.setItem('sr_auth_user', JSON.stringify(profile));
+            } catch (e) {}
+          }
+        });
+        return () => unsubscribe();
+      }, []);
+
+      const handleGoogleLogin = (profile) => {
+        try {
+          localStorage.setItem('sr_auth_user', JSON.stringify(profile));
+        } catch (e) {}
+        setCurrentUser(profile);
+        setIsAuthOpen(false);
+        // Se l'utente voleva recensire la strada selezionata, apri il form (in modalità modifica se ha già recensito)
+        if (selectedStreet) {
+          const existing = selectedStreet.reviews?.find(r => r.userId === profile.id || r.user === profile.name);
+          setEditingReview(existing || null);
+          setIsReviewOpen(true);
+        }
+      };
+
+      const handleLogout = () => {
+        if (window.firebase && window.firebase.auth) {
+          firebase.auth().signOut().catch(e => console.warn('Logout Firebase Auth notice:', e));
+        }
+        try {
+          localStorage.removeItem('sr_auth_user');
+        } catch (e) {}
+        setCurrentUser(null);
+        setIsUserMenuOpen(false);
+      };
+
+      // Filtri
+      const [filterFreeParking, setFilterFreeParking] = useState(false);
+      const [filterDisabledParking, setFilterDisabledParking] = useState(false);
+      const [filterPinkParking, setFilterPinkParking] = useState(false);
+      const [filterParkingDisc, setFilterParkingDisc] = useState(false);
+      const [filterLoadingZone, setFilterLoadingZone] = useState(false);
+      const [filterCyclePath, setFilterCyclePath] = useState(false);
+      const [filterRoadOver3, setFilterRoadOver3] = useState(false);
+      const [filterTopRated, setFilterTopRated] = useState(false);
+
+      const mapContainerRef = useRef(null);
+      const googleMapRef = useRef(null);
+      const leafletMapRef = useRef(null);
+      const leafletMarkersRef = useRef(null);
+      const googleOverlaysRef = useRef([]);
+      const searchInputRef = useRef(null);
+      const searchContainerRef = useRef(null);
+
+      // Chiudi tendina e menù profilo quando l'utente tocca altrove sullo schermo o sulla mappa
+      useEffect(() => {
+        const handleClickOutside = (e) => {
+          if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+            setIsSearchFocused(false);
+          }
+          if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+            setIsUserMenuOpen(false);
+          }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+      }, []);
+
+      // --- SINCRONIZZAZIONE IN TEMPO REALE CON CLOUD FIRESTORE ---
+      useEffect(() => {
+        const firestore = window.db;
+        if (!firestore) {
+          console.error("Firestore ('street-review-database') non inizializzato o non disponibile al montaggio del componente.");
+          return;
+        }
+
+        console.log('Database collegato con successo:', (window.db._databaseId && window.db._databaseId.database) || window.db._databaseId || 'street-review-database');
+        console.log("Attivazione listener su Firestore collection 'reviews'...");
+        const unsubscribe = firestore.collection('reviews').onSnapshot(
+          snapshot => {
+            console.log('Recensioni caricate da Firestore:', snapshot.docs.length);
+            const cloudReviews = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // Raggruppa le recensioni per strada
+            const reviewsByStreet = {};
+            cloudReviews.forEach(r => {
+              const key = (r.streetName || '').toLowerCase().trim();
+              if (!key) return;
+              if (!reviewsByStreet[key]) reviewsByStreet[key] = [];
+              reviewsByStreet[key].push(r);
+            });
+
+            // Ricostruisci o aggiorna l'elenco delle strade attive con recensioni da Firestore
+            setStreets(prevStreets => {
+              const updated = [];
+              const processedKeys = new Set();
+
+              Object.keys(reviewsByStreet).forEach(key => {
+                processedKeys.add(key);
+                const revList = reviewsByStreet[key];
+                const sample = revList[0];
+
+                const gazetteerMatch = LOCAL_GAZETTEER.find(g => g.name.toLowerCase().trim() === key);
+                const existing = prevStreets.find(s => s.name.toLowerCase().trim() === key);
+
+                const catKeys = [
+                  'roadSurface', 'groundSignage', 'verticalSignage', 'parkingQuantity',
+                  'sidewalkQuality', 'lighting', 'cleanliness', 'accessibility',
+                  'rainDrainage', 'greeneryShade', 'quietness', 'intersectionVisibility',
+                  'laneWidth'
+                ];
+                const updatedCat = {};
+                catKeys.forEach(k => {
+                  const sum = revList.reduce((acc, r) => acc + (r.ratings?.[k] || 0), 0);
+                  updatedCat[k] = Number((sum / revList.length).toFixed(1));
+                });
+                const newAvg = Number((Object.values(updatedCat).reduce((a, b) => a + b, 0) / catKeys.length).toFixed(1));
+
+                const mergedParking = Array.from(new Set(revList.flatMap(r => r.parkingTypes || [])));
+                const mergedCycle = revList.some(r => r.hasCyclePath);
+                const mergedAmenities = Array.from(new Set(revList.flatMap(r => r.amenities || [])));
+
+                const formattedReviews = revList.map(r => ({
+                  id: r.id,
+                  userId: r.authorId,
+                  user: r.authorName,
+                  avatarUrl: r.authorAvatar,
+                  date: r.updatedAt ? new Date(r.updatedAt).toLocaleDateString('it-IT') : 'Recente',
+                  overallRating: r.ratingOverall,
+                  comment: r.comment,
+                  ratings: r.ratings,
+                  parkingTypes: r.parkingTypes || [],
+                  hasCyclePath: r.hasCyclePath,
+                  amenities: r.amenities || [],
+                }));
+
+                const streetObj = {
+                  id: existing?.id || sample.streetId || 'street-' + key.replace(/[^a-z0-9]/g, '-'),
+                  name: gazetteerMatch?.name || sample.streetName,
+                  city: gazetteerMatch?.city || sample.streetCity || 'San Benedetto del Tronto',
+                  postalCode: gazetteerMatch?.postalCode || sample.postalCode || '63074',
+                  latitude: gazetteerMatch?.lat || sample.latitude,
+                  longitude: gazetteerMatch?.lng || sample.longitude,
+                  reviewsCount: revList.length,
+                  avgOverallRating: newAvg,
+                  categoryAverages: updatedCat,
+                  commonParkingTypes: mergedParking,
+                  hasCyclePath: mergedCycle,
+                  amenities: mergedAmenities,
+                  reviews: formattedReviews,
+                };
+
+                updated.push(streetObj);
+              });
+
+              // Mantieni eventuali strade temporanee a 0 recensioni attualmente aperte dall'utente
+              prevStreets.forEach(s => {
+                const key = s.name.toLowerCase().trim();
+                if (!processedKeys.has(key) && s.reviewsCount === 0) {
+                  updated.push(s);
+                }
+              });
+
+              return updated;
+            });
+          },
+          err => {
+            console.error('Errore lettura Firestore:', err);
+          }
+        );
+
+        return () => unsubscribe();
+      }, []);
+
+      // Mantieni allineata la scheda della strada attualmente aperta con i dati in tempo reale
+      useEffect(() => {
+        if (!selectedStreet) return;
+        const matching = streets.find(s => s.name.toLowerCase().trim() === selectedStreet.name.toLowerCase().trim());
+        if (matching && (
+          matching.reviewsCount !== selectedStreet.reviewsCount ||
+          matching.avgOverallRating !== selectedStreet.avgOverallRating ||
+          matching.reviews?.length !== selectedStreet.reviews?.length
+        )) {
+          setSelectedStreet(matching);
+        }
+      }, [streets]);
+
+      // Suggerimenti calcolati dinamicamente SOLO quando l'utente digita >= 2 caratteri
+      const filteredSuggestions = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        if (q.length < 2) return [];
+
+        const results = [];
+
+        LOCAL_GAZETTEER.forEach(item => {
+          if (item.name.toLowerCase().includes(q) || item.city.toLowerCase().includes(q)) {
+            // Controlla se è già recensita in streets
+            const existing = streets.find(s => s.name.toLowerCase() === item.name.toLowerCase());
+            results.push({
+              name: item.name,
+              city: item.city,
+              postalCode: item.postalCode,
+              lat: item.lat,
+              lng: item.lng,
+              rating: existing && existing.reviewsCount > 0 ? existing.avgOverallRating : null,
+              reviewsCount: existing ? existing.reviewsCount : 0,
+            });
+          }
+        });
+
+        // Test Geofencing: se l'utente cerca città esterne
+        const outCities = ['roma', 'milano', 'napoli', 'torino', 'bologna', 'firenze', 'ascoli piceno', 'pescara'];
+        const matchedOut = outCities.find(c => c.includes(q) || q.includes(c));
+        if (matchedOut) {
+          results.push({
+            name: matchedOut.charAt(0).toUpperCase() + matchedOut.slice(1),
+            city: 'Fuori Perimetro Pilota',
+            isOutOfArea: true,
+          });
+        }
+
+        return results.slice(0, 5);
+      }, [searchQuery, streets]);
+
+      // Inizializzazione Mappa (Google Maps primario con API Key verificata)
+      useEffect(() => {
+        let isMounted = true;
+
+        window.onGoogleMapsAuthError = () => {
+          if (isMounted) initLeafletFallback();
+        };
+
+        const tryInitGoogleMaps = () => {
+          if (window.google && window.google.maps && !window.googleMapsAuthError) {
+            try {
+              const gmap = new google.maps.Map(mapContainerRef.current, {
+                center: GEOFENCE.center,
+                zoom: GEOFENCE.defaultZoom,
+                minZoom: GEOFENCE.minZoom,
+                maxZoom: GEOFENCE.maxZoom,
+                mapTypeId: 'roadmap',
+                disableDefaultUI: true,
+                zoomControl: true,
+                restriction: {
+                  latLngBounds: GEOFENCE.bounds,
+                  strictBounds: true,
+                },
+                styles: [
+                  { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+                  { featureType: 'road', elementType: 'geometry', stylers: [{ visibility: 'on' }] },
+                  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#0f172a' }] },
+                  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#cbd5e1' }] },
+                ]
+              });
+
+              googleMapRef.current = gmap;
+              setMapEngine('google');
+
+              // Collegamento Places Autocomplete API
+              if (searchInputRef.current && window.google.maps.places) {
+                const autocomplete = new window.google.maps.places.Autocomplete(searchInputRef.current, {
+                  componentRestrictions: { country: 'it' },
+                  bounds: new window.google.maps.LatLngBounds(
+                    new window.google.maps.LatLng(GEOFENCE.bounds.south, GEOFENCE.bounds.west),
+                    new window.google.maps.LatLng(GEOFENCE.bounds.north, GEOFENCE.bounds.east)
+                  ),
+                  strictBounds: false,
+                  fields: ['geometry', 'name', 'formatted_address'],
+                });
+
+                autocomplete.addListener('place_changed', () => {
+                  const place = autocomplete.getPlace();
+                  if (place.geometry && place.geometry.location) {
+                    const lat = place.geometry.location.lat();
+                    const lng = place.geometry.location.lng();
+                    if (isInsideBounds(lat, lng)) {
+                      handleSelectStreet({
+                        name: place.name || place.formatted_address.split(',')[0],
+                        city: 'San Benedetto del Tronto',
+                        postalCode: '63074',
+                        lat,
+                        lng,
+                      });
+                      setSearchQuery(place.name || place.formatted_address);
+                    } else {
+                      setIsOutOfAreaOpen(true);
+                    }
+                  }
+                });
+              }
+
+              return true;
+            } catch (err) {
+              console.warn('Google Maps Init warning, using fallback', err);
+              initLeafletFallback();
+              return false;
+            }
+          }
+          return false;
+        };
+
+        const initLeafletFallback = () => {
+          if (leafletMapRef.current || googleMapRef.current) return;
+          const lmap = L.map(mapContainerRef.current, {
+            center: [GEOFENCE.center.lat, GEOFENCE.center.lng],
+            zoom: GEOFENCE.defaultZoom,
+            minZoom: GEOFENCE.minZoom,
+            maxZoom: GEOFENCE.maxZoom,
+            maxBounds: GEOFENCE.leafletBounds,
+            maxBoundsViscosity: 1.0,
+            zoomControl: true,
+          });
+
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; Google Maps / OpenStreetMap contributors',
+            subdomains: 'abcd',
+            maxZoom: 19
+          }).addTo(lmap);
+
+          lmap.zoomControl.setPosition('bottomright');
+          leafletMarkersRef.current = L.layerGroup().addTo(lmap);
+          leafletMapRef.current = lmap;
+          setMapEngine('leaflet');
+        };
+
+        const timer = setTimeout(() => {
+          if (!tryInitGoogleMaps()) {
+            initLeafletFallback();
+          }
+        }, 300);
+
+        return () => {
+          isMounted = false;
+          clearTimeout(timer);
+        };
+      }, []);
+
+      // Filtro strade
+      const visibleStreets = useMemo(() => {
+        return streets.filter(s => {
+          if (filterFreeParking && !s.commonParkingTypes?.includes('FREE')) return false;
+          if (filterDisabledParking && !s.commonParkingTypes?.includes('DISABLED')) return false;
+          if (filterPinkParking && !s.commonParkingTypes?.includes('PINK')) return false;
+          if (filterParkingDisc && !s.commonParkingTypes?.includes('PARKING_DISC')) return false;
+          if (filterLoadingZone && !s.commonParkingTypes?.includes('LOADING_UNLOADING')) return false;
+          if (filterCyclePath && !s.hasCyclePath) return false;
+          if (filterRoadOver3 && s.categoryAverages.roadSurface < 3.0) return false;
+          if (filterTopRated && s.avgOverallRating < 4.0) return false;
+          return true;
+        });
+      }, [streets, filterFreeParking, filterDisabledParking, filterPinkParking, filterParkingDisc, filterLoadingZone, filterCyclePath, filterRoadOver3, filterTopRated]);
+
+      // RENDER DEI MARKER DINAMICI (Stato Neutro "Nuova" o Rating Colorato)
+      useEffect(() => {
+        // 1. Render su Google Maps Platform
+        if (mapEngine === 'google' && googleMapRef.current && window.google) {
+          googleOverlaysRef.current.forEach(ov => ov.setMap(null));
+          googleOverlaysRef.current = [];
+
+          visibleStreets.forEach(street => {
+            const isNew = street.reviewsCount === 0;
+            const isSelected = selectedStreet?.id === street.id;
+
+            const getScoreColor = (r) => {
+              if (isNew) return '#475569';    // Slate 600 Neutro per via senza recensioni
+              if (r >= 4.0) return '#10b981'; // Emerald
+              if (r >= 2.8) return '#f59e0b'; // Amber
+              return '#f43f5e';               // Rose
+            };
+
+            const Overlay = new window.google.maps.OverlayView();
+            let div = null;
+
+            Overlay.onAdd = function () {
+              div = document.createElement('div');
+              div.style.position = 'absolute';
+              div.style.cursor = 'pointer';
+              div.style.transform = 'translate(-50%, -100%)';
+              div.style.zIndex = isSelected ? '9999' : '100';
+
+              div.innerHTML = `
+                <div style="display:flex;flex-direction:column;align-items:center;">
+                  <div style="
+                    display:flex;align-items:center;gap:4px;
+                    background:${getScoreColor(street.avgOverallRating)};
+                    color:white;padding:4px 10px;border-radius:9999px;
+                    font-weight:800;font-size:11px;
+                    box-shadow:0 8px 16px rgba(0,0,0,0.25);
+                    border:2px solid white;
+                    transition:transform 0.2s;
+                    ${isSelected ? 'transform:scale(1.25);box-shadow:0 0 0 4px rgba(59,130,246,0.5);' : ''}
+                  ">
+                    ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${street.avgOverallRating.toFixed(1)}</span>`}
+                  </div>
+                  <div style="
+                    background:rgba(255,255,255,0.95);
+                    backdrop-filter:blur(4px);
+                    padding:2px 8px;border-radius:6px;
+                    font-size:10px;font-weight:700;color:#0f172a;
+                    white-space:nowrap;margin-top:3px;
+                    box-shadow:0 2px 4px rgba(0,0,0,0.1);
+                    border:1px solid #e2e8f0;
+                  ">
+                    ${street.name}
+                  </div>
+                </div>
+              `;
+
+              div.onclick = (e) => {
+                e.stopPropagation();
+                setSelectedStreet(street);
+                setSheetSnap('half');
+                googleMapRef.current.panTo({ lat: street.latitude, lng: street.longitude });
+              };
+
+              this.getPanes().overlayMouseTarget.appendChild(div);
+            };
+
+            Overlay.draw = function () {
+              if (!div) return;
+              const pos = this.getProjection().fromLatLngToDivPixel(new window.google.maps.LatLng(street.latitude, street.longitude));
+              if (pos) {
+                div.style.left = pos.x + 'px';
+                div.style.top = pos.y + 'px';
+              }
+            };
+
+            Overlay.onRemove = function () {
+              if (div && div.parentNode) div.parentNode.removeChild(div);
+            };
+
+            Overlay.setMap(googleMapRef.current);
+            googleOverlaysRef.current.push(Overlay);
+          });
+        }
+
+        // 2. Render su Leaflet
+        if (mapEngine === 'leaflet' && leafletMapRef.current && leafletMarkersRef.current) {
+          const layer = leafletMarkersRef.current;
+          layer.clearLayers();
+
+          visibleStreets.forEach(street => {
+            const isNew = street.reviewsCount === 0;
+            const isSelected = selectedStreet?.id === street.id;
+
+            const markerHtml = `
+              <div class="flex flex-col items-center cursor-pointer transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
+                <div class="flex items-center gap-1 px-2.5 py-1 rounded-full text-white font-extrabold text-xs shadow-lg border-2 border-white ${
+                  isNew ? 'bg-slate-700 shadow-slate-700/30' :
+                  street.avgOverallRating >= 4.0 ? 'bg-emerald-500 shadow-emerald-500/40' :
+                  street.avgOverallRating >= 2.8 ? 'bg-amber-500 shadow-amber-500/40' : 'bg-rose-500 shadow-rose-500/40'
+                }">
+                  ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${street.avgOverallRating.toFixed(1)}</span>`}
+                </div>
+                <div class="mt-1 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-md shadow-sm border border-slate-200 text-[10px] font-bold text-slate-800 text-center whitespace-nowrap">
+                  ${street.name}
+                </div>
+              </div>
+            `;
+
+            const customIcon = L.divIcon({
+              html: markerHtml,
+              className: 'custom-street-marker',
+              iconSize: [120, 50],
+              iconAnchor: [60, 25],
+            });
+
+            const marker = L.marker([street.latitude, street.longitude], { icon: customIcon });
+            marker.on('click', () => {
+              setSelectedStreet(street);
+              setSheetSnap('half');
+              leafletMapRef.current.setView([street.latitude, street.longitude], 16, { animate: true });
+            });
+
+            layer.addLayer(marker);
+          });
+        }
+      }, [visibleStreets, selectedStreet, mapEngine]);
+
+      // COMPORTAMENTO ALLA RICERCA DELLA VIA:
+      // Centra la mappa, genera il PIN iniziale se non esiste e apre la scheda
+      const handleSelectStreet = (target) => {
+        let street = streets.find(
+          s => s.name.toLowerCase() === target.name.toLowerCase()
+        );
+
+        if (!street) {
+          // Genera la strada con stato INIZIALE (0 recensioni)
+          street = {
+            id: 'street-' + Date.now(),
+            name: target.name,
+            city: target.city || 'San Benedetto del Tronto',
+            postalCode: target.postalCode || '63074',
+            latitude: target.lat,
+            longitude: target.lng,
+            avgOverallRating: 0,
+            reviewsCount: 0,
+            hasCyclePath: false,
+            commonParkingTypes: [],
+            amenities: [],
+            categoryAverages: {
+              roadSurface: 0, groundSignage: 0, verticalSignage: 0,
+              parkingQuantity: 0, sidewalkQuality: 0, lighting: 0,
+              cleanliness: 0, accessibility: 0, rainDrainage: 0,
+              greeneryShade: 0, quietness: 0, intersectionVisibility: 0,
+              laneWidth: 0,
+            },
+            reviews: [],
+          };
+          setStreets(prev => [street, ...prev]);
+        }
+
+        setSelectedStreet(street);
+        setSheetSnap('half');
+
+        if (mapEngine === 'google' && googleMapRef.current) {
+          googleMapRef.current.panTo({ lat: target.lat, lng: target.lng });
+          googleMapRef.current.setZoom(16);
+        } else if (leafletMapRef.current) {
+          leafletMapRef.current.setView([target.lat, target.lng], 16, { animate: true });
+        }
+      };
+
+      // AGGIORNAMENTO DINAMICO POST-RECENSIONE / MODIFICA (VINCOLO UNICITÀ)
+      const handleAddReview = (reviewPayload) => {
+        // 1. SALVATAGGIO PERSISTENTE SU CLOUD FIRESTORE
+        const firestore = window.db;
+        if (!firestore) {
+          console.error("Errore salvataggio Firestore: Database 'street-review-database' non disponibile in window.db.");
+          alert("Impossibile connettersi a Firestore ('street-review-database'). Verifica la connessione a internet o la configurazione.");
+          return;
+        }
+
+        if (!selectedStreet) return;
+
+        // Recupera la sessione Firebase Auth attiva per rispettare le regole (request.auth.uid == authorId)
+        const firebaseAuthUser = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser) || null;
+        const authorId = firebaseAuthUser ? firebaseAuthUser.uid : (currentUser ? currentUser.id : null);
+
+        if (!authorId) {
+          alert("Autenticazione richiesta: devi effettuare l'accesso con Google prima di pubblicare una recensione.");
+          setIsAuthOpen(true);
+          return;
+        }
+
+        const authorName = (firebaseAuthUser && firebaseAuthUser.displayName) || (currentUser ? currentUser.name : (reviewPayload.userName || 'Cittadino'));
+        const authorAvatar = (firebaseAuthUser && firebaseAuthUser.photoURL) || (currentUser ? currentUser.avatarUrl : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80');
+
+        // ID documento deterministico per utente e per via: garantisce che lo stesso autore aggiorni la propria recensione invece di duplicarla
+        const safeStreetKey = encodeURIComponent(selectedStreet.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_'));
+        const docId = `${authorId}_${safeStreetKey}`;
+
+        const reviewDoc = {
+          streetId: selectedStreet.id || safeStreetKey,
+          streetName: selectedStreet.name,
+          streetCity: selectedStreet.city || 'San Benedetto del Tronto',
+          postalCode: selectedStreet.postalCode || '63074',
+          latitude: selectedStreet.latitude,
+          longitude: selectedStreet.longitude,
+          authorId: authorId,
+          authorName: authorName,
+          authorAvatar: authorAvatar,
+          ratingOverall: reviewPayload.overallRating,
+          ratings: reviewPayload.ratings,
+          parkingTypes: reviewPayload.parkingTypes,
+          hasCyclePath: reviewPayload.hasCyclePath,
+          amenities: reviewPayload.amenities || [],
+          comment: reviewPayload.comment,
+          updatedAt: new Date().toISOString(),
+        };
+
+        if (!editingReview) {
+          reviewDoc.createdAt = new Date().toISOString();
+        }
+
+        firestore.collection('reviews').doc(docId).set(reviewDoc, { merge: true })
+          .then(() => {
+            console.log('Recensione salvata con successo con ID:', docId);
+          })
+          .catch(err => {
+            console.error('Errore salvataggio Firestore:', err);
+            alert('Errore nel salvataggio su Firestore: ' + (err.message || err) + '\n\nVerifica che la sessione Firebase Auth sia attiva e che le Regole di Sicurezza consentano la scrittura a request.auth.uid == authorId.');
+          });
+
+        // 2. AGGIORNAMENTO OTTIMISTICO STATO LOCALE
+        setStreets(prev => prev.map(s => {
+          if (s.id !== selectedStreet.id) return s;
+
+          // Cerca se esiste già una recensione dell'utente corrente (per ID, nome o editingReview)
+          const existingIndex = s.reviews ? s.reviews.findIndex(r =>
+            (editingReview && r.id === editingReview.id) ||
+            (currentUser && (r.userId === currentUser.id || r.user === currentUser.name))
+          ) : -1;
+
+          let updatedReviews;
+          let newCount;
+
+          if (existingIndex !== -1) {
+            // MODIFICA RECENSIONE ESISTENTE: aggiorna in-place, reviewsCount non aumenta
+            const oldRev = s.reviews[existingIndex];
+            const editedRev = {
+              ...oldRev,
+              ratings: reviewPayload.ratings,
+              overallRating: reviewPayload.overallRating,
+              comment: reviewPayload.comment,
+              parkingTypes: reviewPayload.parkingTypes,
+              hasCyclePath: reviewPayload.hasCyclePath,
+              amenities: reviewPayload.amenities || [],
+              date: 'Oggi (modificato)',
+            };
+            updatedReviews = [...s.reviews];
+            updatedReviews[existingIndex] = editedRev;
+            newCount = s.reviews.length;
+          } else {
+            // NUOVA RECENSIONE
+            const newReview = {
+              id: 'r-' + Date.now(),
+              userId: currentUser ? currentUser.id : 'usr-' + Date.now(),
+              user: currentUser ? currentUser.name : (reviewPayload.userName || 'Utente'),
+              avatarUrl: currentUser ? currentUser.avatarUrl : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
+              date: 'Oggi',
+              overallRating: reviewPayload.overallRating,
+              comment: reviewPayload.comment,
+              ratings: reviewPayload.ratings,
+              parkingTypes: reviewPayload.parkingTypes,
+              hasCyclePath: reviewPayload.hasCyclePath,
+              amenities: reviewPayload.amenities || [],
+            };
+            updatedReviews = [newReview, ...(s.reviews || [])];
+            newCount = updatedReviews.length;
+          }
+
+          // RICALCOLO ACCURATO DELLE MEDIE DI CATEGORIA E DEL GLOBAL SCORE (13 CATEGORIE)
+          const catKeys = [
+            'roadSurface', 'groundSignage', 'verticalSignage', 'parkingQuantity',
+            'sidewalkQuality', 'lighting', 'cleanliness', 'accessibility',
+            'rainDrainage', 'greeneryShade', 'quietness', 'intersectionVisibility',
+            'laneWidth'
+          ];
+          const updatedCat = {};
+          catKeys.forEach(k => {
+            const sum = updatedReviews.reduce((acc, r) => acc + (r.ratings?.[k] || 0), 0);
+            updatedCat[k] = Number((sum / updatedReviews.length).toFixed(1));
+          });
+          const newAvg = Number((Object.values(updatedCat).reduce((a, b) => a + b, 0) / catKeys.length).toFixed(1));
+
+          // RICALCOLO PARCHEGGI, CICLABILE E AMENITIES AGGREGATI
+          const mergedParking = Array.from(new Set(updatedReviews.flatMap(r => r.parkingTypes || [])));
+          const mergedCycle = updatedReviews.some(r => r.hasCyclePath);
+          const mergedAmenities = Array.from(new Set(updatedReviews.flatMap(r => r.amenities || [])));
+
+          const updatedStreet = {
+            ...s,
+            reviewsCount: newCount,
+            avgOverallRating: newAvg,
+            categoryAverages: updatedCat,
+            commonParkingTypes: mergedParking,
+            hasCyclePath: mergedCycle,
+            amenities: mergedAmenities,
+            reviews: updatedReviews,
+          };
+
+          setSelectedStreet(updatedStreet);
+          return updatedStreet;
+        }));
+
+        setIsReviewOpen(false);
+        setEditingReview(null);
+      };
+
+      const isSelectedStreetNew = selectedStreet && selectedStreet.reviewsCount === 0;
+
+      return (
+        <div className="relative w-screen h-screen overflow-hidden">
+          {/* 1. MAPPA INTERATTIVA A TUTTO SCHERMO */}
+          <div ref={mapContainerRef} className="w-full h-full z-0" />
+
+          {/* 2. HEADER: BARRA DI RICERCA + WIDGET PROFILO GOOGLE */}
+          <div className="absolute top-4 left-4 right-4 z-30 flex items-start justify-between gap-3 pointer-events-none">
+            {/* Barra di ricerca dinamica */}
+            <div ref={searchContainerRef} className="flex-1 max-w-md pointer-events-auto">
+              <div className="relative bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 flex items-center px-4 py-2.5 transition-all focus-within:shadow-2xl focus-within:ring-2 focus-within:ring-blue-500/30">
+                <IconSearch className="text-slate-400 mr-3" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSearchQuery(val);
+                    setIsSearchFocused(val.trim().length >= 2);
+                  }}
+                  onFocus={() => {
+                    if (searchQuery.trim().length >= 2) setIsSearchFocused(true);
+                  }}
+                  placeholder="Cerca..."
+                  className="w-full bg-transparent text-slate-800 placeholder-slate-400 text-sm font-semibold focus:outline-none"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => {
+                      setSearchQuery('');
+                      setIsSearchFocused(false);
+                    }}
+                    className="p-1 text-slate-400 hover:text-slate-600 mr-1"
+                  >
+                    <IconClose size={16} />
+                  </button>
+                )}
+                <button 
+                  onClick={() => setIsOutOfAreaOpen(true)}
+                  title="Geolocalizzazione (Test Geofence)"
+                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-xl"
+                >
+                  <span className="text-xs font-black">📍 GPS</span>
+                </button>
+              </div>
+
+            {/* Suggerimenti dinamici: visibili ESCLUSIVAMENTE quando l'utente digita almeno 2 caratteri */}
+            {isSearchFocused && searchQuery.trim().length >= 2 && filteredSuggestions.length > 0 && (
+              <div className="mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden divide-y divide-slate-100 animate-fade-in">
+                {filteredSuggestions.map((item, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => {
+                      setIsSearchFocused(false);
+                      if (item.isOutOfArea) {
+                        setIsOutOfAreaOpen(true);
+                        return;
+                      }
+                      setSearchQuery(item.name);
+                      handleSelectStreet(item);
+                    }}
+                    className="p-3.5 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                        📍
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">{item.name}</p>
+                        <p className="text-xs text-slate-400">{item.city} {item.reviewsCount > 0 ? `· ${item.reviewsCount} recensioni` : '· Senza recensioni'}</p>
+                      </div>
+                    </div>
+                    {item.rating ? (
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        ★ {item.rating}
+                      </span>
+                    ) : (
+                      <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                        Nuova
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Widget Profilo Google / Accedi */}
+          <div ref={userMenuRef} className="relative pointer-events-auto shrink-0">
+            {currentUser ? (
+              <div>
+                <button
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="flex items-center gap-2 p-1.5 pl-2 pr-3 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 hover:bg-slate-50 transition-all cursor-pointer"
+                >
+                  <img
+                    src={currentUser.avatarUrl}
+                    alt={currentUser.name}
+                    className="w-7 h-7 rounded-full border-2 border-blue-500 object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                  <span className="text-xs font-bold text-slate-800 hidden sm:inline max-w-[110px] truncate">
+                    {currentUser.name}
+                  </span>
+                  <span className="text-[10px] text-slate-400">▼</span>
+                </button>
+
+                {/* Dropdown Logout */}
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 animate-fade-in z-50">
+                    <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 rounded-xl mb-1">
+                      <p className="text-xs font-bold text-slate-900 truncate">{currentUser.name}</p>
+                      <p className="text-[10px] text-slate-500 truncate">{currentUser.email}</p>
+                    </div>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full text-left px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      🚪 Esci / Disconnetti
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsAuthOpen(true)}
+                className="flex items-center gap-2 px-3.5 py-2.5 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 hover:bg-slate-50 transition-all text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.15z"/>
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+                  <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.97 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                </svg>
+                <span>Accedi</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+          {/* 3. FILTRI RAPIDI */}
+          <div className="absolute top-18 left-4 right-4 z-20 flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+            <button
+              onClick={() => setFilterFreeParking(!filterFreeParking)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
+                filterFreeParking ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20' : 'bg-white/95 text-slate-700 border-slate-200'
+              }`}
+            >
+              <IconCar size={13} /> Parcheggio Gratuito
+            </button>
+
+            <button
+              onClick={() => setFilterDisabledParking(!filterDisabledParking)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
+                filterDisabledParking ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-amber-500/30' : 'bg-white/95 text-slate-700 border-slate-200'
+              }`}
+            >
+              <span>♿</span> Posti Disabili
+            </button>
+
+            <button
+              onClick={() => setFilterPinkParking(!filterPinkParking)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
+                filterPinkParking ? 'bg-pink-500 text-white border-pink-600 shadow-pink-500/30' : 'bg-white/95 text-slate-700 border-slate-200'
+              }`}
+            >
+              <span>🌸</span> Posti Rosa
+            </button>
+
+            <button
+              onClick={() => setFilterParkingDisc(!filterParkingDisc)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
+                filterParkingDisc ? 'bg-slate-800 text-white border-slate-800' : 'bg-white/95 text-slate-700 border-slate-200'
+              }`}
+            >
+              <span>⏱️</span> Disco Orario
+            </button>
+
+            <button
+              onClick={() => setFilterLoadingZone(!filterLoadingZone)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
+                filterLoadingZone ? 'bg-orange-500 text-white border-orange-600 shadow-orange-500/30' : 'bg-white/95 text-slate-700 border-slate-200'
+              }`}
+            >
+              <span>🚚</span> Carico/Scarico
+            </button>
+
+            <button
+              onClick={() => setFilterCyclePath(!filterCyclePath)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
+                filterCyclePath ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white/95 text-slate-700 border-slate-200'
+              }`}
+            >
+              <IconBike size={13} /> Pista Ciclabile
+            </button>
+
+            <button
+              onClick={() => setFilterRoadOver3(!filterRoadOver3)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
+                filterRoadOver3 ? 'bg-blue-600 text-white border-blue-600' : 'bg-white/95 text-slate-700 border-slate-200'
+              }`}
+            >
+              🛣️ Manto &gt; 3★
+            </button>
+
+            <button
+              onClick={() => setFilterTopRated(!filterTopRated)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
+                filterTopRated ? 'bg-amber-500 text-white border-amber-500' : 'bg-white/95 text-slate-700 border-slate-200'
+              }`}
+            >
+              <IconStar filled size={12} /> Top Rated (≥ 4★)
+            </button>
+
+            {(filterFreeParking || filterDisabledParking || filterPinkParking || filterParkingDisc || filterLoadingZone || filterCyclePath || filterRoadOver3 || filterTopRated) && (
+              <button
+                onClick={() => {
+                  setFilterFreeParking(false);
+                  setFilterDisabledParking(false);
+                  setFilterPinkParking(false);
+                  setFilterParkingDisc(false);
+                  setFilterLoadingZone(false);
+                  setFilterCyclePath(false);
+                  setFilterRoadOver3(false);
+                  setFilterTopRated(false);
+                }}
+                className="px-3 py-1.5 rounded-full bg-slate-900 text-white text-xs font-bold flex-shrink-0 cursor-pointer"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+
+          {/* 4. BADGE DI STATO IN BASSO A SINISTRA */}
+          <div className="absolute left-4 bottom-6 z-20 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-slate-200 shadow-md flex items-center gap-2 text-xs">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="font-bold text-slate-800">
+              {mapEngine === 'google' ? 'Google Maps Platform (Attivo)' : 'Cartografia Riviera delle Palme'}
+            </span>
+            <span className="text-slate-400">· {streets.length} {streets.length === 1 ? 'strada attiva' : 'strade attive'}</span>
+          </div>
+
+          {/* 5. BOTTOM SHEET DELLA STRADA SELEZIONATA */}
+          {selectedStreet && sheetSnap !== 'hidden' && (
+            <div className={`fixed bottom-0 left-0 right-0 z-40 bg-white rounded-t-3xl shadow-2xl border-t border-slate-200 flex flex-col transition-all duration-300 md:max-w-xl md:mx-auto ${
+              sheetSnap === 'full' ? 'h-[92vh]' : 'h-[62vh]'
+            }`}>
+              <div 
+                className="w-full pt-3 pb-2 flex flex-col items-center cursor-pointer select-none"
+                onClick={() => setSheetSnap(sheetSnap === 'half' ? 'full' : 'half')}
+              >
+                <div className="w-12 h-1.5 bg-slate-300 rounded-full" />
+              </div>
+
+              <div className="px-5 pb-3 flex items-start justify-between border-b border-slate-100">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">{selectedStreet.name}</h2>
+                  <p className="text-xs text-slate-500 font-medium">{selectedStreet.city} ({selectedStreet.postalCode})</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`px-2.5 py-1 rounded-xl font-bold text-sm border flex items-center gap-1 ${
+                    isSelectedStreetNew
+                      ? 'bg-slate-100 text-slate-600 border-slate-200'
+                      : selectedStreet.avgOverallRating >= 4.0
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                  }`}>
+                    {isSelectedStreetNew ? (
+                      <span>Nuova</span>
+                    ) : (
+                      <>
+                        <IconStar filled size={14} className="text-amber-500 fill-amber-500" />
+                        <span>{selectedStreet.avgOverallRating.toFixed(1)}</span>
+                      </>
+                    )}
+                  </div>
+                  <button onClick={() => setSheetSnap('hidden')} className="p-1 text-slate-400 hover:text-slate-600">
+                    <IconClose size={20} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+                {/* GESTIONE STRADA SENZA RECENSIONI: Invito alla community */}
+                {isSelectedStreetNew ? (
+                  <div className="py-8 px-4 bg-slate-50 border border-dashed border-slate-200 rounded-3xl text-center space-y-4">
+                    <div className="w-16 h-16 mx-auto bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center shadow-inner">
+                      <span className="text-3xl">✨</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      <h3 className="text-base font-extrabold text-slate-900">
+                        Nessuna recensione ancora
+                      </h3>
+                      <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
+                        Sii il primo a recensire questa strada! Condividi lo stato del manto stradale, della segnaletica e dei parcheggi con i cittadini della Riviera.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setEditingReview(null);
+                        if (!currentUser) {
+                          setIsAuthOpen(true);
+                        } else {
+                          setIsReviewOpen(true);
+                        }
+                      }}
+                      className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-bold rounded-2xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 text-sm transition-all cursor-pointer"
+                    >
+                      ✍️ Scrivi la prima recensione
+                    </button>
+                  </div>
+                ) : (
+                  /* GESTIONE STRADA CON RECENSIONI: Dati & Categorie */
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedStreet.commonParkingTypes?.map(t => {
+                        let label = 'Parcheggio';
+                        let colorCls = 'bg-slate-100 text-slate-700 border-slate-200';
+                        let icon = '🅿️';
+
+                        if (t === 'FREE') {
+                          label = 'Parcheggio Gratuito';
+                          colorCls = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                          icon = '🅿️';
+                        } else if (t === 'PAID') {
+                          label = 'A Pagamento (Blu)';
+                          colorCls = 'bg-blue-50 text-blue-800 border-blue-200';
+                          icon = '🅿️';
+                        } else if (t === 'PARKING_DISC') {
+                          label = 'Disco Orario';
+                          colorCls = 'bg-slate-100 text-slate-700 border-slate-300 shadow-2xs';
+                          icon = '⏱️';
+                        } else if (t === 'DISABLED') {
+                          label = 'Posti Disabili';
+                          colorCls = 'bg-amber-100 text-amber-900 border-amber-400 font-extrabold shadow-2xs';
+                          icon = '♿';
+                        } else if (t === 'PINK') {
+                          label = 'Posti Rosa';
+                          colorCls = 'bg-pink-100 text-pink-800 border-pink-300 font-extrabold shadow-2xs';
+                          icon = '🌸';
+                        } else if (t === 'LOADING_UNLOADING') {
+                          label = 'Carico / Scarico';
+                          colorCls = 'bg-orange-100 text-orange-950 border-orange-400 font-extrabold shadow-2xs';
+                          icon = '🚚';
+                        }
+
+                        return (
+                          <span key={t} className={`text-xs font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${colorCls}`}>
+                            <span>{icon}</span>
+                            <span>{label}</span>
+                          </span>
+                        );
+                      })}
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full border flex items-center gap-1 ${
+                        selectedStreet.hasCyclePath ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'
+                      }`}>
+                        <IconBike size={13} /> {selectedStreet.hasCyclePath ? 'Pista Ciclabile Presente' : 'Nessuna Ciclabile'}
+                      </span>
+
+                      {selectedStreet.amenities?.map(a => {
+                        let label = 'Dotazione';
+                        let icon = '✨';
+                        let colorCls = 'bg-slate-100 text-slate-700 border-slate-200';
+
+                        if (a === 'EV_CHARGING') { label = 'Ricarica EV'; icon = '⚡'; colorCls = 'bg-emerald-50 text-emerald-800 border-emerald-200'; }
+                        else if (a === 'BIKE_RACKS') { label = 'Rastrelliere Bici'; icon = '🚲'; colorCls = 'bg-cyan-50 text-cyan-800 border-cyan-200'; }
+                        else if (a === 'SPEED_BUMPS') { label = 'Dossi / Dissuasori'; icon = '⚠️'; colorCls = 'bg-orange-50 text-orange-800 border-orange-200'; }
+                        else if (a === 'COBBLESTONE') { label = 'Ciottolato / Sanpietrini'; icon = '🏛️'; colorCls = 'bg-stone-100 text-stone-800 border-stone-300'; }
+                        else if (a === 'DRINKING_FOUNTAIN') { label = 'Fontanella'; icon = '💧'; colorCls = 'bg-sky-50 text-sky-800 border-sky-200'; }
+                        else if (a === 'BENCHES') { label = 'Panchine'; icon = '🪑'; colorCls = 'bg-amber-50 text-amber-800 border-amber-200'; }
+                        else if (a === 'TRASH_BINS') { label = 'Cestini'; icon = '🗑️'; colorCls = 'bg-slate-100 text-slate-800 border-slate-200'; }
+
+                        return (
+                          <span key={a} className={`text-xs font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${colorCls}`}>
+                            <span>{icon}</span>
+                            <span>{label}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+
+                    <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Spaccato Categorie (13 Parametri)</h4>
+                      <div className="space-y-2 text-xs">
+                        {[
+                          ['Manto Stradale', selectedStreet.categoryAverages?.roadSurface || 0],
+                          ['Segnaletica a terra', selectedStreet.categoryAverages?.groundSignage || 0],
+                          ['Segnaletica verticale', selectedStreet.categoryAverages?.verticalSignage || 0],
+                          ['Quantità parcheggi', selectedStreet.categoryAverages?.parkingQuantity || 0],
+                          ['Qualità marciapiedi', selectedStreet.categoryAverages?.sidewalkQuality || 0],
+                          ['Illuminazione', selectedStreet.categoryAverages?.lighting || 0],
+                          ['Pulizia e Decoro', selectedStreet.categoryAverages?.cleanliness || 0],
+                          ['Accessibilità', selectedStreet.categoryAverages?.accessibility || 0],
+                          ['Drenaggio Piovano', selectedStreet.categoryAverages?.rainDrainage || 0],
+                          ['Ombreggiatura e Verde', selectedStreet.categoryAverages?.greeneryShade || 0],
+                          ['Tranquillità e Silenzio', selectedStreet.categoryAverages?.quietness || 0],
+                          ['Visibilità Incroci', selectedStreet.categoryAverages?.intersectionVisibility || 0],
+                          ['Larghezza Carreggiata', selectedStreet.categoryAverages?.laneWidth || 0],
+                        ].map(([label, score]) => (
+                          <div key={label} className="flex items-center justify-between">
+                            <span className="text-slate-700 font-medium w-40 truncate">{label}</span>
+                            <div className="flex-1 mx-3 h-2 bg-slate-200 rounded-full overflow-hidden">
+                              <div className="h-full bg-blue-600 rounded-full" style={{ width: `${(score / 5) * 100}%` }} />
+                            </div>
+                            <span className="font-bold text-slate-800 w-8 text-right">{score}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* CTA: Se l'utente ha già recensito, mostra 'Modifica la tua recensione' */}
+                    {(() => {
+                      const userExistingReview = currentUser && selectedStreet?.reviews
+                        ? selectedStreet.reviews.find(r => r.userId === currentUser.id || r.user === currentUser.name)
+                        : null;
+
+                      return userExistingReview ? (
+                        <button
+                          onClick={() => {
+                            setEditingReview(userExistingReview);
+                            setIsReviewOpen(true);
+                          }}
+                          className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold rounded-2xl shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 text-sm cursor-pointer transition-all"
+                        >
+                          ✏️ Modifica la tua recensione
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setEditingReview(null);
+                            if (!currentUser) {
+                              setIsAuthOpen(true);
+                            } else {
+                              setIsReviewOpen(true);
+                            }
+                          }}
+                          className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-bold rounded-2xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 text-sm cursor-pointer transition-all"
+                        >
+                          ✍️ Aggiungi la tua Recensione
+                        </button>
+                      );
+                    })()}
+
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-bold text-slate-800">Commenti dei Residenti ({selectedStreet.reviews?.length || 0})</h4>
+                      {selectedStreet.reviews?.map(r => {
+                        const isMyReview = currentUser && (r.userId === currentUser.id || r.user === currentUser.name);
+                        return (
+                          <div key={r.id} className={`p-3.5 bg-white rounded-2xl shadow-xs space-y-2 border transition-all ${isMyReview ? 'border-blue-400 ring-2 ring-blue-50' : 'border-slate-100'}`}>
+                            <div className="flex justify-between items-center text-xs">
+                              <div className="flex items-center gap-2">
+                                {r.avatarUrl ? (
+                                  <img
+                                    src={r.avatarUrl}
+                                    alt={r.user}
+                                    className="w-6 h-6 rounded-full border border-blue-200 object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold">
+                                    {r.user ? r.user.charAt(0).toUpperCase() : 'U'}
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-slate-800">{r.user}</span>
+                                  {isMyReview && (
+                                    <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                                      Tu
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {isMyReview && (
+                                  <button
+                                    onClick={() => {
+                                      setEditingReview(r);
+                                      setIsReviewOpen(true);
+                                    }}
+                                    className="p-1 px-2 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                    title="Modifica la tua recensione"
+                                  >
+                                    <span>✏️</span> Modifica
+                                  </button>
+                                )}
+                                <span className="text-slate-400">{r.date}</span>
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-600 leading-relaxed">"{r.comment}"</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 6. MODALE RECENSIONE */}
+          {isReviewOpen && selectedStreet && (
+            <ReviewModal
+              streetName={selectedStreet.name}
+              currentUser={currentUser}
+              initialData={editingReview}
+              onClose={() => {
+                setIsReviewOpen(false);
+                setEditingReview(null);
+              }}
+              onSubmit={(data) => handleAddReview(data)}
+            />
+          )}
+
+          {/* 7. MODALE AUTENTICAZIONE GOOGLE OAUTH 2.0 */}
+          <AuthModal
+            isOpen={isAuthOpen}
+            onClose={() => setIsAuthOpen(false)}
+            onLoginSuccess={handleGoogleLogin}
+          />
+
+          {/* 8. MODALE GEOFENCING */}
+          {isOutOfAreaOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-fade-in">
+              <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slide-up text-center relative">
+                <button onClick={() => setIsOutOfAreaOpen(false)} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600">
+                  <IconClose size={18} />
+                </button>
+
+                <div className="bg-gradient-to-br from-blue-600 to-cyan-500 p-6 text-white">
+                  <div className="text-4xl mb-2">🌴</div>
+                  <h3 className="text-2xl font-black">Stiamo arrivando!</h3>
+                </div>
+
+                <div className="p-6 space-y-4 text-xs">
+                  <p className="text-slate-600 leading-relaxed text-sm">
+                    Per ora <strong className="text-slate-900">Street Review</strong> è attivo solo nella <strong className="text-blue-600">Riviera delle Palme</strong> e dintorni per i nostri primi test.
+                  </p>
+
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                    <p className="font-bold text-slate-400 uppercase text-[10px] mb-2">Comuni abilitati nel test:</p>
+                    <div className="flex flex-wrap justify-center gap-1">
+                      {['San Benedetto del Tronto', 'Porto d\'Ascoli', 'Grottammare', 'Monteprandone', 'Centobuchi', 'Acquaviva Picena'].map(c => (
+                        <span key={c} className="bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-700 font-medium">📍 {c}</span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setIsOutOfAreaOpen(false);
+                      if (mapEngine === 'google' && googleMapRef.current) {
+                        googleMapRef.current.panTo(GEOFENCE.center);
+                      } else if (leafletMapRef.current) {
+                        leafletMapRef.current.setView([GEOFENCE.center.lat, GEOFENCE.center.lng], GEOFENCE.defaultZoom, { animate: true });
+                      }
+                    }}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md text-xs"
+                  >
+                    Torna alla Riviera delle Palme
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // --- SOTTORAPPRESENTAZIONE MODALE RECENSIONE INTERATTIVA ---
+    function ReviewModal({ streetName, currentUser, initialData, onClose, onSubmit }) {
+      const isEditing = Boolean(initialData);
+      const defaultRatings = {
+        roadSurface: 4, groundSignage: 4, verticalSignage: 4,
+        parkingQuantity: 3, sidewalkQuality: 4, lighting: 4,
+        cleanliness: 4, accessibility: 4, rainDrainage: 4,
+        greeneryShade: 4, quietness: 4, intersectionVisibility: 4,
+        laneWidth: 4
+      };
+      const [ratings, setRatings] = useState(
+        initialData?.ratings ? { ...defaultRatings, ...initialData.ratings } : defaultRatings
+      );
+      const [parkingTypes, setParkingTypes] = useState(initialData?.parkingTypes || ['FREE']);
+      const [hasCyclePath, setHasCyclePath] = useState(initialData?.hasCyclePath || false);
+      const [amenities, setAmenities] = useState(initialData?.amenities || []);
+      const [comment, setComment] = useState(initialData?.comment || '');
+
+      useEffect(() => {
+        if (initialData) {
+          setRatings({
+            ...defaultRatings,
+            ...initialData.ratings
+          });
+          setParkingTypes(initialData.parkingTypes || []);
+          setHasCyclePath(initialData.hasCyclePath || false);
+          setAmenities(initialData.amenities || []);
+          setComment(initialData.comment || '');
+        } else {
+          setRatings(defaultRatings);
+          setParkingTypes(['FREE']);
+          setHasCyclePath(false);
+          setAmenities([]);
+          setComment('');
+        }
+      }, [initialData]);
+
+      const overall = Number(
+        (Object.values(ratings).reduce((a, b) => a + b, 0) / 13).toFixed(1)
+      );
+
+      const handleStarClick = (categoryKey, starVal) => {
+        setRatings(prev => ({ ...prev, [categoryKey]: starVal }));
+      };
+
+      const toggleParking = (type) => {
+        setParkingTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
+      };
+
+      const toggleAmenity = (val) => {
+        setAmenities(prev => prev.includes(val) ? prev.filter(a => a !== val) : [...prev, val]);
+      };
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden animate-slide-up">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-slate-900">
+                    {isEditing ? 'Modifica la tua recensione' : 'Nuova Recensione'}
+                  </h3>
+                  {isEditing && (
+                    <span className="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">
+                      ✏️ Modifica
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500">{streetName}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">★ {overall}</span>
+                <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <IconClose size={20} />
+                </button>
+              </div>
+            </div>
+
+            {currentUser && (
+              <div className="px-6 py-2 bg-blue-50/70 border-b border-blue-100 flex items-center gap-2.5 text-xs">
+                <img
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.name}
+                  className="w-5 h-5 rounded-full border border-blue-400 object-cover"
+                  referrerPolicy="no-referrer"
+                />
+                <span className="text-slate-600">
+                  Pubblichi come: <strong className="text-slate-900">{currentUser.name}</strong> ({currentUser.email})
+                </span>
+              </div>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                onSubmit({
+                  userName: currentUser ? currentUser.name : 'Tu (Cittadino)',
+                  ratings,
+                  overallRating: overall,
+                  comment: comment.trim() || 'Recensione pubblicata con successo.',
+                  parkingTypes,
+                  hasCyclePath,
+                  amenities,
+                });
+              }}
+              className="flex-1 overflow-y-auto px-6 py-4 space-y-4 text-xs"
+            >
+              <p className="text-slate-500 font-semibold uppercase text-[10px]">Valuta le 13 categorie obbligatorie:</p>
+
+              {[
+                ['roadSurface', 'Manto Stradale (asfalto, buche)'],
+                ['groundSignage', 'Segnaletica a terra (strisce, stop)'],
+                ['verticalSignage', 'Segnaletica verticale (cartelli visibili)'],
+                ['parkingQuantity', 'Quantità di parcheggi'],
+                ['sidewalkQuality', 'Qualità dei marciapiedi'],
+                ['lighting', 'Illuminazione notturna'],
+                ['cleanliness', 'Pulizia e decoro urbano'],
+                ['accessibility', 'Accessibilità (passeggini / PMR)'],
+                ['rainDrainage', 'Drenaggio piovano (caditoie, tombini)'],
+                ['greeneryShade', 'Ombreggiatura e verde (alberi, radici)'],
+                ['quietness', 'Tranquillità e silenziosità (rumore)'],
+                ['intersectionVisibility', 'Visibilità incroci (specchi, visuale)'],
+                ['laneWidth', 'Larghezza carreggiata (manovra, spazio)'],
+              ].map(([key, label]) => (
+                <div key={key} className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <span className="font-semibold text-slate-700 truncate pr-2">{label}</span>
+                  <div className="flex gap-1 text-amber-400 select-none">
+                    {[1, 2, 3, 4, 5].map(star => (
+                      <span
+                        key={star}
+                        onClick={() => handleStarClick(key, star)}
+                        className={`cursor-pointer text-base transition-transform hover:scale-125 ${
+                          star <= (ratings[key] || 0) ? 'text-amber-400' : 'text-slate-200'
+                        }`}
+                      >
+                        ★
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {/* Tag Parcheggi */}
+              <div className="space-y-1.5 pt-1">
+                <p className="font-semibold text-slate-700">Tipologia parcheggio presente:</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['FREE', 'Parcheggio Gratuito', 'bg-slate-50 text-slate-700 border-slate-200', 'bg-blue-600 text-white border-blue-600 shadow-xs'],
+                    ['PAID', 'A Pagamento (Blu)', 'bg-slate-50 text-slate-700 border-slate-200', 'bg-blue-600 text-white border-blue-600 shadow-xs'],
+                    ['PARKING_DISC', '⏱️ Disco Orario', 'bg-slate-50 text-slate-700 border-slate-200', 'bg-slate-800 text-white border-slate-800 shadow-xs'],
+                    ['DISABLED', '♿ Posti Disabili', 'bg-amber-50 text-amber-900 border-amber-300', 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'],
+                    ['PINK', '🌸 Posti Rosa', 'bg-pink-50 text-pink-900 border-pink-300', 'bg-pink-500 text-white font-black border-pink-600 shadow-xs'],
+                    ['LOADING_UNLOADING', '🚚 Carico / Scarico', 'bg-orange-50 text-orange-900 border-orange-300', 'bg-orange-500 text-white font-black border-orange-600 shadow-xs'],
+                  ].map(([val, name, unselCls, selCls]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => toggleParking(val)}
+                      className={`px-3 py-1.5 rounded-xl font-bold border transition-all cursor-pointer ${
+                        parkingTypes.includes(val) ? selCls : unselCls
+                      }`}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tag Dotazioni e Arredo Urbano */}
+              <div className="space-y-1.5 pt-1">
+                <p className="font-semibold text-slate-700">Dotazioni e Arredo Urbano (Tag rapidi):</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['EV_CHARGING', '⚡ Colonnine EV'],
+                    ['BIKE_RACKS', '🚲 Rastrelliere Bici'],
+                    ['SPEED_BUMPS', '⚠️ Dossi / Dissuasori'],
+                    ['COBBLESTONE', '🏛️ Pavimentazione Speciale'],
+                    ['DRINKING_FOUNTAIN', '💧 Fontanella'],
+                    ['BENCHES', '🪑 Panchine'],
+                    ['TRASH_BINS', '🗑️ Cestini'],
+                  ].map(([val, name]) => {
+                    const isSelected = amenities.includes(val);
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => toggleAmenity(val)}
+                        className={`px-3 py-1.5 rounded-xl font-bold border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {name} {isSelected && '✓'}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Tag Pista Ciclabile */}
+              <div className="space-y-1.5">
+                <p className="font-semibold text-slate-700">Pista ciclabile presente?</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setHasCyclePath(true)}
+                    className={`flex-1 py-2 rounded-xl font-bold border ${hasCyclePath ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 text-slate-700 border-slate-200'}`}
+                  >
+                    Sì, presente
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHasCyclePath(false)}
+                    className={`flex-1 py-2 rounded-xl font-bold border ${!hasCyclePath ? 'bg-slate-800 text-white border-slate-800' : 'bg-slate-50 text-slate-700 border-slate-200'}`}
+                  >
+                    No, assente
+                  </button>
+                </div>
+              </div>
+
+              {/* Commento Libero */}
+              <div className="space-y-1 pt-1">
+                <label className="font-bold text-slate-700">Commento libero:</label>
+                <textarea 
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  rows={3} 
+                  placeholder="Aggiungi dettagli utili per i residenti (es. 'Zona tranquilla, marciapiedi larghi ma pochi parcheggi la sera')..."
+                  className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className={`w-full py-3.5 text-white font-bold rounded-2xl shadow-lg active:scale-[0.99] text-sm cursor-pointer transition-all ${
+                  isEditing
+                    ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/25'
+                    : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25'
+                }`}
+              >
+                {isEditing ? '💾 Aggiorna recensione' : 'Pubblica Recensione'}
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // --- MODALE AUTENTICAZIONE GOOGLE OAUTH 2.0 ---
+    const GOOGLE_CLIENT_ID = "512832291400-m97714l26jqki67cjr9bkmr7cfaibq1b.apps.googleusercontent.com";
+
+    function AuthModal({ isOpen, onClose, onLoginSuccess }) {
+      const googleBtnRef = useRef(null);
+      const isFileProtocol = window.location.protocol === 'file:';
+      const currentOrigin = window.location.origin;
+
+      useEffect(() => {
+        if (!isOpen) return;
+
+        // Inizializza Google Identity Services se lo script è pronto
+        if (window.google && window.google.accounts && window.google.accounts.id) {
+          try {
+            window.google.accounts.id.initialize({
+              client_id: GOOGLE_CLIENT_ID,
+              callback: async (response) => {
+                try {
+                  if (response && response.credential && window.firebase && window.firebase.auth) {
+                    try {
+                      const credential = firebase.auth.GoogleAuthProvider.credential(response.credential);
+                      const userCredential = await firebase.auth().signInWithCredential(credential);
+                      const fUser = userCredential.user;
+                      console.log("Firebase Auth signInWithCredential riuscito. UID:", fUser.uid);
+                      onLoginSuccess({
+                        id: fUser.uid,
+                        name: fUser.displayName || 'Utente Google',
+                        email: fUser.email || '',
+                        avatarUrl: fUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
+                      });
+                      return;
+                    } catch (authErr) {
+                      console.error("Errore signInWithCredential:", authErr);
+                      alert("Attenzione: autenticazione Firebase fallita: " + (authErr.message || authErr) + "\nVerifica che il provider 'Google' sia abilitato nella Firebase Console (Authentication > Sign-in method).");
+                      return;
+                    }
+                  }
+
+                  // Fallback se Firebase Auth non è disponibile
+                  const base64Url = response.credential.split('.')[1];
+                  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                  const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+                  const payload = JSON.parse(jsonPayload);
+
+                  onLoginSuccess({
+                    id: payload.sub,
+                    name: payload.name,
+                    email: payload.email,
+                    avatarUrl: payload.picture,
+                  });
+                } catch (err) {
+                  console.error('Errore decodifica credenziale Google', err);
+                }
+              },
+              auto_select: false,
+              cancel_on_tap_outside: true,
+              ux_mode: 'popup',
+            });
+
+            if (googleBtnRef.current && !isFileProtocol) {
+              window.google.accounts.id.renderButton(googleBtnRef.current, {
+                theme: 'filled_blue',
+                size: 'large',
+                width: 320,
+                text: 'continue_with',
+                shape: 'pill',
+              });
+            }
+          } catch (e) {
+            console.warn('GIS Init notice', e);
+          }
+        }
+      }, [isOpen, isFileProtocol]);
+
+      const handleGooglePopup = async () => {
+        try {
+          if (!window.firebase || !window.firebase.auth) {
+            alert("SDK Firebase Auth non disponibile.");
+            return;
+          }
+          const provider = new firebase.auth.GoogleAuthProvider();
+          const userCredential = await firebase.auth().signInWithPopup(provider);
+          const fUser = userCredential.user;
+          console.log("Firebase Auth signInWithPopup riuscito. UID:", fUser.uid);
+          onLoginSuccess({
+            id: fUser.uid,
+            name: fUser.displayName || 'Utente Google',
+            email: fUser.email || '',
+            avatarUrl: fUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
+          });
+        } catch (err) {
+          console.error("Errore Google Popup:", err);
+          alert("Errore accesso Google con Firebase: " + (err.message || err));
+        }
+      };
+
+      const handleDemoLogin = async (demoProfile) => {
+        if (window.firebase && window.firebase.auth) {
+          try {
+            const anon = await firebase.auth().signInAnonymously();
+            const fUser = anon.user;
+            console.log("Firebase Auth Anonymous SignIn per demo:", fUser.uid);
+            onLoginSuccess({
+              id: fUser.uid,
+              name: demoProfile.name,
+              email: demoProfile.email,
+              avatarUrl: demoProfile.avatarUrl,
+            });
+            return;
+          } catch (e) {
+            console.warn("Anonymous auth non disponibile:", e);
+          }
+        }
+        onLoginSuccess(demoProfile);
+      };
+
+      if (!isOpen) return null;
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-fade-in">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-slide-up relative">
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 z-10 cursor-pointer"
+            >
+              <IconClose size={18} />
+            </button>
+
+            <div className="p-6 text-center space-y-4">
+              <div className="w-14 h-14 mx-auto bg-blue-50 rounded-2xl flex items-center justify-center shadow-inner">
+                <svg className="w-8 h-8" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.15z"/>
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+                  <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.97 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                </svg>
+              </div>
+
+              <div>
+                <h3 className="text-xl font-black text-slate-900">Accedi a Street Review</h3>
+                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                  Accedi con il tuo account Google per autenticarti su Firebase e pubblicare recensioni.
+                </p>
+              </div>
+
+              {/* BOX DIAGNOSTICO ORIGIN */}
+              {isFileProtocol ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-left space-y-1 text-xs">
+                  <div className="flex items-center gap-1.5 text-amber-800 font-bold text-[11px]">
+                    <span>⚠️ Stai aprendo con file://</span>
+                  </div>
+                  <p className="text-[10px] text-amber-700 leading-relaxed">
+                    Google OAuth rifiuta le richieste con origine <code>null / file://</code> generando l'<strong>Errore 400</strong>.
+                  </p>
+                  <p className="text-[10px] text-amber-800 font-semibold pt-0.5">
+                    👉 Usa l'indirizzo del server locale: <br/>
+                    <a href="http://localhost:3000/index_preview.html" className="text-blue-600 underline font-mono text-[11px]">
+                      http://localhost:3000/index_preview.html
+                    </a>
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-left text-[11px] space-y-1">
+                  <div className="flex justify-between items-center text-slate-500">
+                    <span>Origine inviata a Google:</span>
+                    <code className="font-mono font-bold text-emerald-700 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                      {currentOrigin}
+                    </code>
+                  </div>
+                  <p className="text-[9px] text-slate-400">
+                    Verifica che <code>{currentOrigin}</code> sia in "Origini JavaScript autorizzate" su Google Cloud e "Domini autorizzati" su Firebase Console.
+                  </p>
+                </div>
+              )}
+
+              <div className="pt-1 flex flex-col items-center gap-2.5">
+                {/* Contenitore pulsante ufficiale Google GIS */}
+                {!isFileProtocol && (
+                  <div ref={googleBtnRef} className="w-full flex justify-center min-h-[40px]"></div>
+                )}
+
+                {/* Pulsante alternativo diretto Popup Firebase Auth */}
+                <button
+                  onClick={handleGooglePopup}
+                  className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] rounded-2xl shadow-md text-white font-bold text-xs flex items-center justify-center gap-2.5 transition-all cursor-pointer"
+                >
+                  <svg className="w-4 h-4 bg-white rounded-full p-0.5" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.15z"/>
+                    <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+                    <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.97 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                    <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                  </svg>
+                  <span>Accedi con Google (Popup Diretto)</span>
+                </button>
+
+                {/* Separatore */}
+                <div className="w-full flex items-center gap-2 text-slate-300 text-[10px] my-1">
+                  <div className="flex-1 h-px bg-slate-200"></div>
+                  <span className="text-slate-400 font-semibold">oppure test rapido</span>
+                  <div className="flex-1 h-px bg-slate-200"></div>
+                </div>
+
+                {/* Simulatore Google Profile con sessione Firebase */}
+                <button
+                  onClick={() => handleDemoLogin({
+                    id: 'g-resident-101',
+                    name: 'Marco Rossi',
+                    email: 'marco.rossi.sbt@gmail.com',
+                    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
+                  })}
+                  className="w-full py-2 px-3 bg-white border border-slate-300 hover:bg-slate-50 active:scale-[0.99] rounded-2xl shadow-xs flex items-center justify-center gap-2 text-slate-700 font-bold text-xs transition-all cursor-pointer"
+                >
+                  <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80" className="w-4 h-4 rounded-full" />
+                  <span>Marco Rossi (Demo)</span>
+                </button>
+
+                <button
+                  onClick={() => handleDemoLogin({
+                    id: 'g-resident-102',
+                    name: 'Giulia Bianchi',
+                    email: 'giulia.bianchi@gmail.com',
+                    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
+                  })}
+                  className="w-full py-2 px-3 bg-slate-50 hover:bg-slate-100 rounded-xl text-slate-600 font-semibold text-[11px] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80" className="w-4 h-4 rounded-full" />
+                  <span>Giulia Bianchi (Demo)</span>
+                </button>
+              </div>
+
+              <div className="text-[10px] text-slate-400 border-t border-slate-100 pt-2.5">
+                Modalità Ospite: puoi sempre navigare e consultare i voti delle strade senza effettuare il login.
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
