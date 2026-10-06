@@ -110,13 +110,45 @@
     .animate-slide-up { animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
     .custom-street-marker { background: transparent; border: none; }
+    /* Adattamento contenitore suggerimenti su mobile */
     .pac-container {
-      z-index: 99999 !important;
-      border-radius: 1rem !important;
+      width: calc(100vw - 32px) !important;
+      max-width: 440px !important;
+      left: 16px !important;
       margin-top: 6px !important;
-      border: 1px solid #e2e8f0 !important;
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15) !important;
+      border-radius: 14px !important;
+      box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.25) !important;
+      border: 1px solid rgba(0, 0, 0, 0.08) !important;
       font-family: inherit !important;
+      z-index: 99999 !important;
+    }
+
+    /* Singolo elemento della lista: più spazio per il tocco e testo leggibile */
+    .pac-item {
+      padding: 12px 14px !important;
+      font-size: 15px !important;
+      line-height: 1.4 !important;
+      cursor: pointer !important;
+      display: flex !important;
+      align-items: center !important;
+      white-space: normal !important; /* Evita il troncamento forzato */
+    }
+
+    .pac-item-query {
+      font-size: 15px !important;
+      color: #0f172a !important;
+      padding-right: 6px !important;
+    }
+
+    .pac-matched {
+      font-weight: 700 !important;
+      color: #2563eb !important;
+    }
+
+    .pac-icon {
+      margin-top: 0 !important;
+      margin-right: 10px !important;
+      flex-shrink: 0 !important;
     }
   </style>
 </head>
