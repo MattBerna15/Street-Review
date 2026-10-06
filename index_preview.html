@@ -945,21 +945,22 @@
 
           {/* 2. HEADER: LOGO UFFICIALE + BARRA DI RICERCA + WIDGET PROFILO GOOGLE */}
           <div className="absolute top-4 left-4 right-4 z-30 flex items-start justify-between gap-2.5 sm:gap-3 pointer-events-none">
-            {/* Logo Ufficiale Street Review */}
-            <div
-              onClick={() => { setSelectedStreet(null); setSheetSnap('hidden'); }}
-              title="Street Review · Riviera delle Palme"
-              className="pointer-events-auto shrink-0 flex items-center gap-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 p-1 sm:px-2 hover:shadow-2xl active:scale-[0.98] transition-all cursor-pointer select-none"
+            {/* Logo Ufficiale Street Review -> Link alla Landing Page */}
+            <a
+              href="landing.html"
+              title="Street Review · Scopri il progetto e la landing promozionale"
+              className="pointer-events-auto shrink-0 flex items-center gap-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 p-1 sm:px-2.5 hover:shadow-2xl hover:bg-slate-50/90 active:scale-95 transition-all cursor-pointer select-none no-underline text-slate-800 group"
+              style={{ textDecoration: 'none' }}
             >
               <img
                 src="assets/logo.jpg"
                 alt="Street Review Logo"
-                className="h-9 sm:h-10 w-9 sm:w-10 object-contain rounded-xl"
+                className="h-9 sm:h-10 w-9 sm:w-10 object-contain rounded-xl shadow-xs group-hover:scale-[1.03] transition-transform"
               />
-              <span className="font-black text-xs sm:text-sm text-slate-800 tracking-tight hidden md:inline pr-1">
+              <span className="font-black text-xs sm:text-sm text-slate-800 tracking-tight hidden md:inline pr-1 no-underline group-hover:text-blue-600 transition-colors">
                 Street Review
               </span>
-            </div>
+            </a>
 
             {/* Barra di ricerca dinamica */}
             <div ref={searchContainerRef} className="flex-1 max-w-md pointer-events-auto">
