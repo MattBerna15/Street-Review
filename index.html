@@ -216,20 +216,90 @@
 
     // --- STRADARIO LOCALE PER L'AUTOCOMPLETE (GEOFENCING PILOTA) ---
     const LOCAL_GAZETTEER = [
-      { name: 'Viale Secondo Moretti', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9460, lng: 13.8812 },
+      { name: 'Viale Secondo Moretti', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9517, lng: 13.8822 },
       { name: 'Lungomare San Benedetto del Tronto', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9380, lng: 13.8890 },
-      { name: 'Lungomare Nord (Giardini Tematici)', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9510, lng: 13.8860 },
-      { name: 'Lungomare Sud (Rotonda Porto d\'Ascoli)', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9180, lng: 13.8970 },
-      { name: 'Via Mare (Porto d\'Ascoli)', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9120, lng: 13.8880 },
-      { name: 'Corso Mazzini', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9475, lng: 13.8780 },
-      { name: 'Piazza Carlo Giorgini', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9436, lng: 13.8829 },
-      { name: 'Lungomare Alcide De Gasperi', city: 'Grottammare', postalCode: '63066', lat: 42.9850, lng: 13.8720 },
-      { name: 'Corso Giuseppe Mazzini', city: 'Grottammare', postalCode: '63066', lat: 42.9880, lng: 13.8700 },
-      { name: 'Piazza Pericle Fazzini', city: 'Grottammare', postalCode: '63066', lat: 42.9830, lng: 13.8710 },
-      { name: 'Via Salaria (Centobuchi)', city: 'Monteprandone', postalCode: '63076', lat: 42.9160, lng: 13.8640 },
-      { name: 'Piazza dell\'Aquila (Borgo Storico)', city: 'Monteprandone', postalCode: '63076', lat: 42.9215, lng: 13.8340 },
-      { name: 'Piazza del Forte', city: 'Acquaviva Picena', postalCode: '63075', lat: 42.9430, lng: 13.8140 },
+      { name: 'Lungomare Nord (Giardini Tematici)', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9492, lng: 13.8864 },
+      { name: 'Lungomare Sud (Rotonda Porto d\'Ascoli)', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9165, lng: 13.9039 },
+      { name: 'Via Mare (Porto d\'Ascoli)', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9156, lng: 13.8967 },
+      { name: 'Corso Mazzini', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9585, lng: 13.8754 },
+      { name: 'Piazza Carlo Giorgini', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9523, lng: 13.8847 },
+      { name: 'Lungomare Alcide De Gasperi', city: 'Grottammare', postalCode: '63066', lat: 42.9744, lng: 13.8769 },
+      { name: 'Corso Giuseppe Mazzini', city: 'Grottammare', postalCode: '63066', lat: 42.9667, lng: 13.8730 },
+      { name: 'Piazza Pericle Fazzini', city: 'Grottammare', postalCode: '63066', lat: 42.9906, lng: 13.8687 },
+      { name: 'Via Salaria (Centobuchi)', city: 'Monteprandone', postalCode: '63076', lat: 42.8977, lng: 13.8498 },
+      { name: 'Piazza dell\'Aquila (Borgo Storico)', city: 'Monteprandone', postalCode: '63076', lat: 42.9200, lng: 13.8356 },
+      { name: 'Piazza del Forte', city: 'Acquaviva Picena', postalCode: '63075', lat: 42.9445, lng: 13.8124 },
     ];
+
+    // Helper di normalizzazione del nome della via (es. "v.le secondo moretti" -> "secondo moretti")
+    const normalizeStreetKey = (name) => {
+      if (!name) return '';
+      return name
+        .toLowerCase()
+        .replace(/\b(viale|via|corso|piazza|lungomare|largo|strada|contrada|v\.le|c\.so|p\.zza)\b/gi, '')
+        .replace(/[^a-z0-9]/g, '')
+        .trim();
+    };
+
+    // Ricerca punto di ancoraggio canonico dal gazetteer o dal nome
+    const getCanonicalStreetAnchor = (streetName, fallbackLat, fallbackLng) => {
+      if (!streetName) return { lat: fallbackLat, lng: fallbackLng };
+      const rawKey = streetName.toLowerCase().trim();
+      const normKey = normalizeStreetKey(streetName);
+
+      const match = LOCAL_GAZETTEER.find(g => {
+        const gRaw = g.name.toLowerCase().trim();
+        const gNorm = normalizeStreetKey(g.name);
+        return gRaw === rawKey || (normKey && gNorm === normKey);
+      });
+
+      if (match) {
+        return { lat: match.lat, lng: match.lng, city: match.city, postalCode: match.postalCode, canonicalName: match.name };
+      }
+      return { lat: fallbackLat, lng: fallbackLng, city: null, postalCode: null, canonicalName: streetName };
+    };
+
+    // Funzione rapida per aggiornare le coordinate di qualsiasi recensione/strada su Firestore
+    window.updateStreetReviewCoordinates = async (streetTargetName, newLat, newLng) => {
+      if (!window.db) {
+        console.error("Firestore non inizializzato");
+        return { success: false, error: "Database not connected" };
+      }
+      try {
+        const normTarget = normalizeStreetKey(streetTargetName);
+        const snapshot = await window.db.collection('reviews').get();
+        const batch = window.db.batch();
+        let count = 0;
+
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          const docNorm = normalizeStreetKey(data.streetName);
+          if (docNorm === normTarget || (data.streetName || '').toLowerCase().includes(streetTargetName.toLowerCase())) {
+            batch.update(docSnap.ref, {
+              latitude: Number(newLat),
+              longitude: Number(newLng),
+              updatedAt: new Date().toISOString()
+            });
+            count++;
+          }
+        });
+
+        if (count > 0) {
+          await batch.commit();
+          console.log(`[Street Review] Aggiornate con successo ${count} recensioni per '${streetTargetName}' con lat: ${newLat}, lng: ${newLng}`);
+          return { success: true, count };
+        } else {
+          console.warn(`[Street Review] Nessuna recensione trovata per '${streetTargetName}'`);
+          return { success: false, count: 0 };
+        }
+      } catch (err) {
+        console.error("[Street Review] Errore aggiornamento coordinate:", err);
+        return { success: false, error: err };
+      }
+    };
+
+    // Helper preconfigurato specifico per 'Viale Secondo Moretti'
+    window.fixVialeSecondoMoretti = () => window.updateStreetReviewCoordinates('Viale Secondo Moretti', 42.9517, 13.8822);
 
     function App() {
       // 1. ELIMINAZIONE DATI FITTIZI: L'app parte con 0 PIN fittizi!
@@ -349,13 +419,21 @@
             console.log('Recensioni caricate da Firestore:', snapshot.docs.length);
             const cloudReviews = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // Raggruppa le recensioni per strada
+            // Raggruppa le recensioni per strada in modo normalizzato e deduplicato
             const reviewsByStreet = {};
             cloudReviews.forEach(r => {
-              const key = (r.streetName || '').toLowerCase().trim();
-              if (!key) return;
-              if (!reviewsByStreet[key]) reviewsByStreet[key] = [];
-              reviewsByStreet[key].push(r);
+              const rawName = (r.streetName || '').trim();
+              if (!rawName) return;
+              const normKey = normalizeStreetKey(rawName) || rawName.toLowerCase();
+              if (!reviewsByStreet[normKey]) {
+                reviewsByStreet[normKey] = {
+                  canonicalName: rawName,
+                  rawKeys: new Set(),
+                  reviews: []
+                };
+              }
+              reviewsByStreet[normKey].rawKeys.add(rawName.toLowerCase());
+              reviewsByStreet[normKey].reviews.push(r);
             });
 
             // Ricostruisci o aggiorna l'elenco delle strade attive con recensioni da Firestore
@@ -363,13 +441,24 @@
               const updated = [];
               const processedKeys = new Set();
 
-              Object.keys(reviewsByStreet).forEach(key => {
-                processedKeys.add(key);
-                const revList = reviewsByStreet[key];
+              Object.keys(reviewsByStreet).forEach(normKey => {
+                const group = reviewsByStreet[normKey];
+                const revList = group.reviews;
                 const sample = revList[0];
+                const rawName = group.canonicalName || sample.streetName;
 
-                const gazetteerMatch = LOCAL_GAZETTEER.find(g => g.name.toLowerCase().trim() === key);
-                const existing = prevStreets.find(s => s.name.toLowerCase().trim() === key);
+                // Trova eventuale punto canonico nel gazetteer o usa la coordinata della prima recensione
+                const anchor = getCanonicalStreetAnchor(rawName, sample.latitude, sample.longitude);
+                const streetName = anchor.canonicalName || rawName;
+
+                // Controlla corrispondenza con strade precedentemente caricate
+                const existing = prevStreets.find(s => {
+                  const sNorm = normalizeStreetKey(s.name) || s.name.toLowerCase().trim();
+                  return sNorm === normKey || group.rawKeys.has(s.name.toLowerCase().trim());
+                });
+
+                processedKeys.add(normKey);
+                group.rawKeys.forEach(k => processedKeys.add(k));
 
                 const catKeys = [
                   'roadSurface', 'groundSignage', 'verticalSignage', 'parkingQuantity',
@@ -403,12 +492,12 @@
                 }));
 
                 const streetObj = {
-                  id: existing?.id || sample.streetId || 'street-' + key.replace(/[^a-z0-9]/g, '-'),
-                  name: gazetteerMatch?.name || sample.streetName,
-                  city: gazetteerMatch?.city || sample.streetCity || 'San Benedetto del Tronto',
-                  postalCode: gazetteerMatch?.postalCode || sample.postalCode || '63074',
-                  latitude: gazetteerMatch?.lat || sample.latitude,
-                  longitude: gazetteerMatch?.lng || sample.longitude,
+                  id: existing?.id || sample.streetId || 'street-' + normKey.replace(/[^a-z0-9]/g, '-'),
+                  name: streetName,
+                  city: anchor.city || sample.streetCity || 'San Benedetto del Tronto',
+                  postalCode: anchor.postalCode || sample.postalCode || '63074',
+                  latitude: anchor.lat,
+                  longitude: anchor.lng,
                   reviewsCount: revList.length,
                   avgOverallRating: newAvg,
                   categoryAverages: updatedCat,
@@ -542,20 +631,78 @@
                     const lat = place.geometry.location.lat();
                     const lng = place.geometry.location.lng();
                     if (isInsideBounds(lat, lng)) {
+                      // Estrai il nome pulito della strada da address_components se disponibile
+                      let routeName = '';
+                      if (place.address_components) {
+                        const routeComp = place.address_components.find(c => c.types.includes('route'));
+                        if (routeComp) routeName = routeComp.long_name;
+                      }
+                      const resolvedName = routeName || place.name || (place.formatted_address ? place.formatted_address.split(',')[0] : 'Via Sconosciuta');
+
+                      // Risolvi eventuale ancoraggio canonico dal gazetteer o usa la geometria di place
+                      const anchor = getCanonicalStreetAnchor(resolvedName, lat, lng);
+
                       handleSelectStreet({
-                        name: place.name || place.formatted_address.split(',')[0],
-                        city: 'San Benedetto del Tronto',
-                        postalCode: '63074',
-                        lat,
-                        lng,
+                        name: anchor.canonicalName || resolvedName,
+                        city: anchor.city || 'San Benedetto del Tronto',
+                        postalCode: anchor.postalCode || '63074',
+                        lat: anchor.lat,
+                        lng: anchor.lng,
                       });
-                      setSearchQuery(place.name || place.formatted_address);
+                      setSearchQuery(anchor.canonicalName || resolvedName);
                     } else {
                       setIsOutOfAreaOpen(true);
                     }
                   }
                 });
               }
+
+              // Click listener su Google Maps per posizionamento o selezione della via
+              const geocoder = new window.google.maps.Geocoder();
+              gmap.addListener('click', (e) => {
+                const lat = e.latLng.lat();
+                const lng = e.latLng.lng();
+                if (!isInsideBounds(lat, lng)) {
+                  setIsOutOfAreaOpen(true);
+                  return;
+                }
+
+                geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+                  if (status === 'OK' && results && results.length > 0) {
+                    // Cerca prioritariamente un risultato di tipo 'route' (strada)
+                    const routeResult = results.find(r => r.types && r.types.includes('route'));
+                    const bestResult = routeResult || results[0];
+
+                    let streetName = '';
+                    if (bestResult.address_components) {
+                      const routeComp = bestResult.address_components.find(c => c.types.includes('route'));
+                      if (routeComp) streetName = routeComp.long_name;
+                    }
+                    if (!streetName && routeResult) {
+                      streetName = routeResult.formatted_address.split(',')[0];
+                    }
+                    if (!streetName) {
+                      streetName = bestResult.formatted_address.split(',')[0];
+                    }
+
+                    // Se abbiamo trovato una via, cerchiamo di usare il suo baricentro ufficiale (route) o il gazetteer
+                    const anchor = getCanonicalStreetAnchor(
+                      streetName,
+                      routeResult && routeResult.geometry ? routeResult.geometry.location.lat() : lat,
+                      routeResult && routeResult.geometry ? routeResult.geometry.location.lng() : lng
+                    );
+
+                    handleSelectStreet({
+                      name: anchor.canonicalName || streetName,
+                      city: anchor.city || 'San Benedetto del Tronto',
+                      postalCode: anchor.postalCode || '63074',
+                      lat: anchor.lat,
+                      lng: anchor.lng,
+                    });
+                    setSearchQuery(anchor.canonicalName || streetName);
+                  }
+                });
+              });
 
               return true;
             } catch (err) {
@@ -589,6 +736,34 @@
           leafletMarkersRef.current = L.layerGroup().addTo(lmap);
           leafletMapRef.current = lmap;
           setMapEngine('leaflet');
+
+          // Click listener per Leaflet (fallback con reverse geocoding OSM Nominatim)
+          lmap.on('click', (e) => {
+            const { lat, lng } = e.latlng;
+            if (!isInsideBounds(lat, lng)) {
+              setIsOutOfAreaOpen(true);
+              return;
+            }
+
+            fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`)
+              .then(res => res.json())
+              .then(data => {
+                const addr = data.address || {};
+                const streetName = addr.road || addr.pedestrian || addr.footway || addr.path || addr.suburb || data.display_name.split(',')[0];
+                const anchor = getCanonicalStreetAnchor(streetName, lat, lng);
+                handleSelectStreet({
+                  name: anchor.canonicalName || streetName,
+                  city: anchor.city || addr.city || addr.town || 'San Benedetto del Tronto',
+                  postalCode: anchor.postalCode || addr.postcode || '63074',
+                  lat: anchor.lat,
+                  lng: anchor.lng,
+                });
+                setSearchQuery(anchor.canonicalName || streetName);
+              })
+              .catch(err => {
+                console.warn('Leaflet reverse geocoding notice:', err);
+              });
+          });
         };
 
         const timer = setTimeout(() => {
@@ -748,19 +923,29 @@
       // COMPORTAMENTO ALLA RICERCA DELLA VIA:
       // Centra la mappa, genera il PIN iniziale se non esiste e apre la scheda
       const handleSelectStreet = (target) => {
-        let street = streets.find(
-          s => s.name.toLowerCase() === target.name.toLowerCase()
-        );
+        const targetNorm = normalizeStreetKey(target.name);
+        let street = streets.find(s => {
+          const sNorm = normalizeStreetKey(s.name);
+          return (targetNorm && sNorm === targetNorm) || s.name.toLowerCase().trim() === target.name.toLowerCase().trim();
+        });
+
+        // Risolvi il punto di ancoraggio canonico (se la via è nel gazetteer o già nota)
+        const anchor = getCanonicalStreetAnchor(target.name, target.lat, target.lng);
+        const resolvedLat = anchor.lat;
+        const resolvedLng = anchor.lng;
+        const resolvedName = anchor.canonicalName || target.name;
+        const resolvedCity = anchor.city || target.city || 'San Benedetto del Tronto';
+        const resolvedPostalCode = anchor.postalCode || target.postalCode || '63074';
 
         if (!street) {
           // Genera la strada con stato INIZIALE (0 recensioni)
           street = {
-            id: 'street-' + Date.now(),
-            name: target.name,
-            city: target.city || 'San Benedetto del Tronto',
-            postalCode: target.postalCode || '63074',
-            latitude: target.lat,
-            longitude: target.lng,
+            id: 'street-' + (targetNorm ? targetNorm.replace(/[^a-z0-9]/g, '-') : Date.now()),
+            name: resolvedName,
+            city: resolvedCity,
+            postalCode: resolvedPostalCode,
+            latitude: resolvedLat,
+            longitude: resolvedLng,
             avgOverallRating: 0,
             reviewsCount: 0,
             hasCyclePath: false,
@@ -781,11 +966,14 @@
         setSelectedStreet(street);
         setSheetSnap('half');
 
+        const panLat = street.latitude || resolvedLat;
+        const panLng = street.longitude || resolvedLng;
+
         if (mapEngine === 'google' && googleMapRef.current) {
-          googleMapRef.current.panTo({ lat: target.lat, lng: target.lng });
+          googleMapRef.current.panTo({ lat: panLat, lng: panLng });
           googleMapRef.current.setZoom(16);
         } else if (leafletMapRef.current) {
-          leafletMapRef.current.setView([target.lat, target.lng], 16, { animate: true });
+          leafletMapRef.current.setView([panLat, panLng], 16, { animate: true });
         }
       };
 
@@ -818,13 +1006,18 @@
         const safeStreetKey = encodeURIComponent(selectedStreet.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_'));
         const docId = `${authorId}_${safeStreetKey}`;
 
+        // Risolvi le coordinate canoniche della via
+        const canonicalAnchor = getCanonicalStreetAnchor(selectedStreet.name, selectedStreet.latitude, selectedStreet.longitude);
+        const finalLat = canonicalAnchor.lat || selectedStreet.latitude;
+        const finalLng = canonicalAnchor.lng || selectedStreet.longitude;
+
         const reviewDoc = {
           streetId: selectedStreet.id || safeStreetKey,
-          streetName: selectedStreet.name,
-          streetCity: selectedStreet.city || 'San Benedetto del Tronto',
-          postalCode: selectedStreet.postalCode || '63074',
-          latitude: selectedStreet.latitude,
-          longitude: selectedStreet.longitude,
+          streetName: canonicalAnchor.canonicalName || selectedStreet.name,
+          streetCity: canonicalAnchor.city || selectedStreet.city || 'San Benedetto del Tronto',
+          postalCode: canonicalAnchor.postalCode || selectedStreet.postalCode || '63074',
+          latitude: finalLat,
+          longitude: finalLng,
           authorId: authorId,
           authorName: authorName,
           authorAvatar: authorAvatar,
