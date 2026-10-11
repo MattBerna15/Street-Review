@@ -225,6 +225,8 @@
       { name: 'Piazza Carlo Giorgini', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9523, lng: 13.8847 },
       { name: 'Viale Alcide De Gasperi', city: 'San Benedetto del Tronto', postalCode: '63074', lat: 42.9458, lng: 13.8830 },
       { name: 'Lungomare Alcide De Gasperi', city: 'Grottammare', postalCode: '63066', lat: 42.9744, lng: 13.8769 },
+      { name: 'Via dei Piceni', city: 'Grottammare', postalCode: '63066', lat: 42.9878, lng: 13.8700 },
+      { name: 'Via Ballestra', city: 'Grottammare', postalCode: '63066', lat: 42.9856, lng: 13.8691 },
       { name: 'Corso Giuseppe Mazzini', city: 'Grottammare', postalCode: '63066', lat: 42.9667, lng: 13.8730 },
       { name: 'Piazza Pericle Fazzini', city: 'Grottammare', postalCode: '63066', lat: 42.9906, lng: 13.8687 },
       { name: 'Via Salaria (Centobuchi)', city: 'Monteprandone', postalCode: '63076', lat: 42.8977, lng: 13.8498 },
@@ -245,59 +247,200 @@
         .trim();
     };
 
-    // Helper di normalizzazione del comune/città
-    const normalizeCityKey = (city) => {
-      if (!city) return 'san-benedetto-del-tronto';
-      return city
+    // Inferenza geografica del comune nel perimetro pilota a partire dalle coordinate
+    const inferCityKeyFromCoords = (lat, lng) => {
+      const nLat = Number(lat);
+      const nLng = Number(lng);
+      if (!isNaN(nLat) && !isNaN(nLng) && nLat !== 0 && nLng !== 0) {
+        if (nLat >= 42.9635) return 'grottammare';
+        if (nLng < 13.8300 && nLat >= 42.9300) return 'acquaviva-picena';
+        if (nLng < 13.8750 && nLat < 42.9300) return 'monteprandone';
+      }
+      return 'san-benedetto-del-tronto';
+    };
+
+    // Helper di normalizzazione del comune/città con City Aliasing (frazioni -> comune principale) e fallback geografico
+    const normalizeCityKey = (city, lat, lng) => {
+      const raw = (city && city !== 'undefined' && city !== 'null') ? String(city).trim() : '';
+      if (!raw) {
+        return inferCityKeyFromCoords(lat, lng);
+      }
+
+      const slug = raw
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '')
-        .trim() || 'san-benedetto-del-tronto';
+        .trim();
+
+      if (!slug || slug === 'undefined' || slug === 'null') {
+        return inferCityKeyFromCoords(lat, lng);
+      }
+
+      // City Aliasing: frazioni e sinonimi locali -> comune amministrativo principale
+      if (
+        slug.includes('porto-d-ascoli') ||
+        slug.includes('porto-dascoli') ||
+        slug.includes('san-benedetto') ||
+        slug.includes('s-benedetto') ||
+        slug === 'sbt'
+      ) {
+        return 'san-benedetto-del-tronto';
+      }
+      if (slug.includes('centobuchi') || slug.includes('monteprandone')) {
+        return 'monteprandone';
+      }
+      if (slug.includes('grottammare') || slug.includes('grottamare')) {
+        return 'grottammare';
+      }
+      if (slug.includes('acquaviva')) {
+        return 'acquaviva-picena';
+      }
+      // Se arriva solo la provincia (es. "ascoli-piceno" o "ap"), usa il contesto geografico
+      if (slug === 'ap' || slug.includes('provincia-di-ascoli') || slug === 'marche' || slug === 'italia') {
+        return inferCityKeyFromCoords(lat, lng);
+      }
+
+      return slug;
     };
 
-    // Chiave Univoca Composita (Nome Completo + Comune)
+    // Risoluzione nome canonico leggibile del Comune
+    const resolveCanonicalCityName = (city, lat, lng) => {
+      const cKey = normalizeCityKey(city, lat, lng);
+      const map = {
+        'san-benedetto-del-tronto': 'San Benedetto del Tronto',
+        'grottammare': 'Grottammare',
+        'monteprandone': 'Monteprandone',
+        'acquaviva-picena': 'Acquaviva Picena',
+      };
+      return map[cKey] || (city && String(city).trim()) || 'San Benedetto del Tronto';
+    };
+
+    const resolveDefaultPostalCode = (cityKey) => {
+      const map = {
+        'san-benedetto-del-tronto': '63074',
+        'grottammare': '63066',
+        'monteprandone': '63076',
+        'acquaviva-picena': '63075',
+      };
+      return map[cityKey] || '63074';
+    };
+
+    // Chiave Univoca Composita (Nome Completo + Comune Normalizzato)
     // Es: "viale-alcide-de-gasperi_san-benedetto-del-tronto" vs "lungomare-alcide-de-gasperi_grottammare"
-    const createStreetCompositeKey = (streetName, city) => {
+    const createStreetCompositeKey = (streetName, city, lat, lng) => {
       const sKey = normalizeStreetKey(streetName);
-      const cKey = normalizeCityKey(city);
+      const cKey = normalizeCityKey(city, lat, lng);
       return `${sKey}_${cKey}`;
     };
 
-    // Ricerca punto di ancoraggio canonico dal gazetteer rispettando nome e comune
-    const getCanonicalStreetAnchor = (streetName, streetCity, fallbackLat, fallbackLng) => {
-      if (!streetName) return { lat: fallbackLat, lng: fallbackLng, city: streetCity || null, postalCode: null, canonicalName: streetName };
-      const sNorm = normalizeStreetKey(streetName);
-      const cNorm = streetCity ? normalizeCityKey(streetCity) : null;
+    // Calcolo distanza Haversine in km tra due punti geografici
+    const getDistanceKm = (lat1, lng1, lat2, lng2) => {
+      const nLat1 = Number(lat1), nLng1 = Number(lng1), nLat2 = Number(lat2), nLng2 = Number(lng2);
+      if (isNaN(nLat1) || isNaN(nLng1) || isNaN(nLat2) || isNaN(nLng2) || !nLat1 || !nLng1 || !nLat2 || !nLng2) {
+        return Infinity;
+      }
+      const R = 6371;
+      const dLat = (nLat2 - nLat1) * Math.PI / 180;
+      const dLng = (nLng2 - nLng1) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(nLat1 * Math.PI / 180) * Math.cos(nLat2 * Math.PI / 180) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    };
 
+    // Deduplicazione Spaziale & Toponomastica:
+    // Due record appartengono alla stessa strada se hanno lo stesso nome toponomastico normalizzato
+    // E (si trovano entro 2.5 km lungo lo stesso asse viario OPPURE condividono il medesimo comune normalizzato)
+    const isSameStreet = (a, b) => {
+      if (!a || !b) return false;
+      const sNormA = normalizeStreetKey(a.name || a.streetName || a.canonicalName);
+      const sNormB = normalizeStreetKey(b.name || b.streetName || b.canonicalName);
+      if (!sNormA || !sNormB || sNormA !== sNormB) return false;
+
+      const latA = Number(a.lat ?? a.latitude);
+      const lngA = Number(a.lng ?? a.longitude);
+      const latB = Number(b.lat ?? b.latitude);
+      const lngB = Number(b.lng ?? b.longitude);
+
+      const hasCoordsA = !isNaN(latA) && !isNaN(lngA) && latA !== 0 && lngA !== 0;
+      const hasCoordsB = !isNaN(latB) && !isNaN(lngB) && latB !== 0 && lngB !== 0;
+
+      if (hasCoordsA && hasCoordsB) {
+        const distKm = getDistanceKm(latA, lngA, latB, lngB);
+        if (distKm <= 2.5) return true;
+        if (distKm > 3.5) return false;
+      }
+
+      const cKeyA = normalizeCityKey(a.city || a.streetCity, hasCoordsA ? latA : null, hasCoordsA ? lngA : null);
+      const cKeyB = normalizeCityKey(b.city || b.streetCity, hasCoordsB ? latB : null, hasCoordsB ? lngB : null);
+      return cKeyA === cKeyB;
+    };
+
+    // Ricerca punto di ancoraggio canonico dal gazetteer rispettando nome, comune e prossimità
+    const getCanonicalStreetAnchor = (streetName, streetCity, fallbackLat, fallbackLng) => {
+      const resolvedCity = resolveCanonicalCityName(streetCity, fallbackLat, fallbackLng);
+      const resolvedCityKey = normalizeCityKey(resolvedCity, fallbackLat, fallbackLng);
+      const defaultPostal = resolveDefaultPostalCode(resolvedCityKey);
+
+      if (!streetName) {
+        return { lat: fallbackLat, lng: fallbackLng, city: resolvedCity, postalCode: defaultPostal, canonicalName: streetName };
+      }
+
+      const sNorm = normalizeStreetKey(streetName);
       const match = LOCAL_GAZETTEER.find(g => {
         const gSNorm = normalizeStreetKey(g.name);
-        const gCNorm = normalizeCityKey(g.city);
-        if (cNorm) {
-          return gSNorm === sNorm && gCNorm === cNorm;
+        if (gSNorm !== sNorm) return false;
+        const gCNorm = normalizeCityKey(g.city, g.lat, g.lng);
+        if (fallbackLat && fallbackLng && getDistanceKm(g.lat, g.lng, fallbackLat, fallbackLng) <= 2.5) {
+          return true;
         }
-        return gSNorm === sNorm;
+        return gCNorm === resolvedCityKey;
       });
 
       if (match) {
         return { lat: match.lat, lng: match.lng, city: match.city, postalCode: match.postalCode, canonicalName: match.name };
       }
-      return { lat: fallbackLat, lng: fallbackLng, city: streetCity || null, postalCode: null, canonicalName: streetName };
+      return { lat: fallbackLat, lng: fallbackLng, city: resolvedCity, postalCode: defaultPostal, canonicalName: streetName };
     };
 
-    // Helper per estrarre comune, cap e via da address_components di Google Places o Geocoder
-    const extractAddressDetails = (addressComponents) => {
-      let city = '';
+    // Helper per estrarre comune, cap e via da address_components di Google Places o Geocoder con City Aliasing e fallback geografico
+    const extractAddressDetails = (addressComponents, formattedAddress = '', lat = null, lng = null) => {
+      let rawCity = '';
       let postalCode = '';
       let route = '';
       if (Array.isArray(addressComponents)) {
-        const localityComp = addressComponents.find(c => c.types && c.types.includes('locality'));
         const admin3Comp = addressComponents.find(c => c.types && c.types.includes('administrative_area_level_3'));
+        const localityComp = addressComponents.find(c => c.types && c.types.includes('locality'));
+        const sublocalityComp = addressComponents.find(c => c.types && (c.types.includes('sublocality') || c.types.includes('sublocality_level_1')));
         const postalComp = addressComponents.find(c => c.types && c.types.includes('postal_code'));
         const routeComp = addressComponents.find(c => c.types && c.types.includes('route'));
 
-        city = (localityComp && localityComp.long_name) || (admin3Comp && admin3Comp.long_name) || '';
+        // Preferisci administrative_area_level_3 (Comune ufficiale in Italia) o locality, normalizzando eventuali frazioni
+        rawCity = (admin3Comp && admin3Comp.long_name) || (localityComp && localityComp.long_name) || (sublocalityComp && sublocalityComp.long_name) || '';
         postalCode = (postalComp && postalComp.long_name) || '';
         route = (routeComp && routeComp.long_name) || '';
+      }
+
+      if (!rawCity && postalCode) {
+        if (postalCode === '63066') rawCity = 'Grottammare';
+        else if (postalCode === '63076') rawCity = 'Monteprandone';
+        else if (postalCode === '63075') rawCity = 'Acquaviva Picena';
+        else if (postalCode === '63074') rawCity = 'San Benedetto del Tronto';
+      }
+
+      if (!rawCity && formattedAddress) {
+        const fmtLower = formattedAddress.toLowerCase();
+        if (fmtLower.includes('grottammare')) rawCity = 'Grottammare';
+        else if (fmtLower.includes('monteprandone') || fmtLower.includes('centobuchi')) rawCity = 'Monteprandone';
+        else if (fmtLower.includes('acquaviva')) rawCity = 'Acquaviva Picena';
+        else if (fmtLower.includes('san benedetto') || fmtLower.includes('porto d\'ascoli')) rawCity = 'San Benedetto del Tronto';
+      }
+
+      const city = resolveCanonicalCityName(rawCity, lat, lng);
+      const cityKey = normalizeCityKey(city, lat, lng);
+      if (!postalCode) {
+        postalCode = resolveDefaultPostalCode(cityKey);
       }
       return { city, postalCode, route };
     };
@@ -341,8 +484,68 @@
       }
     };
 
-    // Helper preconfigurato specifico per 'Viale Secondo Moretti'
+    // Routine di allineamento e deduplicazione su Firestore per riallineare recensioni con comune/coordinate discordanti
+    window.alignStreetReviewsOnFirestore = async (streetTargetName, targetCity = null, targetPostalCode = null, targetLat = null, targetLng = null) => {
+      if (!window.db) {
+        console.error("Firestore non inizializzato");
+        return { success: false, error: "Database not connected" };
+      }
+      try {
+        const normTarget = normalizeStreetKey(streetTargetName);
+        const snapshot = await window.db.collection('reviews').get();
+        const matchingDocs = [];
+
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          if (normalizeStreetKey(data.streetName) === normTarget) {
+            matchingDocs.push({ ref: docSnap.ref, id: docSnap.id, data });
+          }
+        });
+
+        if (matchingDocs.length === 0) {
+          console.warn(`[Street Review] Nessuna recensione trovata per '${streetTargetName}'`);
+          return { success: false, count: 0 };
+        }
+
+        // Calcola baricentro se non passato esplicitamente
+        const validCoords = matchingDocs.filter(d => d.data.latitude && d.data.longitude);
+        const baryLat = targetLat || (validCoords.length > 0
+          ? Number((validCoords.reduce((acc, d) => acc + Number(d.data.latitude), 0) / validCoords.length).toFixed(6))
+          : 42.9878);
+        const baryLng = targetLng || (validCoords.length > 0
+          ? Number((validCoords.reduce((acc, d) => acc + Number(d.data.longitude), 0) / validCoords.length).toFixed(6))
+          : 13.8700);
+
+        const resolvedCity = resolveCanonicalCityName(targetCity, baryLat, baryLng);
+        const anchor = getCanonicalStreetAnchor(streetTargetName, resolvedCity, baryLat, baryLng);
+        const compKey = createStreetCompositeKey(anchor.canonicalName || streetTargetName, anchor.city || resolvedCity, anchor.lat, anchor.lng);
+        const canonicalStreetId = 'street-' + compKey.replace(/[^a-z0-9]/g, '-');
+
+        const batch = window.db.batch();
+        matchingDocs.forEach(docItem => {
+          batch.update(docItem.ref, {
+            streetName: anchor.canonicalName || streetTargetName,
+            streetCity: anchor.city || resolvedCity,
+            postalCode: targetPostalCode || anchor.postalCode || resolveDefaultPostalCode(normalizeCityKey(resolvedCity, anchor.lat, anchor.lng)),
+            streetId: canonicalStreetId,
+            latitude: Number(anchor.lat),
+            longitude: Number(anchor.lng),
+            updatedAt: new Date().toISOString()
+          });
+        });
+
+        await batch.commit();
+        console.log(`[Street Review] Allineate ${matchingDocs.length} recensioni per '${streetTargetName}' sotto chiave '${compKey}' (${anchor.city}, lat: ${anchor.lat}, lng: ${anchor.lng})`);
+        return { success: true, count: matchingDocs.length, compositeKey: compKey };
+      } catch (err) {
+        console.error("[Street Review] Errore allineamento recensioni Firestore:", err);
+        return { success: false, error: err };
+      }
+    };
+
+    // Helper preconfigurati per allineamento rapido da console
     window.fixVialeSecondoMoretti = () => window.updateStreetReviewCoordinates('Viale Secondo Moretti', 42.9517, 13.8822);
+    window.fixViaDeiPiceni = () => window.alignStreetReviewsOnFirestore('Via dei Piceni', 'Grottammare', '63066', 42.9878, 13.8700);
 
     function App() {
       // 1. ELIMINAZIONE DATI FITTIZI: L'app parte con 0 PIN fittizi!
@@ -462,49 +665,89 @@
             console.log('Recensioni caricate da Firestore:', snapshot.docs.length);
             const cloudReviews = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // Raggruppa le recensioni per strada in modo normalizzato e deduplicato (Nome Completo + Comune)
-            const reviewsByStreet = {};
+            // Raggruppa le recensioni per strada con Deduplicazione Spaziale & Toponomastica:
+            // Se due gruppi hanno lo stesso nome strada normalizzato e si trovano entro una distanza compatibile
+            // con lo stesso asse viario (<= 2.5 km) o condividono il medesimo comune normalizzato, vengono fusi in un singolo badge.
+            const streetGroups = [];
             cloudReviews.forEach(r => {
               const rawName = (r.streetName || '').trim();
               if (!rawName) return;
-              const streetCity = r.streetCity || 'San Benedetto del Tronto';
-              const compositeKey = createStreetCompositeKey(rawName, streetCity);
-              if (!reviewsByStreet[compositeKey]) {
-                reviewsByStreet[compositeKey] = {
+
+              const candidate = {
+                name: rawName,
+                city: r.streetCity,
+                lat: r.latitude,
+                lng: r.longitude,
+              };
+
+              let targetGroup = streetGroups.find(g => isSameStreet(g, candidate));
+              if (!targetGroup) {
+                targetGroup = {
                   canonicalName: rawName,
-                  city: streetCity,
+                  city: r.streetCity || '',
                   postalCode: r.postalCode || '',
-                  rawKeys: new Set(),
-                  reviews: []
+                  latitude: Number(r.latitude) || 0,
+                  longitude: Number(r.longitude) || 0,
+                  reviews: [],
                 };
+                streetGroups.push(targetGroup);
               }
-              reviewsByStreet[compositeKey].rawKeys.add(rawName.toLowerCase());
-              reviewsByStreet[compositeKey].reviews.push(r);
+              targetGroup.reviews.push(r);
+
+              // Ricalcola dinamicamente il baricentro geometrico dell'asse stradale
+              const validCoords = targetGroup.reviews.filter(rev =>
+                rev.latitude && rev.longitude && !isNaN(Number(rev.latitude)) && !isNaN(Number(rev.longitude))
+              );
+              if (validCoords.length > 0) {
+                targetGroup.latitude = Number((validCoords.reduce((acc, rev) => acc + Number(rev.latitude), 0) / validCoords.length).toFixed(6));
+                targetGroup.longitude = Number((validCoords.reduce((acc, rev) => acc + Number(rev.longitude), 0) / validCoords.length).toFixed(6));
+              }
             });
 
             // Ricostruisci o aggiorna l'elenco delle strade attive con recensioni da Firestore
             setStreets(prevStreets => {
               const updated = [];
-              const processedKeys = new Set();
 
-              Object.keys(reviewsByStreet).forEach(compKey => {
-                const group = reviewsByStreet[compKey];
+              streetGroups.forEach(group => {
                 const revList = group.reviews;
                 const sample = revList[0];
                 const rawName = group.canonicalName || sample.streetName;
-                const rawCity = group.city || sample.streetCity || 'San Benedetto del Tronto';
+                const baryLat = group.latitude || Number(sample.latitude) || 42.9517;
+                const baryLng = group.longitude || Number(sample.longitude) || 13.8822;
 
-                // Trova eventuale punto canonico nel gazetteer rispettando sia nome che comune
-                const anchor = getCanonicalStreetAnchor(rawName, rawCity, sample.latitude, sample.longitude);
+                // Risolvi il comune effettivo usando il contesto geografico del baricentro e il City Aliasing
+                const inferredCityKey = inferCityKeyFromCoords(baryLat, baryLng);
+                const matchingCityReview = revList.find(rev => normalizeCityKey(rev.streetCity, rev.latitude, rev.longitude) === inferredCityKey);
+                const rawCity = (matchingCityReview && matchingCityReview.streetCity) || resolveCanonicalCityName(group.city || sample.streetCity, baryLat, baryLng);
+
+                // Determina un unico punto di ancoraggio geometrico coerente (gazetteer o baricentro dell'asse stradale)
+                const anchor = getCanonicalStreetAnchor(rawName, rawCity, baryLat, baryLng);
                 const streetName = anchor.canonicalName || rawName;
-                const streetCity = anchor.city || rawCity;
+                const streetCity = anchor.city || resolveCanonicalCityName(rawCity, baryLat, baryLng);
+                const compKey = createStreetCompositeKey(streetName, streetCity, anchor.lat, anchor.lng);
+                const canonicalStreetId = 'street-' + compKey.replace(/[^a-z0-9]/g, '-');
 
-                // Controlla corrispondenza con strade precedentemente caricate tramite chiave composita
-                const existing = prevStreets.find(s => {
-                  return createStreetCompositeKey(s.name, s.city) === compKey;
-                });
+                // Auto-allineamento silenzioso su Firestore per eventuali recensioni storiche dell'utente autenticato con comune/chiave non allineati
+                const activeAuthUid = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser && window.firebase.auth().currentUser.uid) || null;
+                if (activeAuthUid) {
+                  revList.forEach(rev => {
+                    if (rev.authorId === activeAuthUid && (rev.streetCity !== streetCity || rev.streetId !== canonicalStreetId)) {
+                      firestore.collection('reviews').doc(rev.id).update({
+                        streetName: streetName,
+                        streetCity: streetCity,
+                        postalCode: anchor.postalCode || resolveDefaultPostalCode(normalizeCityKey(streetCity, anchor.lat, anchor.lng)),
+                        streetId: canonicalStreetId,
+                        latitude: Number(anchor.lat),
+                        longitude: Number(anchor.lng),
+                      }).catch(() => {});
+                    }
+                  });
+                }
 
-                processedKeys.add(compKey);
+                // Controlla corrispondenza con strade precedentemente caricate
+                const existing = prevStreets.find(s =>
+                  isSameStreet(s, { name: streetName, city: streetCity, lat: anchor.lat, lng: anchor.lng })
+                );
 
                 const catKeys = [
                   'roadSurface', 'groundSignage', 'verticalSignage', 'parkingQuantity',
@@ -538,10 +781,10 @@
                 }));
 
                 const streetObj = {
-                  id: existing?.id || sample.streetId || 'street-' + compKey.replace(/[^a-z0-9]/g, '-'),
+                  id: existing?.id || ('street-' + compKey.replace(/[^a-z0-9]/g, '-')),
                   name: streetName,
                   city: streetCity,
-                  postalCode: anchor.postalCode || sample.postalCode || '63074',
+                  postalCode: anchor.postalCode || resolveDefaultPostalCode(normalizeCityKey(streetCity, anchor.lat, anchor.lng)),
                   latitude: anchor.lat,
                   longitude: anchor.lng,
                   reviewsCount: revList.length,
@@ -556,10 +799,10 @@
                 updated.push(streetObj);
               });
 
-              // Mantieni eventuali strade temporanee a 0 recensioni attualmente aperte dall'utente
+              // Mantieni eventuali strade temporanee a 0 recensioni attualmente aperte dall'utente se non già fuse
               prevStreets.forEach(s => {
-                const sCompKey = createStreetCompositeKey(s.name, s.city);
-                if (!processedKeys.has(sCompKey) && s.reviewsCount === 0) {
+                const alreadyMerged = updated.some(u => isSameStreet(u, s));
+                if (!alreadyMerged && s.reviewsCount === 0) {
                   updated.push(s);
                 }
               });
@@ -578,12 +821,14 @@
       // Mantieni allineata la scheda della strada attualmente aperta con i dati in tempo reale
       useEffect(() => {
         if (!selectedStreet) return;
-        const currentCompKey = createStreetCompositeKey(selectedStreet.name, selectedStreet.city);
-        const matching = streets.find(s => createStreetCompositeKey(s.name, s.city) === currentCompKey);
+        const matching = streets.find(s => isSameStreet(s, selectedStreet));
         if (matching && (
+          matching.id !== selectedStreet.id ||
           matching.reviewsCount !== selectedStreet.reviewsCount ||
           matching.avgOverallRating !== selectedStreet.avgOverallRating ||
-          matching.reviews?.length !== selectedStreet.reviews?.length
+          matching.reviews?.length !== selectedStreet.reviews?.length ||
+          matching.latitude !== selectedStreet.latitude ||
+          matching.longitude !== selectedStreet.longitude
         )) {
           setSelectedStreet(matching);
         }
@@ -596,20 +841,37 @@
 
         const results = [];
 
+        // 1. Cerca nello stradario locale
         LOCAL_GAZETTEER.forEach(item => {
           if (item.name.toLowerCase().includes(q) || item.city.toLowerCase().includes(q)) {
-            // Controlla se è già recensita in streets tramite chiave composita (nome + comune)
-            const itemCompKey = createStreetCompositeKey(item.name, item.city);
-            const existing = streets.find(s => createStreetCompositeKey(s.name, s.city) === itemCompKey);
+            const existing = streets.find(s => isSameStreet(s, item));
             results.push({
-              name: item.name,
-              city: item.city,
-              postalCode: item.postalCode,
-              lat: item.lat,
-              lng: item.lng,
+              name: existing ? existing.name : item.name,
+              city: existing ? existing.city : item.city,
+              postalCode: existing ? existing.postalCode : item.postalCode,
+              lat: existing ? existing.latitude : item.lat,
+              lng: existing ? existing.longitude : item.lng,
               rating: existing && existing.reviewsCount > 0 ? existing.avgOverallRating : null,
               reviewsCount: existing ? existing.reviewsCount : 0,
             });
+          }
+        });
+
+        // 2. Includi anche le vie già recensite su Firestore che corrispondono alla ricerca
+        streets.forEach(s => {
+          if (s.name.toLowerCase().includes(q) || (s.city && s.city.toLowerCase().includes(q))) {
+            const alreadyInResults = results.some(r => isSameStreet(r, s));
+            if (!alreadyInResults) {
+              results.push({
+                name: s.name,
+                city: s.city,
+                postalCode: s.postalCode,
+                lat: s.latitude,
+                lng: s.longitude,
+                rating: s.reviewsCount > 0 ? s.avgOverallRating : null,
+                reviewsCount: s.reviewsCount || 0,
+              });
+            }
           }
         });
 
@@ -679,18 +941,18 @@
                     const lat = place.geometry.location.lat();
                     const lng = place.geometry.location.lng();
                     if (isInsideBounds(lat, lng)) {
-                      // Estrai via, comune e cap da address_components se disponibile
-                      const addrDetails = extractAddressDetails(place.address_components);
+                      // Estrai via, comune normalizzato e cap da address_components + contesto geografico
+                      const addrDetails = extractAddressDetails(place.address_components, place.formatted_address || '', lat, lng);
                       const resolvedName = addrDetails.route || place.name || (place.formatted_address ? place.formatted_address.split(',')[0] : 'Via Sconosciuta');
-                      const resolvedCity = addrDetails.city || 'San Benedetto del Tronto';
+                      const resolvedCity = addrDetails.city;
 
-                      // Risolvi eventuale ancoraggio canonico dal gazetteer rispettando sia nome che comune
+                      // Risolvi eventuale ancoraggio canonico dal gazetteer rispettando nome, comune e prossimità
                       const anchor = getCanonicalStreetAnchor(resolvedName, resolvedCity, lat, lng);
 
                       handleSelectStreet({
                         name: anchor.canonicalName || resolvedName,
                         city: anchor.city || resolvedCity,
-                        postalCode: anchor.postalCode || addrDetails.postalCode || '63074',
+                        postalCode: anchor.postalCode || addrDetails.postalCode,
                         lat: anchor.lat,
                         lng: anchor.lng,
                         placeId: place.place_id || null,
@@ -719,7 +981,15 @@
                     const routeResult = results.find(r => r.types && r.types.includes('route'));
                     const bestResult = routeResult || results[0];
 
-                    const addrDetails = extractAddressDetails(bestResult.address_components);
+                    const fallbackLat = routeResult && routeResult.geometry ? routeResult.geometry.location.lat() : lat;
+                    const fallbackLng = routeResult && routeResult.geometry ? routeResult.geometry.location.lng() : lng;
+
+                    const addrDetails = extractAddressDetails(
+                      bestResult.address_components,
+                      bestResult.formatted_address || '',
+                      fallbackLat,
+                      fallbackLng
+                    );
                     let streetName = addrDetails.route;
                     if (!streetName && routeResult) {
                       streetName = routeResult.formatted_address.split(',')[0];
@@ -727,11 +997,9 @@
                     if (!streetName) {
                       streetName = bestResult.formatted_address.split(',')[0];
                     }
-                    const streetCity = addrDetails.city || 'San Benedetto del Tronto';
+                    const streetCity = addrDetails.city;
 
                     // Se abbiamo trovato una via, cerchiamo di usare il suo baricentro ufficiale (route) o il gazetteer
-                    const fallbackLat = routeResult && routeResult.geometry ? routeResult.geometry.location.lat() : lat;
-                    const fallbackLng = routeResult && routeResult.geometry ? routeResult.geometry.location.lng() : lng;
                     const anchor = getCanonicalStreetAnchor(
                       streetName,
                       streetCity,
@@ -742,7 +1010,7 @@
                     handleSelectStreet({
                       name: anchor.canonicalName || streetName,
                       city: anchor.city || streetCity,
-                      postalCode: anchor.postalCode || addrDetails.postalCode || '63074',
+                      postalCode: anchor.postalCode || addrDetails.postalCode,
                       lat: anchor.lat,
                       lng: anchor.lng,
                       placeId: bestResult.place_id || null,
@@ -970,22 +1238,29 @@
       }, [visibleStreets, selectedStreet, mapEngine]);
 
       // COMPORTAMENTO ALLA RICERCA DELLA VIA:
-      // Centra la mappa, genera il PIN iniziale se non esiste e apre la scheda
+      // Centra la mappa, genera il PIN iniziale se non esiste e apre la scheda unica aggregata
       const handleSelectStreet = (target) => {
-        const targetCity = target.city || 'San Benedetto del Tronto';
-        const targetCompKey = createStreetCompositeKey(target.name, targetCity);
+        const rawLat = target.lat ?? target.latitude;
+        const rawLng = target.lng ?? target.longitude;
+        const targetCity = resolveCanonicalCityName(target.city, rawLat, rawLng);
+        const targetCandidate = {
+          name: target.name,
+          city: targetCity,
+          lat: rawLat,
+          lng: rawLng,
+        };
 
-        let street = streets.find(s => {
-          return createStreetCompositeKey(s.name, s.city) === targetCompKey;
-        });
+        // Cerca se la strada esiste già (per chiave composita o prossimità spaziale sullo stesso asse viario)
+        let street = streets.find(s => isSameStreet(s, targetCandidate));
 
         // Risolvi il punto di ancoraggio canonico (se la via è nel gazetteer o già nota)
-        const anchor = getCanonicalStreetAnchor(target.name, targetCity, target.lat, target.lng);
-        const resolvedLat = anchor.lat;
-        const resolvedLng = anchor.lng;
-        const resolvedName = anchor.canonicalName || target.name;
-        const resolvedCity = anchor.city || targetCity;
-        const resolvedPostalCode = anchor.postalCode || target.postalCode || '63074';
+        const anchor = getCanonicalStreetAnchor(target.name, targetCity, rawLat, rawLng);
+        const resolvedLat = street ? street.latitude : anchor.lat;
+        const resolvedLng = street ? street.longitude : anchor.lng;
+        const resolvedName = street ? street.name : (anchor.canonicalName || target.name);
+        const resolvedCity = street ? street.city : (anchor.city || targetCity);
+        const resolvedPostalCode = street ? street.postalCode : (anchor.postalCode || target.postalCode || resolveDefaultPostalCode(normalizeCityKey(resolvedCity, resolvedLat, resolvedLng)));
+        const targetCompKey = createStreetCompositeKey(resolvedName, resolvedCity, resolvedLat, resolvedLng);
 
         if (!street) {
           // Genera la strada con stato INIZIALE (0 recensioni)
@@ -1011,7 +1286,10 @@
             },
             reviews: [],
           };
-          setStreets(prev => [street, ...prev]);
+          setStreets(prev => {
+            if (prev.some(s => isSameStreet(s, street))) return prev;
+            return [street, ...prev];
+          });
         }
 
         setSelectedStreet(street);
@@ -1053,21 +1331,30 @@
         const authorName = (firebaseAuthUser && firebaseAuthUser.displayName) || (currentUser ? currentUser.name : (reviewPayload.userName || 'Cittadino'));
         const authorAvatar = (firebaseAuthUser && firebaseAuthUser.photoURL) || (currentUser ? currentUser.avatarUrl : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80');
 
-        // ID documento deterministico per utente e per via (chiave composita nome + comune): garantisce che lo stesso autore aggiorni la propria recensione invece di duplicarla
-        const streetCompKey = createStreetCompositeKey(selectedStreet.name, selectedStreet.city);
-        const safeStreetKey = encodeURIComponent(streetCompKey.replace(/[^a-z0-9_]/g, '_'));
-        const docId = `${authorId}_${safeStreetKey}`;
-
-        // Risolvi le coordinate canoniche della via rispettando sia nome che comune
+        // Risolvi le coordinate canoniche e il comune normalizzato della via
         const canonicalAnchor = getCanonicalStreetAnchor(selectedStreet.name, selectedStreet.city, selectedStreet.latitude, selectedStreet.longitude);
         const finalLat = canonicalAnchor.lat || selectedStreet.latitude;
         const finalLng = canonicalAnchor.lng || selectedStreet.longitude;
+        const finalCity = canonicalAnchor.city || resolveCanonicalCityName(selectedStreet.city, finalLat, finalLng);
+        const finalPostal = canonicalAnchor.postalCode || selectedStreet.postalCode || resolveDefaultPostalCode(normalizeCityKey(finalCity, finalLat, finalLng));
+
+        // ID documento deterministico per utente e per via (chiave composita nome + comune normalizzato):
+        // Se l'autore ha già una recensione registrata su questa via, riutilizza il suo ID documento per aggiornarla senza duplicazioni
+        const streetCompKey = createStreetCompositeKey(canonicalAnchor.canonicalName || selectedStreet.name, finalCity, finalLat, finalLng);
+        const safeStreetKey = encodeURIComponent(streetCompKey.replace(/[^a-z0-9_]/g, '_'));
+        const existingUserRev = selectedStreet.reviews?.find(r =>
+          (editingReview && r.id === editingReview.id) ||
+          (r.userId && r.userId === authorId)
+        );
+        const docId = (existingUserRev && existingUserRev.id && !String(existingUserRev.id).startsWith('r-'))
+          ? existingUserRev.id
+          : `${authorId}_${safeStreetKey}`;
 
         const reviewDoc = {
-          streetId: selectedStreet.id || ('street-' + safeStreetKey),
+          streetId: selectedStreet.id || ('street-' + streetCompKey.replace(/[^a-z0-9]/g, '-')),
           streetName: canonicalAnchor.canonicalName || selectedStreet.name,
-          streetCity: canonicalAnchor.city || selectedStreet.city || 'San Benedetto del Tronto',
-          postalCode: canonicalAnchor.postalCode || selectedStreet.postalCode || '63074',
+          streetCity: finalCity,
+          postalCode: finalPostal,
           placeId: selectedStreet.placeId || null,
           latitude: finalLat,
           longitude: finalLng,
