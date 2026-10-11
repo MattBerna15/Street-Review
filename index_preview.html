@@ -377,6 +377,28 @@
       return cKeyA === cKeyB;
     };
 
+    // Lookup preventivo di una via nell'elenco delle vie già caricate (prioritizzando quelle con recensioni > 0)
+    const findExistingStreetInList = (list, candidate) => {
+      if (!Array.isArray(list) || !candidate) return null;
+      const candName = candidate.name || candidate.streetName || '';
+      const candLat = candidate.lat ?? candidate.latitude;
+      const candLng = candidate.lng ?? candidate.longitude;
+      const candCity = resolveCanonicalCityName(candidate.city || candidate.streetCity, candLat, candLng);
+      const candCompKey = createStreetCompositeKey(candName, candCity, candLat, candLng);
+      const candNormName = normalizeStreetKey(candName);
+      const candNormCity = normalizeCityKey(candCity, candLat, candLng);
+
+      // Ordina dando precedenza assoluta alle vie già recensite su Firestore (reviewsCount > 0)
+      const sorted = [...list].sort((a, b) => (b.reviewsCount || 0) - (a.reviewsCount || 0));
+
+      return sorted.find(s => {
+        const sCompKey = createStreetCompositeKey(s.name, s.city, s.latitude, s.longitude);
+        if (sCompKey === candCompKey) return true;
+        if (isSameStreet(s, { name: candName, city: candCity, lat: candLat, lng: candLng })) return true;
+        return normalizeStreetKey(s.name) === candNormName && normalizeCityKey(s.city, s.latitude, s.longitude) === candNormCity;
+      }) || null;
+    };
+
     // Ricerca punto di ancoraggio canonico dal gazetteer rispettando nome, comune e prossimità
     const getCanonicalStreetAnchor = (streetName, streetCity, fallbackLat, fallbackLng) => {
       const resolvedCity = resolveCanonicalCityName(streetCity, fallbackLat, fallbackLng);
@@ -635,6 +657,9 @@
       const googleOverlaysRef = useRef([]);
       const searchInputRef = useRef(null);
       const searchContainerRef = useRef(null);
+      const streetsRef = useRef(streets);
+      streetsRef.current = streets;
+      const handleSelectStreetRef = useRef(null);
 
       // Chiudi tendina e menù profilo quando l'utente tocca altrove sullo schermo o sulla mappa
       useEffect(() => {
@@ -807,6 +832,7 @@
                 }
               });
 
+              streetsRef.current = updated;
               return updated;
             });
           },
@@ -821,7 +847,7 @@
       // Mantieni allineata la scheda della strada attualmente aperta con i dati in tempo reale
       useEffect(() => {
         if (!selectedStreet) return;
-        const matching = streets.find(s => isSameStreet(s, selectedStreet));
+        const matching = findExistingStreetInList(streets, selectedStreet);
         if (matching && (
           matching.id !== selectedStreet.id ||
           matching.reviewsCount !== selectedStreet.reviewsCount ||
@@ -844,7 +870,7 @@
         // 1. Cerca nello stradario locale
         LOCAL_GAZETTEER.forEach(item => {
           if (item.name.toLowerCase().includes(q) || item.city.toLowerCase().includes(q)) {
-            const existing = streets.find(s => isSameStreet(s, item));
+            const existing = findExistingStreetInList(streets, item);
             results.push({
               name: existing ? existing.name : item.name,
               city: existing ? existing.city : item.city,
@@ -946,18 +972,37 @@
                       const resolvedName = addrDetails.route || place.name || (place.formatted_address ? place.formatted_address.split(',')[0] : 'Via Sconosciuta');
                       const resolvedCity = addrDetails.city;
 
-                      // Risolvi eventuale ancoraggio canonico dal gazetteer rispettando nome, comune e prossimità
-                      const anchor = getCanonicalStreetAnchor(resolvedName, resolvedCity, lat, lng);
+                      // 1. LOOKUP PREVENTIVO SUI DATI ESISTENTI (tramite streetsRef sempre sincronizzato con Firestore)
+                      const existingStreet = findExistingStreetInList(streetsRef.current, {
+                        name: resolvedName,
+                        city: resolvedCity,
+                        lat,
+                        lng,
+                      });
 
-                      handleSelectStreet({
+                      if (existingStreet && existingStreet.reviewsCount > 0) {
+                        // La via esiste già nel database: NON creare un badge 'Nuova', centra la mappa sul marker esistente e apri la sua scheda
+                        setSearchQuery(existingStreet.name);
+                        if (handleSelectStreetRef.current) {
+                          handleSelectStreetRef.current(existingStreet);
+                        }
+                        return;
+                      }
+
+                      // 2. Se la via NON esiste ancora: risolvi ancoraggio e mostra il badge segnaposto temporaneo ('— Nuova')
+                      const anchor = getCanonicalStreetAnchor(resolvedName, resolvedCity, lat, lng);
+                      const newStreetTarget = {
                         name: anchor.canonicalName || resolvedName,
                         city: anchor.city || resolvedCity,
                         postalCode: anchor.postalCode || addrDetails.postalCode,
                         lat: anchor.lat,
                         lng: anchor.lng,
                         placeId: place.place_id || null,
-                      });
-                      setSearchQuery(anchor.canonicalName || resolvedName);
+                      };
+                      setSearchQuery(newStreetTarget.name);
+                      if (handleSelectStreetRef.current) {
+                        handleSelectStreetRef.current(newStreetTarget);
+                      }
                     } else {
                       setIsOutOfAreaOpen(true);
                     }
@@ -999,7 +1044,23 @@
                     }
                     const streetCity = addrDetails.city;
 
-                    // Se abbiamo trovato una via, cerchiamo di usare il suo baricentro ufficiale (route) o il gazetteer
+                    // Lookup preventivo sui dati esistenti
+                    const existingStreet = findExistingStreetInList(streetsRef.current, {
+                      name: streetName,
+                      city: streetCity,
+                      lat: fallbackLat,
+                      lng: fallbackLng,
+                    });
+
+                    if (existingStreet && existingStreet.reviewsCount > 0) {
+                      setSearchQuery(existingStreet.name);
+                      if (handleSelectStreetRef.current) {
+                        handleSelectStreetRef.current(existingStreet);
+                      }
+                      return;
+                    }
+
+                    // Se la via non esiste ancora, usa il suo baricentro ufficiale (route) o il gazetteer
                     const anchor = getCanonicalStreetAnchor(
                       streetName,
                       streetCity,
@@ -1007,15 +1068,18 @@
                       fallbackLng
                     );
 
-                    handleSelectStreet({
+                    const clickTarget = {
                       name: anchor.canonicalName || streetName,
                       city: anchor.city || streetCity,
                       postalCode: anchor.postalCode || addrDetails.postalCode,
                       lat: anchor.lat,
                       lng: anchor.lng,
                       placeId: bestResult.place_id || null,
-                    });
-                    setSearchQuery(anchor.canonicalName || streetName);
+                    };
+                    setSearchQuery(clickTarget.name);
+                    if (handleSelectStreetRef.current) {
+                      handleSelectStreetRef.current(clickTarget);
+                    }
                   }
                 });
               });
@@ -1067,15 +1131,31 @@
                 const addr = data.address || {};
                 const streetName = addr.road || addr.pedestrian || addr.footway || addr.path || addr.suburb || data.display_name.split(',')[0];
                 const streetCity = addr.city || addr.town || addr.village || addr.municipality || 'San Benedetto del Tronto';
+                const existingStreet = findExistingStreetInList(streetsRef.current, {
+                  name: streetName,
+                  city: streetCity,
+                  lat,
+                  lng,
+                });
+                if (existingStreet && existingStreet.reviewsCount > 0) {
+                  setSearchQuery(existingStreet.name);
+                  if (handleSelectStreetRef.current) {
+                    handleSelectStreetRef.current(existingStreet);
+                  }
+                  return;
+                }
                 const anchor = getCanonicalStreetAnchor(streetName, streetCity, lat, lng);
-                handleSelectStreet({
+                const lTarget = {
                   name: anchor.canonicalName || streetName,
                   city: anchor.city || streetCity,
                   postalCode: anchor.postalCode || addr.postcode || '63074',
                   lat: anchor.lat,
                   lng: anchor.lng,
-                });
-                setSearchQuery(anchor.canonicalName || streetName);
+                };
+                setSearchQuery(lTarget.name);
+                if (handleSelectStreetRef.current) {
+                  handleSelectStreetRef.current(lTarget);
+                }
               })
               .catch(err => {
                 console.warn('Leaflet reverse geocoding notice:', err);
@@ -1095,9 +1175,17 @@
         };
       }, []);
 
-      // Filtro strade
+      // Filtro strade con deduplicazione visiva garantita (mai doppi badge sulla stessa via/coordinata)
       const visibleStreets = useMemo(() => {
-        return streets.filter(s => {
+        const deduped = [];
+        const sorted = [...streets].sort((a, b) => (b.reviewsCount || 0) - (a.reviewsCount || 0));
+        sorted.forEach(s => {
+          if (!deduped.some(d => isSameStreet(d, s))) {
+            deduped.push(s);
+          }
+        });
+
+        return deduped.filter(s => {
           if (filterFreeParking && !s.commonParkingTypes?.includes('FREE')) return false;
           if (filterDisabledParking && !s.commonParkingTypes?.includes('DISABLED')) return false;
           if (filterPinkParking && !s.commonParkingTypes?.includes('PINK')) return false;
@@ -1119,7 +1207,7 @@
 
           visibleStreets.forEach(street => {
             const isNew = street.reviewsCount === 0;
-            const isSelected = selectedStreet?.id === street.id;
+            const isSelected = selectedStreet ? (selectedStreet.id === street.id || isSameStreet(selectedStreet, street)) : false;
 
             const getScoreColor = (r) => {
               if (isNew) return '#475569';    // Slate 600 Neutro per via senza recensioni
@@ -1201,7 +1289,7 @@
 
           visibleStreets.forEach(street => {
             const isNew = street.reviewsCount === 0;
-            const isSelected = selectedStreet?.id === street.id;
+            const isSelected = selectedStreet ? (selectedStreet.id === street.id || isSameStreet(selectedStreet, street)) : false;
 
             const markerHtml = `
               <div class="flex flex-col items-center cursor-pointer transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
@@ -1238,7 +1326,8 @@
       }, [visibleStreets, selectedStreet, mapEngine]);
 
       // COMPORTAMENTO ALLA RICERCA DELLA VIA:
-      // Centra la mappa, genera il PIN iniziale se non esiste e apre la scheda unica aggregata
+      // Lookup preventivo sui dati esistenti (streetsRef.current): se la via esiste già, apre la sua scheda e centra il marker;
+      // solo se NON esiste ancora genera il segnaposto temporaneo ('— Nuova').
       const handleSelectStreet = (target) => {
         const rawLat = target.lat ?? target.latitude;
         const rawLng = target.lng ?? target.longitude;
@@ -1250,10 +1339,31 @@
           lng: rawLng,
         };
 
-        // Cerca se la strada esiste già (per chiave composita o prossimità spaziale sullo stesso asse viario)
-        let street = streets.find(s => isSameStreet(s, targetCandidate));
+        // Lookup su streetsRef.current (sempre aggiornato anche dentro listener asincroni di Google Maps)
+        let street = (target.reviewsCount > 0 && target.id && Array.isArray(target.reviews))
+          ? target
+          : findExistingStreetInList(streetsRef.current, targetCandidate);
 
-        // Risolvi il punto di ancoraggio canonico (se la via è nel gazetteer o già nota)
+        if (street && street.reviewsCount > 0) {
+          // La via esiste già nel database: rimuovi eventuali segnaposto temporanei a 0 recensioni e apri la scheda esistente
+          setStreets(prev => {
+            const cleaned = prev.filter(s => s.reviewsCount > 0);
+            streetsRef.current = cleaned;
+            return cleaned;
+          });
+          setSelectedStreet(street);
+          setSheetSnap('half');
+
+          if (googleMapRef.current) {
+            googleMapRef.current.panTo({ lat: street.latitude, lng: street.longitude });
+            googleMapRef.current.setZoom(16);
+          } else if (leafletMapRef.current) {
+            leafletMapRef.current.setView([street.latitude, street.longitude], 16, { animate: true });
+          }
+          return;
+        }
+
+        // La via NON esiste ancora: risolvi il punto di ancoraggio canonico e mostra il segnaposto temporaneo ('— Nuova')
         const anchor = getCanonicalStreetAnchor(target.name, targetCity, rawLat, rawLng);
         const resolvedLat = street ? street.latitude : anchor.lat;
         const resolvedLng = street ? street.longitude : anchor.lng;
@@ -1263,7 +1373,6 @@
         const targetCompKey = createStreetCompositeKey(resolvedName, resolvedCity, resolvedLat, resolvedLng);
 
         if (!street) {
-          // Genera la strada con stato INIZIALE (0 recensioni)
           street = {
             id: 'street-' + targetCompKey.replace(/[^a-z0-9]/g, '-'),
             name: resolvedName,
@@ -1287,8 +1396,12 @@
             reviews: [],
           };
           setStreets(prev => {
-            if (prev.some(s => isSameStreet(s, street))) return prev;
-            return [street, ...prev];
+            // Sostituisci eventuali precedenti segnaposto temporanei a 0 recensioni così da avere un solo badge '— Nuova' attivo
+            const onlyReviewed = prev.filter(s => s.reviewsCount > 0);
+            if (onlyReviewed.some(s => isSameStreet(s, street))) return onlyReviewed;
+            const next = [street, ...onlyReviewed];
+            streetsRef.current = next;
+            return next;
           });
         }
 
@@ -1298,13 +1411,14 @@
         const panLat = street.latitude || resolvedLat;
         const panLng = street.longitude || resolvedLng;
 
-        if (mapEngine === 'google' && googleMapRef.current) {
+        if (googleMapRef.current) {
           googleMapRef.current.panTo({ lat: panLat, lng: panLng });
           googleMapRef.current.setZoom(16);
         } else if (leafletMapRef.current) {
           leafletMapRef.current.setView([panLat, panLng], 16, { animate: true });
         }
       };
+      handleSelectStreetRef.current = handleSelectStreet;
 
       // AGGIORNAMENTO DINAMICO POST-RECENSIONE / MODIFICA (VINCOLO UNICITÀ)
       const handleAddReview = (reviewPayload) => {
