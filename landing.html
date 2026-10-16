@@ -30,6 +30,58 @@
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Firebase App & Firestore Database SDK (v10 compat) per Classifica Generale Live -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyApoHu8K1NC9wwt5Ky39yXSG9X-lJhCjQU",
+      authDomain: "project-edcfad76-a798-46c6-b92.firebaseapp.com",
+      projectId: "project-edcfad76-a798-46c6-b92",
+      storageBucket: "project-edcfad76-a798-46c6-b92.firebasestorage.app",
+      messagingSenderId: "512832291400",
+      appId: "1:512832291400:web:06e372896f87b90c49ce7d",
+      measurementId: "G-6M95JQ6883"
+    };
+
+    try {
+      if (window.firebase) {
+        const app = !firebase.apps.length ? firebase.initializeApp(firebaseConfig) : firebase.app();
+        window.firebaseApp = app;
+
+        const container = (app._delegate && app._delegate.container) || app.container;
+        if (container) {
+          const firestoreProvider = container.getProvider("firestore");
+          if (firestoreProvider) {
+            const origGetImmediate = firestoreProvider.getImmediate.bind(firestoreProvider);
+            firestoreProvider.getImmediate = function(options) {
+              const opt = options ? { ...options } : {};
+              if (!opt.identifier || opt.identifier === "[DEFAULT]") {
+                opt.identifier = "street-review-database";
+              }
+              return origGetImmediate(opt);
+            };
+
+            const origGet = firestoreProvider.get.bind(firestoreProvider);
+            firestoreProvider.get = function(identifier) {
+              if (!identifier || identifier === "[DEFAULT]") {
+                identifier = "street-review-database";
+              }
+              return origGet(identifier);
+            };
+          }
+        }
+
+        const customDb = app.firestore('street-review-database');
+        window.db = customDb;
+        firebase.firestore = () => customDb;
+        app.firestore = () => customDb;
+      }
+    } catch (e) {
+      console.error("Errore inizializzazione Firebase su landing.html:", e);
+    }
+  </script>
   <script>
     tailwind.config = {
       darkMode: 'class',
@@ -131,9 +183,15 @@
       </a>
 
       <!-- Desktop Nav Links -->
-      <nav class="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-300">
+      <nav class="hidden lg:flex items-center gap-6 text-sm font-semibold text-slate-300">
         <a href="#caratteristiche" class="hover:text-brand-cyan transition-colors">Caratteristiche</a>
         <a href="#categorie" class="hover:text-brand-cyan transition-colors">13 Categorie</a>
+        <a href="#gamification" class="hover:text-amber-400 transition-colors flex items-center gap-1">
+          <span>🎖️</span> Livelli &amp; Badge
+        </a>
+        <a href="#classifica" class="hover:text-amber-400 transition-colors flex items-center gap-1">
+          <span>🏆</span> Classifica Live
+        </a>
         <a href="#creatore" class="hover:text-brand-gold transition-colors">Dietro il Progetto</a>
         <a href="#sostieni" class="hover:text-amber-400 transition-colors flex items-center gap-1.5">
           <span>☕</span> Supporta
@@ -659,8 +717,461 @@
     </section>
 
 
+    <!-- ========================================================== -->
+    <!-- 4. GAMIFICATION & PERK: SCALA I LIVELLI E SBLOCCA I BADGE  -->
+    <!-- ========================================================== -->
+    <section id="gamification" class="py-20 sm:py-28 relative overflow-hidden border-b border-slate-800/80">
+      <!-- Bagliori decorativi -->
+      <div class="absolute top-1/4 -left-24 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute bottom-1/4 -right-24 w-96 h-96 bg-brand-cyan/10 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 space-y-16 sm:space-y-20">
+        
+        <!-- Intestazione Sezione -->
+        <div class="text-center max-w-3xl mx-auto space-y-4">
+          <span class="text-xs font-bold uppercase tracking-widest text-amber-400 px-3.5 py-1.5 rounded-full bg-amber-950/80 border border-amber-700/60 inline-flex items-center gap-1.5">
+            <span>🎖️</span> Gamification Civica &amp; Ricompense
+          </span>
+          <h2 class="text-3xl sm:text-5xl font-black tracking-tight text-white">
+            Scala i <span class="text-gradient-gold">10 Livelli</span> e Sblocca gli <span class="text-gradient-cyan-gold">8 Badge</span>
+          </h2>
+          <p class="text-slate-300 text-sm sm:text-base leading-relaxed">
+            Ogni contributo per migliorare la viabilità della Riviera delle Palme viene premiato: guadagna Punti Esperienza (XP), conquista gradi di prestigio cittadino, sblocca medaglie d'élite e ottieni perk visivi esclusivi.
+          </p>
+        </div>
+
+        <!-- A. COME SI GUADAGNANO XP (3 CARDS) -->
+        <div class="space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <h3 class="text-lg sm:text-xl font-black text-white flex items-center gap-2">
+              <span class="text-amber-400">⚡</span> Come si guadagnano Punti Esperienza (XP)
+            </h3>
+            <span class="text-xs font-semibold text-slate-400">Fino a <strong class="text-amber-400">+100 XP</strong> per singola strada recensita</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- +50 XP Base -->
+            <div class="bg-slate-900/90 border border-slate-800 hover:border-brand-cyan/60 rounded-3xl p-6 sm:p-7 shadow-xl transition-all duration-300 flex flex-col justify-between">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="px-3.5 py-1.5 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 text-brand-cyan font-black text-xl sm:text-2xl">
+                    +50 XP
+                  </span>
+                  <span class="text-2xl">🛣️</span>
+                </div>
+                <h4 class="text-lg font-black text-white">Recensione Stradale</h4>
+                <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                  Ottieni subito <strong class="text-slate-200">+50 XP</strong> base per ogni via della Riviera delle Palme che valuti con le 13 categorie a stelle.
+                </p>
+              </div>
+              <div class="mt-4 pt-3 border-t border-slate-800/80 text-[11px] font-bold text-cyan-400">
+                ✓ Attivo su tutte le vie del comprensorio
+              </div>
+            </div>
+
+            <!-- +30 XP Bonus Pioniere -->
+            <div class="bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/30 border border-amber-500/40 hover:border-amber-400 rounded-3xl p-6 sm:p-7 shadow-xl transition-all duration-300 flex flex-col justify-between">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="px-3.5 py-1.5 rounded-2xl bg-amber-500/20 border border-amber-400/50 text-amber-300 font-black text-xl sm:text-2xl">
+                    +30 XP
+                  </span>
+                  <span class="text-2xl">🧭</span>
+                </div>
+                <h4 class="text-lg font-black text-white">Bonus Pioniere</h4>
+                <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Guadagna <strong class="text-amber-300">+30 XP extra</strong> se sei il <strong>primo cittadino in assoluto</strong> a recensire e inaugurare una strada ancora priva di valutazioni.
+                </p>
+              </div>
+              <div class="mt-4 pt-3 border-t border-amber-800/40 text-[11px] font-bold text-amber-400">
+                🧭 + Bollino speciale "Pioniere della Via"
+              </div>
+            </div>
+
+            <!-- +20 XP Bonus Dettaglio -->
+            <div class="bg-slate-900/90 border border-slate-800 hover:border-emerald-400/60 rounded-3xl p-6 sm:p-7 shadow-xl transition-all duration-300 flex flex-col justify-between">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="px-3.5 py-1.5 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-400 font-black text-xl sm:text-2xl">
+                    +20 XP
+                  </span>
+                  <span class="text-2xl">✍️</span>
+                </div>
+                <h4 class="text-lg font-black text-white">Bonus Dettaglio</h4>
+                <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                  Ricevi <strong class="text-emerald-300">+20 XP extra</strong> includendo un commento approfondito (<strong class="text-slate-200">&ge; 40 caratteri</strong>) insieme ad almeno un tag parcheggio o dotazione urbana.
+                </p>
+              </div>
+              <div class="mt-4 pt-3 border-t border-slate-800/80 text-[11px] font-bold text-emerald-400">
+                ✍️ + Bollino "Guida Dettagliata" nei commenti
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- B. LA SCALATA DEI 10 LIVELLI E I PERK ESCLUSIVI -->
+        <div class="space-y-8">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <h3 class="text-lg sm:text-xl font-black text-white flex items-center gap-2">
+              <span class="text-brand-cyan">🗺️</span> La Scalata dei 10 Livelli Cittadini
+            </h3>
+            <span class="text-xs font-semibold text-slate-400">4 Fasce di Prestigio: Bronzo · Ciano · Oro · Diamante</span>
+          </div>
+
+          <!-- Griglia 10 Livelli -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+            <!-- Liv 1 -->
+            <div class="bg-slate-900/85 border border-amber-700/50 rounded-2xl p-4 flex flex-col justify-between hover:border-amber-600 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-950/90 text-amber-300 border border-amber-700/60">Liv. 1 · Bronzo</span>
+                <span class="text-2xl">🌱</span>
+              </div>
+              <p class="text-sm font-black text-white">Pedone Curioso</p>
+              <p class="text-xs font-bold text-amber-400/90 mt-1">0 – 99 XP</p>
+            </div>
+
+            <!-- Liv 2 -->
+            <div class="bg-slate-900/85 border border-amber-600/50 rounded-2xl p-4 flex flex-col justify-between hover:border-amber-500 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-950/90 text-amber-300 border border-amber-600/60">Liv. 2 · Bronzo</span>
+                <span class="text-2xl">🚲</span>
+              </div>
+              <p class="text-sm font-black text-white">Esploratore di Quartiere</p>
+              <p class="text-xs font-bold text-amber-400/90 mt-1">100 – 299 XP</p>
+            </div>
+
+            <!-- Liv 3 -->
+            <div class="bg-slate-900/85 border border-amber-500/60 rounded-2xl p-4 flex flex-col justify-between hover:border-amber-400 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-950/90 text-amber-200 border border-amber-500/60">Liv. 3 · Ambra</span>
+                <span class="text-2xl">🛵</span>
+              </div>
+              <p class="text-sm font-black text-white">Sentinella Urbana</p>
+              <p class="text-xs font-bold text-amber-300 mt-1">300 – 599 XP</p>
+            </div>
+
+            <!-- Liv 4 -->
+            <div class="bg-slate-900/85 border border-cyan-500/50 rounded-2xl p-4 flex flex-col justify-between hover:border-cyan-400 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-cyan-950/90 text-cyan-300 border border-cyan-500/50">Liv. 4 · Ciano</span>
+                <span class="text-2xl">🚗</span>
+              </div>
+              <p class="text-sm font-black text-white">Viaggiatore Locale</p>
+              <p class="text-xs font-bold text-cyan-400 mt-1">600 – 999 XP</p>
+            </div>
+
+            <!-- Liv 5 -->
+            <div class="bg-slate-900/85 border border-cyan-400/60 rounded-2xl p-4 flex flex-col justify-between hover:border-cyan-300 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-cyan-950/90 text-cyan-200 border border-cyan-400/60">Liv. 5 · Ciano</span>
+                <span class="text-2xl">🗺️</span>
+              </div>
+              <p class="text-sm font-black text-white">Cartografo della Riviera</p>
+              <p class="text-xs font-bold text-cyan-300 mt-1">1000 – 1599 XP</p>
+            </div>
+
+            <!-- Liv 6 -->
+            <div class="bg-slate-900/85 border border-sky-400/70 rounded-2xl p-4 flex flex-col justify-between hover:border-sky-300 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-sky-950/90 text-sky-200 border border-sky-400/70">Liv. 6 · Argento</span>
+                <span class="text-2xl">🧭</span>
+              </div>
+              <p class="text-sm font-black text-white">Guida Esperta</p>
+              <p class="text-xs font-bold text-sky-300 mt-1">1600 – 2399 XP</p>
+            </div>
+
+            <!-- Liv 7 -->
+            <div class="bg-slate-900/90 border border-amber-400/75 rounded-2xl p-4 flex flex-col justify-between shadow-md shadow-amber-500/10 hover:border-yellow-300 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/70">Liv. 7 · Oro</span>
+                <span class="text-2xl">🛡️</span>
+              </div>
+              <p class="text-sm font-black text-white">Custode della Viabilità</p>
+              <p class="text-xs font-bold text-amber-300 mt-1">2400 – 3399 XP</p>
+            </div>
+
+            <!-- Liv 8 -->
+            <div class="bg-slate-900/90 border border-yellow-300/80 rounded-2xl p-4 flex flex-col justify-between shadow-md shadow-yellow-500/15 hover:border-yellow-200 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-200 border border-yellow-300/80">Liv. 8 · Oro Lum.</span>
+                <span class="text-2xl">🏛️</span>
+              </div>
+              <p class="text-sm font-black text-white">Assessore della Strada</p>
+              <p class="text-xs font-bold text-yellow-300 mt-1">3400 – 4699 XP</p>
+            </div>
+
+            <!-- Liv 9 -->
+            <div class="bg-gradient-to-br from-slate-900 via-purple-950/40 to-amber-950/30 border border-purple-400/80 rounded-2xl p-4 flex flex-col justify-between shadow-lg shadow-purple-500/20 hover:border-purple-300 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-purple-500/25 text-purple-200 border border-purple-400/70">Liv. 9 · Viola-Oro</span>
+                <span class="text-2xl">👑</span>
+              </div>
+              <p class="text-sm font-black text-white">Sindaco delle Strade</p>
+              <p class="text-xs font-bold text-purple-300 mt-1">4700 – 6499 XP</p>
+            </div>
+
+            <!-- Liv 10 -->
+            <div class="bg-gradient-to-br from-slate-900 via-fuchsia-950/50 to-amber-950/40 border-2 border-fuchsia-400/90 rounded-2xl p-4 flex flex-col justify-between shadow-lg shadow-fuchsia-500/25 hover:scale-[1.02] transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-gradient-to-r from-fuchsia-500/30 to-amber-500/30 text-amber-200 border border-fuchsia-300/80">Liv. 10 · Diamante</span>
+                <span class="text-2xl">🌟</span>
+              </div>
+              <p class="text-sm font-black text-white">Leggenda della Riviera</p>
+              <p class="text-xs font-black text-amber-300 mt-1">6500+ XP</p>
+            </div>
+          </div>
+
+          <!-- Box Perk Esclusivi -->
+          <div class="bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-8">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+              <div class="space-y-1.5 max-w-md">
+                <span class="text-[11px] font-black uppercase tracking-wider text-amber-400">✨ Ricompense di Status</span>
+                <h4 class="text-lg sm:text-xl font-black text-white">I Perk Esclusivi per chi scala i ranghi</h4>
+                <p class="text-xs sm:text-sm text-slate-400">
+                  Salire di livello trasforma il tuo profilo nell'app e mette in risalto la tua autorevolezza civica:
+                </p>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 flex-1">
+                <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 space-y-1">
+                  <p class="text-xs font-black text-amber-300 flex items-center gap-1.5"><span>🖼️</span> Cornici Avatar Evolutive</p>
+                  <p class="text-[11px] text-slate-400 leading-snug">Bordo <strong class="text-amber-500">Bronzo</strong> (Liv. 1-3), <strong class="text-cyan-400">Ciano</strong> (Liv. 4-6), <strong class="text-yellow-300">Oro</strong> (Liv. 7-8) e <strong class="text-fuchsia-300">Diamante Glow</strong> (Liv. 9-10).</p>
+                </div>
+                <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 space-y-1">
+                  <p class="text-xs font-black text-cyan-300 flex items-center gap-1.5"><span>🏷️</span> Titolo Ufficiale nei Commenti</p>
+                  <p class="text-[11px] text-slate-400 leading-snug">Il badge del tuo grado attuale compare accanto al tuo nome in ogni recensione stradale.</p>
+                </div>
+                <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 space-y-1">
+                  <p class="text-xs font-black text-emerald-300 flex items-center gap-1.5"><span>👑</span> Priorità di Visibilità</p>
+                  <p class="text-[11px] text-slate-400 leading-snug">I commenti degli Esploratori di livello più alto sono messi in risalto in cima alla scheda della via.</p>
+                </div>
+                <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 space-y-1">
+                  <p class="text-xs font-black text-purple-300 flex items-center gap-1.5"><span>📩</span> Email di Congratulazioni</p>
+                  <p class="text-[11px] text-slate-400 leading-snug">Ricevi una mail celebrativa automatica ad ogni nuovo Livello raggiunto o Badge sbloccato.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- C. VETRINA DEGLI 8 BADGE (ACHIEVEMENT) -->
+        <div class="space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <h3 class="text-lg sm:text-xl font-black text-white flex items-center gap-2">
+              <span class="text-amber-400">🏅</span> Vetrina degli 8 Badge Sbloccabili (Achievement)
+            </h3>
+            <span class="text-xs font-semibold text-slate-400">Colleziona tutte le 8 medaglie nella tua bacheca personale</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Badge 1 -->
+            <div class="bg-slate-900/90 border border-slate-800 hover:border-blue-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-400/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                    🚀
+                  </div>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-blue-950/90 text-blue-300 border border-blue-700/60">Obiettivo: 1 Via</span>
+                </div>
+                <h4 class="text-base font-black text-white">Battesimo dell'Asfalto</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Pubblica la tua 1ª recensione stradale sulla mappa civica.</p>
+              </div>
+            </div>
+
+            <!-- Badge 2 -->
+            <div class="bg-slate-900/90 border border-slate-800 hover:border-amber-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-400/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                    🧭
+                  </div>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-amber-950/90 text-amber-300 border border-amber-700/60">Obiettivo: 10 Vie</span>
+                </div>
+                <h4 class="text-base font-black text-white">Pioniere</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Inaugura per primo almeno 10 strade diverse ancora prive di recensioni.</p>
+              </div>
+            </div>
+
+            <!-- Badge 3 -->
+            <div class="bg-slate-900/90 border border-slate-800 hover:border-cyan-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                    🅿️
+                  </div>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-cyan-950/90 text-cyan-300 border border-cyan-700/60">Obiettivo: 12 Recensioni</span>
+                </div>
+                <h4 class="text-base font-black text-white">Segugio del Parcheggio</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Segnala i tag parcheggio (Liberi, Blu, Disco Orario, ecc.) in almeno 12 recensioni.</p>
+              </div>
+            </div>
+
+            <!-- Badge 4 -->
+            <div class="bg-slate-900/90 border border-slate-800 hover:border-purple-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="w-12 h-12 rounded-2xl bg-purple-500/15 border border-purple-400/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                    ♿
+                  </div>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-purple-950/90 text-purple-300 border border-purple-700/60">Obiettivo: 8 Vie</span>
+                </div>
+                <h4 class="text-base font-black text-white">Paladino dell'Accessibilità</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Segnala stalli Disabili/Rosa o valuta l'accessibilità in almeno 8 vie.</p>
+              </div>
+            </div>
+
+            <!-- Badge 5 -->
+            <div class="bg-slate-900/90 border border-slate-800 hover:border-emerald-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                    ✍️
+                  </div>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-emerald-950/90 text-emerald-300 border border-emerald-700/60">Obiettivo: 15 Commenti</span>
+                </div>
+                <h4 class="text-base font-black text-white">Critico Stradale</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Scrivi almeno 15 recensioni con commento approfondito (&ge; 40 caratteri).</p>
+              </div>
+            </div>
+
+            <!-- Badge 6 -->
+            <div class="bg-slate-900/90 border border-slate-800 hover:border-yellow-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="w-12 h-12 rounded-2xl bg-yellow-500/15 border border-yellow-400/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                    🌴
+                  </div>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-yellow-950/90 text-yellow-300 border border-yellow-700/60">Obiettivo: 15 Strade</span>
+                </div>
+                <h4 class="text-base font-black text-white">Re della Riviera</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Recensisci almeno 15 strade totali nell'area della Riviera delle Palme.</p>
+              </div>
+            </div>
+
+            <!-- Badge 7 -->
+            <div class="bg-slate-900/90 border border-slate-800 hover:border-indigo-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-400/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                    🌍
+                  </div>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-indigo-950/90 text-indigo-300 border border-indigo-700/60">Obiettivo: 3 Comuni</span>
+                </div>
+                <h4 class="text-base font-black text-white">Esploratore Intercomunale</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Recensisci vie in almeno 3 comuni diversi (es. San Benedetto, Grottammare, Monteprandone, Acquaviva).</p>
+              </div>
+            </div>
+
+            <!-- Badge 8 -->
+            <div class="bg-gradient-to-br from-slate-900 via-fuchsia-950/30 to-amber-950/30 border border-fuchsia-400/60 hover:border-amber-300 rounded-2xl p-5 flex flex-col justify-between transition-all group shadow-lg shadow-fuchsia-500/10">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-fuchsia-500/25 to-amber-500/25 border border-fuchsia-400/50 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                    🏆
+                  </div>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-fuchsia-950/90 text-amber-300 border border-fuchsia-500/60">Élite: 30 Strade</span>
+                </div>
+                <h4 class="text-base font-black text-white">Maestro dell'Asfalto</h4>
+                <p class="text-xs text-slate-300 leading-relaxed">Raggiungi il traguardo d'élite di 30 strade recensite nel comprensorio.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+
+    <!-- ================================================================= -->
+    <!-- 5. CLASSIFICA GENERALE — TOP ESPLORATORI DELLA RIVIERA (LIVE)     -->
+    <!-- ================================================================= -->
+    <section id="classifica" class="py-20 sm:py-28 relative bg-slate-900/50 border-b border-slate-800/80 overflow-hidden">
+      <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-[500px] h-[300px] bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 space-y-12">
+        
+        <!-- Intestazione Classifica Live -->
+        <div class="text-center max-w-3xl mx-auto space-y-4">
+          <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-950 border border-emerald-500/40 shadow-inner">
+            <span id="liveLeaderboardDot" class="flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+            <span id="liveLeaderboardStatus" class="text-xs font-bold text-emerald-300">
+              Connesso in tempo reale a Firestore · street-review-database
+            </span>
+          </div>
+
+          <h2 class="text-3xl sm:text-5xl font-black tracking-tight text-white">
+            Classifica Generale — <span class="text-gradient-gold">Top Esploratori della Riviera</span>
+          </h2>
+          <p class="text-slate-300 text-sm sm:text-base leading-relaxed">
+            La graduatoria ufficiale calcolata in tempo reale dalle recensioni pubblicate dai cittadini. Chi conquisterà il titolo di Sindaco delle Strade e Leggenda della Riviera?
+          </p>
+
+          <!-- Contatori Live Sintetici -->
+          <div class="grid grid-cols-3 gap-3 max-w-lg mx-auto pt-2">
+            <div class="bg-slate-950/90 border border-slate-800 rounded-2xl p-3 text-center">
+              <p id="statTotalExplorers" class="text-xl sm:text-2xl font-black text-amber-400">—</p>
+              <p class="text-[11px] text-slate-400 font-semibold">Esploratori Attivi</p>
+            </div>
+            <div class="bg-slate-950/90 border border-slate-800 rounded-2xl p-3 text-center">
+              <p id="statTotalStreets" class="text-xl sm:text-2xl font-black text-brand-cyan">—</p>
+              <p class="text-[11px] text-slate-400 font-semibold">Vie Recensite</p>
+            </div>
+            <div class="bg-slate-950/90 border border-slate-800 rounded-2xl p-3 text-center">
+              <p id="statTotalReviews" class="text-xl sm:text-2xl font-black text-emerald-400">—</p>
+              <p class="text-[11px] text-slate-400 font-semibold">Recensioni Totali</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- PODIO TOP 3 (1°, 2°, 3° CLASSIFICATO) -->
+        <div id="leaderboardPodiumContainer" class="grid grid-cols-1 md:grid-cols-3 gap-6 items-end pt-2">
+          <!-- Skeleton / Stato di caricamento iniziale -->
+          <div class="md:col-span-3 bg-slate-950/80 border border-slate-800 rounded-3xl p-10 text-center space-y-3 animate-pulse">
+            <div class="text-3xl">🏆</div>
+            <p class="text-sm font-bold text-slate-300">Caricamento Classifica Live da Cloud Firestore...</p>
+            <p class="text-xs text-slate-500">Calcolo dinamico di XP, Livelli, Vie da Pioniere e Badge in corso</p>
+          </div>
+        </div>
+
+        <!-- LISTA COMPLETA TOP 10 -->
+        <div class="bg-slate-950/90 border border-slate-800/90 rounded-3xl overflow-hidden shadow-2xl">
+          <div class="px-6 py-4 bg-slate-900/90 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5">
+              <span class="text-lg">🏅</span>
+              <h3 class="text-sm sm:text-base font-black text-white">Top 10 Classifica Generale Cittadini</h3>
+            </div>
+            <span class="text-[11px] text-slate-400 font-semibold">
+              Ordinata per Punti Esperienza (XP) · Parità: Vie da Pioniere e Recensioni
+            </span>
+          </div>
+
+          <div id="leaderboardListContainer" class="divide-y divide-slate-800/70">
+            <!-- Popolato dinamicamente dallo script Firestore -->
+          </div>
+        </div>
+
+        <!-- Call to Action Sotto la Classifica -->
+        <div class="text-center pt-4 space-y-3">
+          <a
+            href="index.html"
+            class="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-9 py-4 rounded-2xl font-black text-sm sm:text-base text-slate-950 bg-gradient-to-r from-amber-400 via-amber-300 to-cyan-400 hover:from-amber-300 hover:to-cyan-300 shadow-xl shadow-amber-500/25 hover:shadow-amber-500/45 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 group"
+          >
+            <span>🏆</span>
+            <span>Entra nella Mappa e Scala la Classifica</span>
+            <svg class="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"></path>
+            </svg>
+          </a>
+          <p class="text-xs text-slate-400">
+            Accedi con Google sulla mappa, recensisci la tua prima strada e conquista subito i tuoi primi +50 XP!
+          </p>
+        </div>
+
+      </div>
+    </section>
+
+
     <!-- ========================================== -->
-    <!-- 4. DIETRO IL PROGETTO (L'IDEATORE)         -->
+    <!-- 6. DIETRO IL PROGETTO (L'IDEATORE)         -->
     <!-- ========================================== -->
     <section id="creatore" class="py-20 sm:py-28 relative">
       <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -726,16 +1237,16 @@
                 </p>
                 <div class="flex flex-wrap items-center justify-center md:justify-start gap-3">
                   
-                  <!-- Email -->
+                  <!-- Email Ufficiale -->
                   <a 
-                    href="mailto:m.bernardini15@gmail.com" 
+                    href="mailto:streetreview.app@gmail.com" 
                     class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-200 bg-slate-800/90 hover:bg-slate-700/90 border border-slate-700 hover:border-cyan-400 hover:text-white transition-all duration-200"
-                    title="Invia un'email"
+                    title="Invia un'email ufficiale a Street Review"
                   >
                     <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
                     </svg>
-                    <span>m.bernardini15@gmail.com</span>
+                    <span>streetreview.app@gmail.com</span>
                   </a>
 
                   <!-- Instagram -->
@@ -780,7 +1291,7 @@
 
 
     <!-- ========================================== -->
-    <!-- 5. BOX SOSTEGNO & DONAZIONE (PAYPAL)       -->
+    <!-- 7. BOX SOSTEGNO & DONAZIONE (PAYPAL)       -->
     <!-- ========================================== -->
     <section id="sostieni" class="py-16 sm:py-20 relative bg-slate-900/40 border-y border-slate-800/80">
       <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -839,7 +1350,7 @@
 
 
     <!-- ========================================== -->
-    <!-- 6. BANNER CTA FINALE                       -->
+    <!-- 8. BANNER CTA FINALE                       -->
     <!-- ========================================== -->
     <section class="py-16 sm:py-24 relative overflow-hidden">
       <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -858,7 +1369,7 @@
             </h2>
 
             <p class="text-slate-300 text-sm sm:text-lg max-w-xl mx-auto font-normal">
-              Bastano 30 secondi per recensire una via e fare la differenza per tutta la comunità.
+              Bastano 30 secondi per recensire una via, guadagnare XP e fare la differenza per tutta la comunità.
             </p>
 
             <div class="pt-4 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -884,7 +1395,7 @@
 
 
   <!-- ========================================== -->
-  <!-- 7. FOOTER                                  -->
+  <!-- 9. FOOTER                                  -->
   <!-- ========================================== -->
   <footer id="credits" class="bg-slate-950 border-t border-slate-800/80 pt-16 pb-12 text-slate-400 text-sm">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -902,6 +1413,15 @@
           <p class="text-slate-400 text-xs sm:text-sm leading-relaxed max-w-sm">
             La piattaforma civica per monitorare, valutare e valorizzare la qualità della viabilità urbana nella Riviera delle Palme. Partecipazione democratica, trasparenza e open data.
           </p>
+          <div class="pt-1">
+            <a
+              href="mailto:streetreview.app@gmail.com"
+              class="inline-flex items-center gap-2 text-xs font-bold text-brand-cyan hover:text-cyan-300 transition-colors"
+            >
+              <span>✉️</span>
+              <span>streetreview.app@gmail.com</span>
+            </a>
+          </div>
         </div>
 
         <!-- Sezione Credits & Fondatore -->
@@ -920,6 +1440,10 @@
             <p class="text-slate-400 flex items-center gap-1.5">
               <span>🌊</span> Comprensorio: 
               <span class="text-slate-200 font-medium">Riviera delle Palme · Marche</span>
+            </p>
+            <p class="text-slate-400 flex items-center gap-1.5">
+              <span>📧</span> Contatto ufficiale: 
+              <a href="mailto:streetreview.app@gmail.com" class="text-brand-cyan hover:underline font-semibold">streetreview.app@gmail.com</a>
             </p>
             <p class="text-[11px] text-slate-400 pt-1 leading-snug">
               Progetto civico indipendente nato per promuovere la vivibilità e la sicurezza urbana.
@@ -949,6 +1473,16 @@
               </a>
             </li>
             <li>
+              <a href="#gamification" class="hover:text-amber-400 transition-colors flex items-center gap-1.5">
+                <span>🎖️</span> Livelli, XP &amp; 8 Badge
+              </a>
+            </li>
+            <li>
+              <a href="#classifica" class="hover:text-amber-400 transition-colors flex items-center gap-1.5">
+                <span>🏆</span> Classifica Generale Live
+              </a>
+            </li>
+            <li>
               <a href="#creatore" class="hover:text-brand-gold transition-colors flex items-center gap-1.5">
                 <span>👤</span> Matteo Bernardini (Founder)
               </a>
@@ -966,7 +1500,7 @@
       <!-- Barra di chiusura e Copyright -->
       <div class="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
         <p>
-          © <span id="currentYear">2026</span> Street Review · Tutti i diritti riservati. Ideato con passione a San Benedetto del Tronto.
+          © <span id="currentYear">2026</span> Street Review · Tutti i diritti riservati. Ideato con passione a San Benedetto del Tronto · <a href="mailto:streetreview.app@gmail.com" class="hover:text-brand-cyan transition-colors">streetreview.app@gmail.com</a>
         </p>
         <div class="flex items-center gap-4">
           <a href="index.html" class="text-cyan-400 hover:text-cyan-300 font-bold transition-colors">
@@ -978,9 +1512,582 @@
     </div>
   </footer>
 
-  <!-- Script per aggiornamento dinamico anno corrente -->
+  <!-- Script per aggiornamento dinamico anno corrente & Classifica Generale Live da Firestore -->
   <script>
     document.getElementById('currentYear').textContent = new Date().getFullYear();
+
+    (function initLiveLeaderboard() {
+      // 1. DEFINIZIONE DEI 10 LIVELLI E CORNICI PERK (IDENTICI ALL'APP)
+      const GAMIFICATION_LEVELS = [
+        {
+          level: 1, minXP: 0, maxXP: 99, nextXP: 100,
+          icon: '🌱', title: 'Pedone Curioso', fullTitle: '🌱 Pedone Curioso', tierLabel: 'Bronzo',
+          avatarFrameCls: 'border-amber-700 ring-2 ring-amber-700/35',
+          pillCls: 'bg-amber-950/90 text-amber-300 border-amber-700/70',
+        },
+        {
+          level: 2, minXP: 100, maxXP: 299, nextXP: 300,
+          icon: '🚲', title: 'Esploratore di Quartiere', fullTitle: '🚲 Esploratore di Quartiere', tierLabel: 'Bronzo Rame',
+          avatarFrameCls: 'border-amber-600 ring-2 ring-amber-500/40',
+          pillCls: 'bg-amber-950/90 text-amber-200 border-amber-600/70',
+        },
+        {
+          level: 3, minXP: 300, maxXP: 599, nextXP: 600,
+          icon: '🛵', title: 'Sentinella Urbana', fullTitle: '🛵 Sentinella Urbana', tierLabel: 'Ambra',
+          avatarFrameCls: 'border-amber-500 ring-2 ring-amber-400/50 shadow-sm shadow-amber-500/20',
+          pillCls: 'bg-amber-950/90 text-amber-200 border-amber-500/80',
+        },
+        {
+          level: 4, minXP: 600, maxXP: 999, nextXP: 1000,
+          icon: '🚗', title: 'Viaggiatore Locale', fullTitle: '🚗 Viaggiatore Locale', tierLabel: 'Argento Ciano',
+          avatarFrameCls: 'border-slate-300 ring-2 ring-cyan-400/55 shadow-sm shadow-cyan-400/25',
+          pillCls: 'bg-cyan-950/90 text-cyan-200 border-cyan-500/70',
+        },
+        {
+          level: 5, minXP: 1000, maxXP: 1599, nextXP: 1600,
+          icon: '🗺️', title: 'Cartografo della Riviera', fullTitle: '🗺️ Cartografo della Riviera', tierLabel: 'Ciano Brillante',
+          avatarFrameCls: 'border-cyan-400 ring-2 ring-cyan-300/70 shadow-md shadow-cyan-400/30',
+          pillCls: 'bg-cyan-950/90 text-cyan-200 border-cyan-400/80',
+        },
+        {
+          level: 6, minXP: 1600, maxXP: 2399, nextXP: 2400,
+          icon: '🧭', title: 'Guida Esperta', fullTitle: '🧭 Guida Esperta', tierLabel: 'Argento Brillante',
+          avatarFrameCls: 'border-cyan-300 ring-2 ring-sky-400/75 shadow-md shadow-cyan-500/35',
+          pillCls: 'bg-sky-950/90 text-sky-200 border-sky-400/80',
+        },
+        {
+          level: 7, minXP: 2400, maxXP: 3399, nextXP: 3400,
+          icon: '🛡️', title: 'Custode della Viabilità', fullTitle: '🛡️ Custode della Viabilità', tierLabel: 'Oro',
+          avatarFrameCls: 'border-amber-400 ring-2 ring-yellow-400/75 shadow-md shadow-amber-400/40',
+          pillCls: 'bg-amber-500/20 text-amber-200 border-amber-400/80',
+        },
+        {
+          level: 8, minXP: 3400, maxXP: 4699, nextXP: 4700,
+          icon: '🏛️', title: 'Assessore della Strada', fullTitle: '🏛️ Assessore della Strada', tierLabel: 'Oro Luminoso',
+          avatarFrameCls: 'border-yellow-300 ring-2 ring-amber-400/90 shadow-lg shadow-yellow-400/45',
+          pillCls: 'bg-yellow-500/20 text-yellow-200 border-yellow-300/90',
+        },
+        {
+          level: 9, minXP: 4700, maxXP: 6499, nextXP: 6500,
+          icon: '👑', title: 'Sindaco delle Strade', fullTitle: '👑 Sindaco delle Strade', tierLabel: 'Viola-Oro Reale',
+          avatarFrameCls: 'border-purple-400 ring-2 ring-amber-400/85 shadow-[0_0_12px_rgba(168,85,247,0.55)]',
+          pillCls: 'bg-purple-950/90 text-purple-200 border-purple-400/80',
+        },
+        {
+          level: 10, minXP: 6500, maxXP: Infinity, nextXP: null,
+          icon: '🌟', title: 'Leggenda della Riviera', fullTitle: '🌟 Leggenda della Riviera', tierLabel: 'Diamante Leggendario',
+          avatarFrameCls: 'border-fuchsia-400 ring-2 ring-yellow-300/90 shadow-[0_0_14px_rgba(192,38,211,0.65)]',
+          pillCls: 'bg-gradient-to-r from-fuchsia-950 to-amber-950 text-amber-200 border-fuchsia-400/90',
+        },
+      ];
+
+      const GAMIFICATION_BADGES = [
+        { id: 'first_review', icon: '🚀', name: "Battesimo dell'Asfalto", target: 1, getValue: (s) => s.reviewsCount || 0 },
+        { id: 'pioneer', icon: '🧭', name: 'Pioniere', target: 10, getValue: (s) => s.pioneerCount || 0 },
+        { id: 'parking_hound', icon: '🅿️', name: 'Segugio del Parcheggio', target: 12, getValue: (s) => s.parkingReviewsCount || 0 },
+        { id: 'accessibility_paladin', icon: '♿', name: "Paladino dell'Accessibilità", target: 8, getValue: (s) => s.accessibilityStreetsCount || 0 },
+        { id: 'street_critic', icon: '✍️', name: 'Critico Stradale', target: 15, getValue: (s) => s.detailedCommentsCount || 0 },
+        { id: 'riviera_king', icon: '🌴', name: 'Re della Riviera', target: 15, getValue: (s) => s.uniqueStreetsCount || 0 },
+        { id: 'intermunicipal_explorer', icon: '🌍', name: 'Esploratore Intercomunale', target: 3, getValue: (s) => s.uniqueCitiesCount || 0 },
+        { id: 'asphalt_master', icon: '🏆', name: "Maestro dell'Asfalto", target: 30, getValue: (s) => s.uniqueStreetsCount || 0 },
+      ];
+
+      const getLevelByXP = (xpValue = 0) => {
+        const xp = Math.max(0, Number(xpValue) || 0);
+        let current = GAMIFICATION_LEVELS[0];
+        for (let i = 0; i < GAMIFICATION_LEVELS.length; i++) {
+          if (xp >= GAMIFICATION_LEVELS[i].minXP) current = GAMIFICATION_LEVELS[i];
+        }
+        return current;
+      };
+
+      // 2. NORMALIZZAZIONE STRADE E COMUNI (IDENTICA A INDEX.HTML)
+      const normalizeStreetKey = (name) => {
+        if (!name) return '';
+        return String(name)
+          .toLowerCase()
+          .replace(/\bv\.le\b/gi, 'viale')
+          .replace(/\bc\.so\b/gi, 'corso')
+          .replace(/\bp\.zza\b/gi, 'piazza')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .trim();
+      };
+
+      const inferCityKeyFromCoords = (lat, lng) => {
+        const nLat = Number(lat);
+        const nLng = Number(lng);
+        if (!isNaN(nLat) && !isNaN(nLng) && nLat !== 0 && nLng !== 0) {
+          if (nLat >= 42.9635) return 'grottammare';
+          if (nLng < 13.8300 && nLat >= 42.9300) return 'acquaviva-picena';
+          if (nLng < 13.8750 && nLat < 42.9300) return 'monteprandone';
+        }
+        return 'san-benedetto-del-tronto';
+      };
+
+      const normalizeCityKey = (city, lat, lng) => {
+        const raw = (city && city !== 'undefined' && city !== 'null') ? String(city).trim() : '';
+        if (!raw) return inferCityKeyFromCoords(lat, lng);
+        const slug = raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').trim();
+        if (!slug || slug === 'undefined' || slug === 'null') return inferCityKeyFromCoords(lat, lng);
+        if (slug.includes('porto-d-ascoli') || slug.includes('porto-dascoli') || slug.includes('san-benedetto') || slug.includes('s-benedetto') || slug === 'sbt') {
+          return 'san-benedetto-del-tronto';
+        }
+        if (slug.includes('centobuchi') || slug.includes('monteprandone')) return 'monteprandone';
+        if (slug.includes('grottammare') || slug.includes('grottamare')) return 'grottammare';
+        if (slug.includes('acquaviva')) return 'acquaviva-picena';
+        if (slug === 'ap' || slug.includes('provincia-di-ascoli') || slug === 'marche' || slug === 'italia') {
+          return inferCityKeyFromCoords(lat, lng);
+        }
+        return slug;
+      };
+
+      const getDistanceKm = (lat1, lng1, lat2, lng2) => {
+        const nLat1 = Number(lat1), nLng1 = Number(lng1), nLat2 = Number(lat2), nLng2 = Number(lng2);
+        if (isNaN(nLat1) || isNaN(nLng1) || isNaN(nLat2) || isNaN(nLng2) || !nLat1 || !nLng1 || !nLat2 || !nLng2) return Infinity;
+        const R = 6371;
+        const dLat = (nLat2 - nLat1) * Math.PI / 180;
+        const dLng = (nLng2 - nLng1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(nLat1 * Math.PI / 180) * Math.cos(nLat2 * Math.PI / 180) *
+                  Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      };
+
+      const isSameStreet = (a, b) => {
+        if (!a || !b) return false;
+        const sNormA = normalizeStreetKey(a.name || a.streetName || a.canonicalName);
+        const sNormB = normalizeStreetKey(b.name || b.streetName || b.canonicalName);
+        if (!sNormA || !sNormB || sNormA !== sNormB) return false;
+
+        const latA = Number(a.lat ?? a.latitude);
+        const lngA = Number(a.lng ?? a.longitude);
+        const latB = Number(b.lat ?? b.latitude);
+        const lngB = Number(b.lng ?? b.longitude);
+        const hasCoordsA = !isNaN(latA) && !isNaN(lngA) && latA !== 0 && lngA !== 0;
+        const hasCoordsB = !isNaN(latB) && !isNaN(lngB) && latB !== 0 && lngB !== 0;
+
+        if (hasCoordsA && hasCoordsB) {
+          const distKm = getDistanceKm(latA, lngA, latB, lngB);
+          if (distKm <= 2.5) return true;
+          if (distKm > 3.5) return false;
+        }
+        const cKeyA = normalizeCityKey(a.city || a.streetCity, hasCoordsA ? latA : null, hasCoordsA ? lngA : null);
+        const cKeyB = normalizeCityKey(b.city || b.streetCity, hasCoordsB ? latB : null, hasCoordsB ? lngB : null);
+        return cKeyA === cKeyB;
+      };
+
+      const isDetailedCommentText = (commentStr) => {
+        if (!commentStr) return false;
+        const trimmed = String(commentStr).trim();
+        if (trimmed === 'Recensione pubblicata con successo.') return false;
+        return trimmed.length >= 40;
+      };
+
+      const hasAnyParkingOrAmenityTag = (rev) => {
+        if (!rev) return false;
+        const hasPark = Array.isArray(rev.parkingTypes) && rev.parkingTypes.length > 0;
+        const hasAmen = Array.isArray(rev.amenities) && rev.amenities.length > 0;
+        return hasPark || hasAmen;
+      };
+
+      const computeSingleReviewXP = (rev, isPioneer) => {
+        const baseXP = 50;
+        const pioneerXP = isPioneer ? 30 : 0;
+        const isDetailed = isDetailedCommentText(rev && rev.comment) && hasAnyParkingOrAmenityTag(rev);
+        const detailXP = isDetailed ? 20 : 0;
+        return baseXP + pioneerXP + detailXP;
+      };
+
+      const parseReviewTimestampMs = (rev) => {
+        const raw = (rev && (rev.createdAt || rev.updatedAt)) || null;
+        if (!raw) return Number.MAX_SAFE_INTEGER;
+        const parsed = Date.parse(raw);
+        return isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
+      };
+
+      const escapeHtml = (str) => {
+        return String(str || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      };
+
+      // 3. CALCOLO CLASSIFICA DINAMICA DALLE RECENSIONI FIRESTORE
+      const computeLeaderboardFromCloudReviews = (cloudReviews) => {
+        const streetGroups = [];
+        (cloudReviews || []).forEach(r => {
+          const rawName = (r.streetName || '').trim();
+          if (!rawName) return;
+          const candidate = {
+            name: rawName,
+            city: r.streetCity,
+            lat: r.latitude,
+            lng: r.longitude,
+          };
+          let targetGroup = streetGroups.find(g => isSameStreet(g, candidate));
+          if (!targetGroup) {
+            targetGroup = {
+              id: 'street-' + normalizeStreetKey(rawName) + '_' + normalizeCityKey(r.streetCity, r.latitude, r.longitude),
+              canonicalName: rawName,
+              city: r.streetCity || '',
+              latitude: Number(r.latitude) || 0,
+              longitude: Number(r.longitude) || 0,
+              reviews: [],
+            };
+            streetGroups.push(targetGroup);
+          }
+          targetGroup.reviews.push(r);
+
+          const validCoords = targetGroup.reviews.filter(rev =>
+            rev.latitude && rev.longitude && !isNaN(Number(rev.latitude)) && !isNaN(Number(rev.longitude))
+          );
+          if (validCoords.length > 0) {
+            targetGroup.latitude = Number((validCoords.reduce((acc, rev) => acc + Number(rev.latitude), 0) / validCoords.length).toFixed(6));
+            targetGroup.longitude = Number((validCoords.reduce((acc, rev) => acc + Number(rev.longitude), 0) / validCoords.length).toFixed(6));
+          }
+        });
+
+        const usersMap = new Map();
+        const resolveAuthorKey = (rev) => {
+          if (rev && rev.authorId) return String(rev.authorId);
+          if (rev && rev.userId) return String(rev.userId);
+          const cleanName = ((rev && (rev.authorName || rev.user)) || 'Utente').trim().toLowerCase();
+          return 'name:' + cleanName;
+        };
+
+        streetGroups.forEach((street, idx) => {
+          const revList = street.reviews || [];
+          if (revList.length === 0) return;
+
+          const streetId = street.id || ('street-' + idx);
+          const streetCityNormalized = normalizeCityKey(street.city, street.latitude, street.longitude);
+
+          let pioneerRev = revList[revList.length - 1];
+          let minTime = parseReviewTimestampMs(pioneerRev);
+          for (let i = revList.length - 1; i >= 0; i--) {
+            const r = revList[i];
+            const t = parseReviewTimestampMs(r);
+            if (t < minTime) {
+              minTime = t;
+              pioneerRev = r;
+            }
+          }
+
+          revList.forEach(r => {
+            const authorKey = resolveAuthorKey(r);
+            const isPioneer = Boolean(pioneerRev && r.id === pioneerRev.id);
+            const xpEarned = computeSingleReviewXP(r, isPioneer);
+            const authorName = r.authorName || r.user || 'Cittadino Esploratore';
+            const authorAvatar = r.authorAvatar || r.avatarUrl || '';
+
+            if (!usersMap.has(authorKey)) {
+              usersMap.set(authorKey, {
+                authorId: r.authorId || r.userId || authorKey,
+                name: authorName,
+                avatarUrl: authorAvatar,
+                xp: 0,
+                reviewsCount: 0,
+                streetIds: new Set(),
+                cityKeys: new Set(),
+                pioneerStreetIds: new Set(),
+                parkingReviewsCount: 0,
+                detailedCommentsCount: 0,
+                accessibilityStreetIds: new Set(),
+              });
+            }
+
+            const u = usersMap.get(authorKey);
+            if (authorName && (!u.name || u.name === 'Cittadino Esploratore')) u.name = authorName;
+            if (authorAvatar && !u.avatarUrl) u.avatarUrl = authorAvatar;
+
+            u.xp += xpEarned;
+            u.reviewsCount += 1;
+            u.streetIds.add(streetId);
+
+            const revCityKey = normalizeCityKey(
+              r.streetCity || street.city,
+              r.latitude || street.latitude,
+              r.longitude || street.longitude
+            ) || streetCityNormalized;
+            if (revCityKey) u.cityKeys.add(revCityKey);
+
+            if (isPioneer) u.pioneerStreetIds.add(streetId);
+            if (Array.isArray(r.parkingTypes) && r.parkingTypes.length > 0) u.parkingReviewsCount += 1;
+            if (isDetailedCommentText(r.comment)) u.detailedCommentsCount += 1;
+
+            const hasAccessibilitySignal =
+              (Array.isArray(r.parkingTypes) && (r.parkingTypes.includes('DISABLED') || r.parkingTypes.includes('PINK'))) ||
+              Number(r.ratings && r.ratings.accessibility) > 0;
+            if (hasAccessibilitySignal) u.accessibilityStreetIds.add(streetId);
+          });
+        });
+
+        const finalizedUsers = [];
+        usersMap.forEach((u) => {
+          const statsObj = {
+            authorId: u.authorId,
+            name: u.name,
+            avatarUrl: u.avatarUrl,
+            xp: u.xp,
+            reviewsCount: u.reviewsCount,
+            uniqueStreetsCount: u.streetIds.size,
+            uniqueCitiesCount: u.cityKeys.size,
+            pioneerCount: u.pioneerStreetIds.size,
+            parkingReviewsCount: u.parkingReviewsCount,
+            detailedCommentsCount: u.detailedCommentsCount,
+            accessibilityStreetsCount: u.accessibilityStreetIds.size,
+          };
+          const levelInfo = getLevelByXP(statsObj.xp);
+          const unlockedBadges = GAMIFICATION_BADGES.filter(b => b.getValue(statsObj) >= b.target);
+
+          finalizedUsers.push({
+            ...statsObj,
+            levelInfo,
+            unlockedBadges,
+            unlockedBadgesCount: unlockedBadges.length,
+          });
+        });
+
+        const leaderboard = finalizedUsers
+          .sort((a, b) => {
+            if (b.xp !== a.xp) return b.xp - a.xp;
+            if (b.pioneerCount !== a.pioneerCount) return b.pioneerCount - a.pioneerCount;
+            return b.reviewsCount - a.reviewsCount;
+          })
+          .slice(0, 10)
+          .map((u, idx) => ({ ...u, rank: idx + 1 }));
+
+        return {
+          leaderboard,
+          totalExplorers: finalizedUsers.length,
+          totalStreets: streetGroups.length,
+          totalReviews: (cloudReviews || []).length,
+        };
+      };
+
+      // 4. RENDERING DEL PODIO (1°, 2°, 3°) E DELLA LISTA TOP 10
+      const renderAvatarHtml = (entry, sizeCls) => {
+        const initial = escapeHtml((entry.name || 'U').trim().charAt(0).toUpperCase());
+        const frameCls = entry.levelInfo.avatarFrameCls;
+        if (entry.avatarUrl) {
+          return `
+            <div class="relative shrink-0 inline-block">
+              <img
+                src="${escapeHtml(entry.avatarUrl)}"
+                alt="${escapeHtml(entry.name)}"
+                referrerpolicy="no-referrer"
+                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                class="${sizeCls} rounded-full border-2 object-cover ${frameCls}"
+              />
+              <div style="display:none;" class="${sizeCls} rounded-full bg-slate-800 text-white border-2 items-center justify-center font-black ${frameCls}">
+                ${initial}
+              </div>
+              <span class="absolute -bottom-1 -right-1 text-xs bg-slate-950 rounded-full px-1 py-0.5 border border-slate-700 shadow" title="${escapeHtml(entry.levelInfo.fullTitle)}">
+                ${entry.levelInfo.icon}
+              </span>
+            </div>
+          `;
+        }
+        return `
+          <div class="relative shrink-0 inline-block">
+            <div class="${sizeCls} rounded-full bg-slate-800 text-white border-2 flex items-center justify-center font-black ${frameCls}">
+              ${initial}
+            </div>
+            <span class="absolute -bottom-1 -right-1 text-xs bg-slate-950 rounded-full px-1 py-0.5 border border-slate-700 shadow" title="${escapeHtml(entry.levelInfo.fullTitle)}">
+              ${entry.levelInfo.icon}
+            </span>
+          </div>
+        `;
+      };
+
+      const renderLeaderboardUI = (data) => {
+        const podiumEl = document.getElementById('leaderboardPodiumContainer');
+        const listEl = document.getElementById('leaderboardListContainer');
+        const statExplorersEl = document.getElementById('statTotalExplorers');
+        const statStreetsEl = document.getElementById('statTotalStreets');
+        const statReviewsEl = document.getElementById('statTotalReviews');
+
+        if (statExplorersEl) statExplorersEl.textContent = data.totalExplorers;
+        if (statStreetsEl) statStreetsEl.textContent = data.totalStreets;
+        if (statReviewsEl) statReviewsEl.textContent = data.totalReviews;
+
+        const leaderboard = data.leaderboard || [];
+
+        if (leaderboard.length === 0) {
+          if (podiumEl) {
+            podiumEl.innerHTML = `
+              <div class="md:col-span-3 bg-slate-950/90 border border-slate-800 rounded-3xl p-10 text-center space-y-3">
+                <div class="text-4xl">🧭</div>
+                <p class="text-base font-black text-white">Il podio attende i primi Esploratori!</p>
+                <p class="text-xs text-slate-400">Entra nella mappa e pubblica la prima recensione per conquistare il 1° posto nella Riviera delle Palme.</p>
+              </div>
+            `;
+          }
+          if (listEl) {
+            listEl.innerHTML = `
+              <div class="p-8 text-center text-xs text-slate-400">
+                Nessuna recensione ancora presente. Sii il primo cittadino a inaugurare la classifica!
+              </div>
+            `;
+          }
+          return;
+        }
+
+        // Ordine visivo su desktop: 2° a sinistra, 1° al centro rialzato, 3° a destra
+        const first = leaderboard[0] || null;
+        const second = leaderboard[1] || null;
+        const third = leaderboard[2] || null;
+
+        const buildPodiumCard = (entry, rankNum) => {
+          if (!entry) {
+            return `
+              <div class="bg-slate-950/50 border border-dashed border-slate-800 rounded-3xl p-6 text-center space-y-2 opacity-60">
+                <div class="text-2xl">${rankNum === 2 ? '🥈' : '🥉'}</div>
+                <p class="text-xs font-bold text-slate-400">${rankNum}° Posto Disponibile</p>
+                <p class="text-[11px] text-slate-500">Recensisci le vie della Riviera per salire sul podio!</p>
+              </div>
+            `;
+          }
+
+          const isFirst = rankNum === 1;
+          const isSecond = rankNum === 2;
+          const medal = isFirst ? '🥇' : isSecond ? '🥈' : '🥉';
+          const cardCls = isFirst
+            ? 'bg-gradient-to-b from-amber-950/50 via-slate-900 to-slate-950 border-2 border-amber-400/80 shadow-2xl shadow-amber-500/20 md:-translate-y-3'
+            : isSecond
+            ? 'bg-gradient-to-b from-cyan-950/35 via-slate-900 to-slate-950 border border-cyan-400/60 shadow-xl'
+            : 'bg-gradient-to-b from-orange-950/35 via-slate-900 to-slate-950 border border-amber-600/60 shadow-xl';
+
+          const badgeIcons = entry.unlockedBadges.map(b => `<span title="${escapeHtml(b.name)}">${b.icon}</span>`).join(' ');
+
+          return `
+            <div class="rounded-3xl p-6 text-center space-y-4 transition-all ${cardCls}">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-black uppercase tracking-wider px-2.5 py-1 rounded-full ${
+                  isFirst ? 'bg-amber-400 text-slate-950' : isSecond ? 'bg-cyan-950 text-cyan-300 border border-cyan-500/50' : 'bg-amber-950 text-amber-300 border border-amber-600/50'
+                }">
+                  ${medal} ${rankNum}° Classificato
+                </span>
+                <span class="text-xs font-black text-amber-400">${entry.xp} XP</span>
+              </div>
+
+              <div class="py-1">
+                ${renderAvatarHtml(entry, isFirst ? 'w-20 h-20 text-2xl' : 'w-16 h-16 text-xl')}
+              </div>
+
+              <div class="space-y-1">
+                <h4 class="text-base sm:text-lg font-black text-white truncate">${escapeHtml(entry.name)}</h4>
+                <div class="inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-0.5 rounded-full border ${entry.levelInfo.pillCls}">
+                  <span>Liv. ${entry.levelInfo.level}</span>
+                  <span>·</span>
+                  <span>${escapeHtml(entry.levelInfo.fullTitle)}</span>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800/80 text-center">
+                <div class="bg-slate-950/80 rounded-xl p-2 border border-slate-800/80">
+                  <p class="text-sm font-black text-white">${entry.uniqueStreetsCount}</p>
+                  <p class="text-[10px] text-slate-400 font-semibold">🛣️ Strade</p>
+                </div>
+                <div class="bg-slate-950/80 rounded-xl p-2 border border-slate-800/80">
+                  <p class="text-sm font-black text-amber-300">${entry.unlockedBadgesCount}/${GAMIFICATION_BADGES.length}</p>
+                  <p class="text-[10px] text-slate-400 font-semibold">🏅 Badge</p>
+                </div>
+                <div class="bg-slate-950/80 rounded-xl p-2 border border-slate-800/80">
+                  <p class="text-sm font-black text-brand-cyan">${entry.xp}</p>
+                  <p class="text-[10px] text-slate-400 font-semibold">⚡ XP Tot.</p>
+                </div>
+              </div>
+
+              ${badgeIcons ? `<div class="text-sm pt-1 flex items-center justify-center gap-1 flex-wrap">${badgeIcons}</div>` : ''}
+            </div>
+          `;
+        };
+
+        if (podiumEl) {
+          podiumEl.innerHTML = `
+            <div class="order-2 md:order-1">${buildPodiumCard(second, 2)}</div>
+            <div class="order-1 md:order-2">${buildPodiumCard(first, 1)}</div>
+            <div class="order-3 md:order-3">${buildPodiumCard(third, 3)}</div>
+          `;
+        }
+
+        if (listEl) {
+          listEl.innerHTML = leaderboard.map(entry => {
+            const rankBadge = entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `#${entry.rank}`;
+            const rankCls = entry.rank === 1
+              ? 'bg-amber-400 text-slate-950'
+              : entry.rank === 2
+              ? 'bg-cyan-400/20 text-cyan-300 border border-cyan-400/50'
+              : entry.rank === 3
+              ? 'bg-amber-600/25 text-amber-300 border border-amber-500/50'
+              : 'bg-slate-900 text-slate-400 border border-slate-800';
+
+            const badgeIcons = entry.unlockedBadges.map(b => `<span title="${escapeHtml(b.name)}">${b.icon}</span>`).join('');
+
+            return `
+              <div class="px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-900/60 transition-colors">
+                <div class="flex items-center gap-3.5 min-w-0">
+                  <div class="w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs sm:text-sm shrink-0 ${rankCls}">
+                    ${rankBadge}
+                  </div>
+                  ${renderAvatarHtml(entry, 'w-11 h-11 text-sm')}
+                  <div class="min-w-0 space-y-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <p class="text-sm font-black text-white truncate">${escapeHtml(entry.name)}</p>
+                      <span class="text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${entry.levelInfo.pillCls}">
+                        Liv. ${entry.levelInfo.level} · ${escapeHtml(entry.levelInfo.fullTitle)}
+                      </span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 font-semibold">
+                      <span>🛣️ <strong class="text-slate-200">${entry.uniqueStreetsCount}</strong> ${entry.uniqueStreetsCount === 1 ? 'strada recensita' : 'strade recensite'}</span>
+                      ${entry.pioneerCount > 0 ? `<span class="text-amber-400">🧭 ${entry.pioneerCount} da Pioniere</span>` : ''}
+                      <span>🏅 <strong class="text-slate-200">${entry.unlockedBadgesCount}/${GAMIFICATION_BADGES.length}</strong> badge ${badgeIcons ? `<span class="ml-1">${badgeIcons}</span>` : ''}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between sm:justify-end gap-3 pl-12 sm:pl-0 shrink-0">
+                  <div class="text-left sm:text-right bg-slate-900/90 border border-slate-800 px-3.5 py-1.5 rounded-2xl">
+                    <p class="text-sm sm:text-base font-black text-amber-400">${entry.xp} <span class="text-[10px] text-slate-400">XP</span></p>
+                    <p class="text-[10px] text-slate-400 font-semibold">Grado ${escapeHtml(entry.levelInfo.tierLabel)}</p>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      };
+
+      // 5. SOTTOSCRIZIONE REAL-TIME A FIRESTORE (COLLEZIONE 'reviews')
+      const firestore = window.db;
+      const statusEl = document.getElementById('liveLeaderboardStatus');
+      const dotEl = document.getElementById('liveLeaderboardDot');
+
+      if (!firestore) {
+        if (statusEl) statusEl.textContent = 'Database Firestore non raggiungibile';
+        if (dotEl) dotEl.className = 'flex h-2.5 w-2.5 rounded-full bg-rose-500';
+        return;
+      }
+
+      firestore.collection('reviews').onSnapshot(
+        (snapshot) => {
+          const cloudReviews = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const computed = computeLeaderboardFromCloudReviews(cloudReviews);
+          renderLeaderboardUI(computed);
+          if (statusEl) {
+            statusEl.textContent = 'Classifica Live aggiornata in tempo reale · Firestore';
+          }
+        },
+        (err) => {
+          console.error('Errore lettura classifica live da Firestore:', err);
+          if (statusEl) statusEl.textContent = 'Connessione classifica in sola lettura';
+        }
+      );
+    })();
   </script>
 
 </body>
