@@ -582,8 +582,9 @@
     window.fixVialeSecondoMoretti = () => window.updateStreetReviewCoordinates('Viale Secondo Moretti', 42.9517, 13.8822);
     window.fixViaDeiPiceni = () => window.alignStreetReviewsOnFirestore('Via dei Piceni', 'Grottammare', '63066', 42.9878, 13.8700);
 
-    // --- SISTEMA GAMIFICATION: LIVELLI, XP, BADGE E PERK VISIVI ---
+    // --- SISTEMA GAMIFICATION: 10 LIVELLI, XP, 8 BADGE E PERK VISIVI (4 FASCE CORNICE) ---
     const GAMIFICATION_LEVELS = [
+      // FASCIA 1 (Livelli 1-3): Bordo Bronzo / Ambra
       {
         level: 1,
         minXP: 0,
@@ -593,10 +594,10 @@
         title: 'Pedone Curioso',
         fullTitle: '🌱 Pedone Curioso',
         tierLabel: 'Bronzo',
-        avatarBorderClass: 'border-amber-700 ring-2 ring-amber-700/25',
+        avatarBorderClass: 'border-amber-700 ring-2 ring-amber-700/30',
         badgeClass: 'bg-amber-50 text-amber-900 border-amber-300',
         headerPillClass: 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100',
-        progressGradient: 'from-amber-600 to-amber-500',
+        progressGradient: 'from-amber-700 to-amber-500',
         commentHighlightClass: 'border-slate-100 bg-white',
       },
       {
@@ -609,10 +610,10 @@
         fullTitle: '🚲 Esploratore di Quartiere',
         tierLabel: 'Bronzo Rame',
         avatarBorderClass: 'border-amber-600 ring-2 ring-amber-500/35',
-        badgeClass: 'bg-teal-50 text-teal-900 border-teal-300',
-        headerPillClass: 'bg-teal-50 text-teal-900 border-teal-300 hover:bg-teal-100',
-        progressGradient: 'from-teal-500 to-emerald-500',
-        commentHighlightClass: 'border-teal-200/80 bg-gradient-to-br from-white to-teal-50/20',
+        badgeClass: 'bg-amber-50/90 text-amber-900 border-amber-400/80',
+        headerPillClass: 'bg-amber-50 text-amber-900 border-amber-400/80 hover:bg-amber-100',
+        progressGradient: 'from-amber-600 to-orange-500',
+        commentHighlightClass: 'border-amber-200/70 bg-gradient-to-br from-white to-amber-50/20',
       },
       {
         level: 3,
@@ -622,42 +623,120 @@
         icon: '🛵',
         title: 'Sentinella Urbana',
         fullTitle: '🛵 Sentinella Urbana',
-        tierLabel: 'Ciano',
-        avatarBorderClass: 'border-cyan-400 ring-2 ring-cyan-400/50 shadow-xs shadow-cyan-500/25',
-        badgeClass: 'bg-cyan-50 text-cyan-900 border-cyan-400',
-        headerPillClass: 'bg-cyan-50 text-cyan-900 border-cyan-400 hover:bg-cyan-100',
-        progressGradient: 'from-cyan-500 to-blue-600',
-        commentHighlightClass: 'border-cyan-300/90 bg-gradient-to-br from-white to-cyan-50/30',
+        tierLabel: 'Ambra',
+        avatarBorderClass: 'border-amber-500 ring-2 ring-amber-400/45 shadow-2xs shadow-amber-500/20',
+        badgeClass: 'bg-orange-50 text-amber-950 border-amber-400',
+        headerPillClass: 'bg-orange-50 text-amber-950 border-amber-400 hover:bg-orange-100',
+        progressGradient: 'from-amber-500 to-orange-500',
+        commentHighlightClass: 'border-amber-200/90 bg-gradient-to-br from-white to-amber-50/30',
       },
+      // FASCIA 2 (Livelli 4-6): Bordo Ciano / Argento brillante
       {
         level: 4,
         minXP: 600,
         maxXP: 999,
         nextXP: 1000,
         icon: '🚗',
+        title: 'Viaggiatore Locale',
+        fullTitle: '🚗 Viaggiatore Locale',
+        tierLabel: 'Argento Ciano',
+        avatarBorderClass: 'border-slate-300 ring-2 ring-cyan-400/50 shadow-xs shadow-cyan-400/25',
+        badgeClass: 'bg-cyan-50 text-cyan-900 border-cyan-300',
+        headerPillClass: 'bg-cyan-50 text-cyan-900 border-cyan-300 hover:bg-cyan-100',
+        progressGradient: 'from-cyan-500 to-sky-500',
+        commentHighlightClass: 'border-cyan-200/90 bg-gradient-to-br from-white to-cyan-50/25',
+      },
+      {
+        level: 5,
+        minXP: 1000,
+        maxXP: 1599,
+        nextXP: 1600,
+        icon: '🗺️',
         title: 'Cartografo della Riviera',
-        fullTitle: '🚗 Cartografo della Riviera',
+        fullTitle: '🗺️ Cartografo della Riviera',
+        tierLabel: 'Ciano Brillante',
+        avatarBorderClass: 'border-cyan-400 ring-2 ring-cyan-300/65 shadow-sm shadow-cyan-400/30',
+        badgeClass: 'bg-cyan-50 text-cyan-950 border-cyan-400 font-extrabold',
+        headerPillClass: 'bg-cyan-50 text-cyan-950 border-cyan-400 hover:bg-cyan-100',
+        progressGradient: 'from-cyan-500 to-blue-600',
+        commentHighlightClass: 'border-cyan-300/90 bg-gradient-to-br from-white to-cyan-50/35',
+      },
+      {
+        level: 6,
+        minXP: 1600,
+        maxXP: 2399,
+        nextXP: 2400,
+        icon: '🧭',
+        title: 'Guida Esperta',
+        fullTitle: '🧭 Guida Esperta',
+        tierLabel: 'Argento Brillante',
+        avatarBorderClass: 'border-cyan-300 ring-2 ring-sky-400/75 shadow-sm shadow-cyan-500/35',
+        badgeClass: 'bg-gradient-to-r from-slate-100 via-cyan-50 to-sky-100 text-cyan-950 border-cyan-400 font-extrabold',
+        headerPillClass: 'bg-gradient-to-r from-slate-100 via-cyan-50 to-sky-100 text-cyan-950 border-cyan-400 hover:brightness-98',
+        progressGradient: 'from-sky-500 via-cyan-400 to-blue-600',
+        commentHighlightClass: 'border-cyan-300 bg-gradient-to-br from-white to-sky-50/40',
+      },
+      // FASCIA 3 (Livelli 7-8): Bordo Oro luminoso
+      {
+        level: 7,
+        minXP: 2400,
+        maxXP: 3399,
+        nextXP: 3400,
+        icon: '🛡️',
+        title: 'Custode della Viabilità',
+        fullTitle: '🛡️ Custode della Viabilità',
         tierLabel: 'Oro',
-        avatarBorderClass: 'border-amber-400 ring-2 ring-amber-400/60 shadow-sm shadow-amber-400/30',
+        avatarBorderClass: 'border-amber-400 ring-2 ring-yellow-400/75 shadow-md shadow-amber-400/40',
         badgeClass: 'bg-amber-100 text-amber-950 border-amber-400 font-extrabold',
         headerPillClass: 'bg-amber-100 text-amber-950 border-amber-400 hover:bg-amber-200/80',
         progressGradient: 'from-amber-500 to-yellow-400',
         commentHighlightClass: 'border-amber-300 bg-gradient-to-br from-white to-amber-50/40',
       },
       {
-        level: 5,
-        minXP: 1000,
-        maxXP: Infinity,
-        nextXP: null,
-        icon: '👑',
-        title: 'Sindaco delle Strade',
-        fullTitle: '👑 Sindaco delle Strade',
-        tierLabel: 'Oro Reale',
-        avatarBorderClass: 'border-yellow-400 ring-2 ring-yellow-400/80 shadow-md shadow-amber-500/40',
+        level: 8,
+        minXP: 3400,
+        maxXP: 4699,
+        nextXP: 4700,
+        icon: '🏛️',
+        title: 'Assessore della Strada',
+        fullTitle: '🏛️ Assessore della Strada',
+        tierLabel: 'Oro Luminoso',
+        avatarBorderClass: 'border-yellow-300 ring-2 ring-amber-400/90 shadow-md shadow-yellow-400/50',
         badgeClass: 'bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-300 text-slate-950 border-amber-500 font-black',
         headerPillClass: 'bg-gradient-to-r from-amber-300 to-yellow-200 text-slate-950 border-amber-500 font-black hover:brightness-105',
         progressGradient: 'from-amber-400 via-yellow-400 to-orange-500',
-        commentHighlightClass: 'border-amber-400 ring-1 ring-amber-300/50 bg-gradient-to-br from-amber-50/40 via-white to-yellow-50/40',
+        commentHighlightClass: 'border-amber-400 ring-1 ring-amber-300/40 bg-gradient-to-br from-amber-50/35 via-white to-yellow-50/35',
+      },
+      // FASCIA 4 (Livelli 9-10): Bordo Diamante / Viola-Oro con leggero effetto glow
+      {
+        level: 9,
+        minXP: 4700,
+        maxXP: 6499,
+        nextXP: 6500,
+        icon: '👑',
+        title: 'Sindaco delle Strade',
+        fullTitle: '👑 Sindaco delle Strade',
+        tierLabel: 'Viola-Oro Reale',
+        avatarBorderClass: 'border-purple-400 ring-2 ring-amber-400/85 shadow-[0_0_12px_rgba(168,85,247,0.55)]',
+        badgeClass: 'bg-gradient-to-r from-purple-100 via-fuchsia-100 to-amber-200 text-purple-950 border-purple-400 font-black',
+        headerPillClass: 'bg-gradient-to-r from-purple-200 via-fuchsia-100 to-amber-200 text-purple-950 border-purple-400 font-black hover:brightness-105',
+        progressGradient: 'from-purple-600 via-fuchsia-500 to-amber-400',
+        commentHighlightClass: 'border-purple-300 ring-1 ring-amber-300/50 bg-gradient-to-br from-purple-50/35 via-white to-amber-50/35',
+      },
+      {
+        level: 10,
+        minXP: 6500,
+        maxXP: Infinity,
+        nextXP: null,
+        icon: '🌟',
+        title: 'Leggenda della Riviera',
+        fullTitle: '🌟 Leggenda della Riviera',
+        tierLabel: 'Diamante Leggendario',
+        avatarBorderClass: 'border-fuchsia-400 ring-2 ring-yellow-300/90 shadow-[0_0_14px_rgba(192,38,211,0.65)]',
+        badgeClass: 'bg-gradient-to-r from-indigo-200 via-fuchsia-200 to-amber-200 text-slate-950 border-fuchsia-400 font-black shadow-2xs',
+        headerPillClass: 'bg-gradient-to-r from-indigo-200 via-fuchsia-200 to-amber-200 text-slate-950 border-fuchsia-400 font-black hover:brightness-105',
+        progressGradient: 'from-indigo-500 via-fuchsia-500 to-amber-400',
+        commentHighlightClass: 'border-fuchsia-300 ring-1 ring-amber-300/60 bg-gradient-to-br from-fuchsia-50/40 via-white to-amber-50/40',
       },
     ];
 
@@ -690,7 +769,7 @@
         id: 'first_review',
         icon: '🚀',
         name: "Battesimo dell'Asfalto",
-        description: 'Pubblica la tua 1ª recensione.',
+        description: 'Pubblica la tua 1ª recensione (1/1).',
         target: 1,
         getValue: (stats) => stats.reviewsCount || 0,
         unlockedCls: 'from-blue-50 to-indigo-50/80 border-blue-300 text-slate-900 shadow-sm shadow-blue-500/10',
@@ -700,8 +779,8 @@
         id: 'pioneer',
         icon: '🧭',
         name: 'Pioniere',
-        description: 'Inaugura per primo almeno 3 strade diverse.',
-        target: 3,
+        description: 'Inaugura per primo almeno 10 strade diverse.',
+        target: 10,
         getValue: (stats) => stats.pioneerCount || 0,
         unlockedCls: 'from-amber-50 to-orange-50/80 border-amber-300 text-slate-900 shadow-sm shadow-amber-500/10',
         iconBgCls: 'bg-amber-100 border-amber-200 text-amber-700',
@@ -710,8 +789,8 @@
         id: 'parking_hound',
         icon: '🅿️',
         name: 'Segugio del Parcheggio',
-        description: 'Segnala i tag parcheggio in almeno 5 recensioni.',
-        target: 5,
+        description: 'Segnala i tag parcheggio in almeno 12 recensioni.',
+        target: 12,
         getValue: (stats) => stats.parkingReviewsCount || 0,
         unlockedCls: 'from-cyan-50 to-sky-50/80 border-cyan-300 text-slate-900 shadow-sm shadow-cyan-500/10',
         iconBgCls: 'bg-cyan-100 border-cyan-200 text-cyan-700',
@@ -720,8 +799,8 @@
         id: 'accessibility_paladin',
         icon: '♿',
         name: "Paladino dell'Accessibilità",
-        description: "Segnala parcheggi Disabili o Rosa o valuta l'accessibilità in almeno 2 vie.",
-        target: 2,
+        description: "Segnala parcheggi Disabili o Rosa o valuta l'accessibilità in almeno 8 vie.",
+        target: 8,
         getValue: (stats) => stats.accessibilityStreetsCount || 0,
         unlockedCls: 'from-purple-50 to-pink-50/80 border-purple-300 text-slate-900 shadow-sm shadow-purple-500/10',
         iconBgCls: 'bg-purple-100 border-purple-200 text-purple-700',
@@ -730,8 +809,8 @@
         id: 'street_critic',
         icon: '✍️',
         name: 'Critico Stradale',
-        description: 'Scrivi almeno 5 recensioni con commento approfondito (>40 caratteri).',
-        target: 5,
+        description: 'Scrivi almeno 15 recensioni con commento approfondito (>= 40 caratteri).',
+        target: 15,
         getValue: (stats) => stats.detailedCommentsCount || 0,
         unlockedCls: 'from-emerald-50 to-teal-50/80 border-emerald-300 text-slate-900 shadow-sm shadow-emerald-500/10',
         iconBgCls: 'bg-emerald-100 border-emerald-200 text-emerald-700',
@@ -740,11 +819,31 @@
         id: 'riviera_king',
         icon: '🌴',
         name: 'Re della Riviera',
-        description: "Recensisci almeno 5 strade totali nell'area.",
-        target: 5,
+        description: "Recensisci almeno 15 strade totali nell'area.",
+        target: 15,
         getValue: (stats) => stats.uniqueStreetsCount || 0,
         unlockedCls: 'from-yellow-50 to-amber-100/80 border-amber-400 text-slate-900 shadow-sm shadow-amber-500/15',
         iconBgCls: 'bg-amber-100 border-amber-300 text-amber-800',
+      },
+      {
+        id: 'intermunicipal_explorer',
+        icon: '🌍',
+        name: 'Esploratore Intercomunale',
+        description: 'Recensisci strade in almeno 3 comuni/località differenti (es. San Benedetto del Tronto, Grottammare, Monteprandone, Acquaviva Picena).',
+        target: 3,
+        getValue: (stats) => stats.uniqueCitiesCount || 0,
+        unlockedCls: 'from-indigo-50 to-violet-100/80 border-indigo-300 text-slate-900 shadow-sm shadow-indigo-500/15',
+        iconBgCls: 'bg-indigo-100 border-indigo-300 text-indigo-800',
+      },
+      {
+        id: 'asphalt_master',
+        icon: '🏆',
+        name: "Maestro dell'Asfalto",
+        description: "Raggiungi il traguardo d'élite di 30 strade recensite.",
+        target: 30,
+        getValue: (stats) => stats.uniqueStreetsCount || 0,
+        unlockedCls: 'from-fuchsia-50 via-purple-50 to-amber-100/80 border-fuchsia-400 text-slate-900 shadow-sm shadow-fuchsia-500/15',
+        iconBgCls: 'bg-gradient-to-br from-fuchsia-100 to-amber-100 border-fuchsia-300 text-fuchsia-900',
       },
     ];
 
@@ -849,6 +948,8 @@
         const revList = street.reviews || [];
         if (revList.length === 0) return;
 
+        const streetCityNormalized = normalizeCityKey(street.city, street.latitude, street.longitude);
+
         // Trova la recensione "Pioniere" (timestamp createdAt più vecchio per questa strada)
         let pioneerRev = revList[revList.length - 1];
         let minTime = parseReviewTimestampMs(pioneerRev);
@@ -883,6 +984,7 @@
               xp: 0,
               reviewsCount: 0,
               streetIds: new Set(),
+              cityKeys: new Set(),
               pioneerStreetIds: new Set(),
               parkingReviewsCount: 0,
               detailedCommentsCount: 0,
@@ -898,6 +1000,16 @@
           u.xp += xpBreakdown.totalXP;
           u.reviewsCount += 1;
           u.streetIds.add(street.id);
+
+          const revCityKey = normalizeCityKey(
+            r.streetCity || street.city,
+            r.latitude || street.latitude,
+            r.longitude || street.longitude
+          ) || streetCityNormalized;
+          if (revCityKey) {
+            u.cityKeys.add(revCityKey);
+          }
+
           if (isPioneer) {
             u.pioneerStreetIds.add(street.id);
           }
@@ -933,6 +1045,7 @@
           xp: u.xp,
           reviewsCount: u.reviewsCount,
           uniqueStreetsCount: u.streetIds.size,
+          uniqueCitiesCount: u.cityKeys.size,
           pioneerCount: u.pioneerStreetIds.size,
           parkingReviewsCount: u.parkingReviewsCount,
           detailedCommentsCount: u.detailedCommentsCount,
@@ -975,6 +1088,7 @@
           xp: 0,
           reviewsCount: 0,
           uniqueStreetsCount: 0,
+          uniqueCitiesCount: 0,
           pioneerCount: 0,
           parkingReviewsCount: 0,
           detailedCommentsCount: 0,
@@ -1284,6 +1398,9 @@
                   userId: r.authorId,
                   user: r.authorName,
                   avatarUrl: r.authorAvatar,
+                  streetCity: r.streetCity || streetCity,
+                  latitude: Number(r.latitude) || anchor.lat,
+                  longitude: Number(r.longitude) || anchor.lng,
                   date: r.updatedAt ? new Date(r.updatedAt).toLocaleDateString('it-IT') : 'Recente',
                   createdAt: r.createdAt || r.updatedAt || null,
                   updatedAt: r.updatedAt || r.createdAt || null,
@@ -2013,6 +2130,9 @@
             const oldRev = s.reviews[existingIndex];
             const editedRev = {
               ...oldRev,
+              streetCity: finalCity,
+              latitude: finalLat,
+              longitude: finalLng,
               ratings: reviewPayload.ratings,
               overallRating: reviewPayload.overallRating,
               comment: reviewPayload.comment,
@@ -2032,6 +2152,9 @@
               userId: authorId,
               user: authorName,
               avatarUrl: authorAvatar,
+              streetCity: finalCity,
+              latitude: finalLat,
+              longitude: finalLng,
               date: 'Oggi',
               createdAt: nowIso,
               updatedAt: nowIso,
@@ -2926,7 +3049,7 @@
                                     <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                       {isTopLevelHighlight && (
                                         <span className="text-[10px] font-extrabold bg-amber-100/90 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded-md inline-flex items-center gap-0.5">
-                                          {lvl.level >= 4 ? '👑 Top Esploratore' : '⭐ Recensore Esperto'}
+                                          {lvl.level >= 7 ? '👑 Top Esploratore' : lvl.level >= 4 ? '🧭 Esploratore Esperto' : '⭐ Recensore Esperto'}
                                         </span>
                                       )}
                                       {revMeta.isPioneer && (
@@ -3080,7 +3203,7 @@
                 </div>
                 <div>
                   <h3 className="font-black text-base sm:text-lg tracking-tight">Profilo Esploratore &amp; Classifica</h3>
-                  <p className="text-[11px] text-slate-300">Recensisci le strade della Riviera, sblocca i Badge e scala i ranghi</p>
+                  <p className="text-[11px] text-slate-300">Recensisci le strade della Riviera, sblocca gli 8 Badge e scala i 10 ranghi</p>
                 </div>
               </div>
               <button
@@ -3191,8 +3314,8 @@
                             Mancano {lvl.xpToNext} XP per Liv. {lvl.nextLevel.level} ({lvl.nextLevel.fullTitle})
                           </span>
                         ) : (
-                          <span className="text-amber-600 font-black">
-                            👑 Grado Massimo Raggiunto (1000+ XP)
+                          <span className="text-fuchsia-600 font-black">
+                            🌟 Grado Massimo Raggiunto (6500+ XP)
                           </span>
                         )}
                       </div>
@@ -3244,7 +3367,7 @@
                     </div>
                   </div>
 
-                  {/* Griglia Bacheca dei 6 Badge (Medaglie Sbloccabili) */}
+                  {/* Griglia Bacheca degli 8 Badge (Medaglie Sbloccabili) */}
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
                       <h5 className="text-sm font-black text-slate-900">🎖️ Bacheca Medaglie &amp; Badge ({userProfile.unlockedBadgesCount}/{GAMIFICATION_BADGES.length})</h5>
@@ -3279,7 +3402,7 @@
                                 </p>
                                 {badge.unlocked ? (
                                   <span className="text-[10px] font-black bg-emerald-500 text-white px-2 py-0.5 rounded-full shrink-0">
-                                    ✓ Sbloccato
+                                    ✓ {badge.progress}/{badge.target}
                                   </span>
                                 ) : (
                                   <span className="text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full shrink-0">
@@ -3303,10 +3426,10 @@
                     </div>
                   </div>
 
-                  {/* Scala dei 5 Livelli */}
+                  {/* Scala dei 10 Livelli */}
                   <div className="bg-white rounded-2xl p-4 border border-slate-200/80 space-y-2.5">
-                    <h5 className="text-[11px] font-black uppercase tracking-wider text-slate-400">🗺️ Scala dei 5 Livelli Cittadini</h5>
-                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                    <h5 className="text-[11px] font-black uppercase tracking-wider text-slate-400">🗺️ Scala dei 10 Livelli Cittadini</h5>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                       {GAMIFICATION_LEVELS.map(l => {
                         const isCurrent = l.level === lvl.level;
                         const isReached = userProfile.xp >= l.minXP;
@@ -3325,7 +3448,7 @@
                             <p className="text-[10px] font-black text-slate-800">Liv. {l.level}</p>
                             <p className="text-[10px] font-bold text-slate-600 leading-tight">{l.title}</p>
                             <p className="text-[9px] font-semibold text-slate-400">
-                              {l.nextXP ? `${l.minXP}-${l.maxXP} XP` : '1000+ XP'}
+                              {l.nextXP ? `${l.minXP}-${l.maxXP} XP` : '6500+ XP'}
                             </p>
                           </div>
                         );
