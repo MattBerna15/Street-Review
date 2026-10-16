@@ -100,6 +100,19 @@
   <!-- Google Identity Services (GIS) per Google Sign-In OAuth 2.0 -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
+  <!-- EmailJS SDK per invio automatico email di congratulazioni traguardi Gamification -->
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+  <script>
+    try {
+      if (window.emailjs) {
+        emailjs.init('JlA6e2TqwASqO9PKg');
+        console.log("EmailJS inizializzato con successo in <head>.");
+      }
+    } catch (e) {
+      console.error("Errore inizializzazione EmailJS in <head>:", e);
+    }
+  </script>
+
   <style>
     html, body, #root { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
     .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -785,6 +798,32 @@
       });
     };
 
+    // --- CONFIGURAZIONE EMAILJS & PERSISTENZA ANTI-DUPLICATI TRAGUARDI ---
+    const EMAILJS_CONFIG = {
+      serviceId: 'service_streetreview',
+      templateId: 'template_8m0bk1m',
+      publicKey: 'JlA6e2TqwASqO9PKg',
+    };
+
+    const getLocalAwardedMilestones = (authorId) => {
+      if (!authorId) return [];
+      try {
+        const raw = localStorage.getItem(`sr_awarded_milestones_${authorId}`);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    };
+
+    const saveLocalAwardedMilestones = (authorId, milestonesArr) => {
+      if (!authorId) return;
+      try {
+        const unique = Array.from(new Set((milestonesArr || []).filter(Boolean)));
+        localStorage.setItem(`sr_awarded_milestones_${authorId}`, JSON.stringify(unique));
+      } catch (e) {}
+    };
+
     const computeGamificationData = (streetsList, activeUser) => {
       const dedupedStreets = [];
       const sortedStreets = [...(streetsList || [])].sort((a, b) => (b.reviewsCount || 0) - (a.reviewsCount || 0));
@@ -848,6 +887,7 @@
               parkingReviewsCount: 0,
               detailedCommentsCount: 0,
               accessibilityStreetIds: new Set(),
+              awardedMilestones: new Set(),
             });
           }
 
@@ -873,6 +913,11 @@
           if (hasAccessibilitySignal) {
             u.accessibilityStreetIds.add(street.id);
           }
+          if (Array.isArray(r.awardedMilestones)) {
+            r.awardedMilestones.forEach(m => {
+              if (m) u.awardedMilestones.add(String(m));
+            });
+          }
         });
       });
 
@@ -892,6 +937,7 @@
           parkingReviewsCount: u.parkingReviewsCount,
           detailedCommentsCount: u.detailedCommentsCount,
           accessibilityStreetsCount: u.accessibilityStreetIds.size,
+          awardedMilestones: Array.from(u.awardedMilestones),
         };
         const levelInfo = getLevelByXP(statsObj.xp);
         const badges = buildUserBadges(statsObj);
@@ -933,6 +979,7 @@
           parkingReviewsCount: 0,
           detailedCommentsCount: 0,
           accessibilityStreetsCount: 0,
+          awardedMilestones: usr?.id ? getLocalAwardedMilestones(usr.id) : [],
         };
         return {
           ...base,
@@ -948,10 +995,15 @@
         const byName = activeUser.name ? userStatsByName[activeUser.name.trim().toLowerCase()] : null;
         if (byId || byName) {
           const matched = byId || byName;
+          const mergedMilestones = Array.from(new Set([
+            ...(matched.awardedMilestones || []),
+            ...getLocalAwardedMilestones(activeUser.id),
+          ]));
           currentUserProfile = {
             ...matched,
             name: activeUser.name || matched.name,
             avatarUrl: activeUser.avatarUrl || matched.avatarUrl,
+            awardedMilestones: mergedMilestones,
           };
         }
       }
@@ -1003,7 +1055,9 @@
       const [isGamificationOpen, setIsGamificationOpen] = useState(false);
       const [gamificationTab, setGamificationTab] = useState('progress'); // 'progress' | 'leaderboard'
       const [rewardToast, setRewardToast] = useState(null);
+      const [milestoneEmailToast, setMilestoneEmailToast] = useState(null);
       const toastTimerRef = useRef(null);
+      const milestoneToastTimerRef = useRef(null);
       const userMenuRef = useRef(null);
 
       // Calcolo dinamico in tempo reale di Livelli, XP, Badge e Classifica Top 10
@@ -1018,6 +1072,14 @@
         toastTimerRef.current = setTimeout(() => {
           setRewardToast(null);
         }, 6500);
+      };
+
+      const triggerMilestoneEmailToast = (emailToastData) => {
+        if (milestoneToastTimerRef.current) clearTimeout(milestoneToastTimerRef.current);
+        setMilestoneEmailToast(emailToastData);
+        milestoneToastTimerRef.current = setTimeout(() => {
+          setMilestoneEmailToast(null);
+        }, 8000);
       };
 
       // Ascolto automatico dello stato di autenticazione Firebase
@@ -1231,6 +1293,7 @@
                   parkingTypes: r.parkingTypes || [],
                   hasCyclePath: r.hasCyclePath,
                   amenities: r.amenities || [],
+                  awardedMilestones: Array.isArray(r.awardedMilestones) ? r.awardedMilestones : [],
                 }));
 
                 const streetObj = {
@@ -1848,7 +1911,7 @@
       };
       handleSelectStreetRef.current = handleSelectStreet;
 
-      // AGGIORNAMENTO DINAMICO POST-RECENSIONE / MODIFICA (VINCOLO UNICITÀ)
+      // AGGIORNAMENTO DINAMICO POST-RECENSIONE / MODIFICA (VINCOLO UNICITÀ + NOTIFICA EMAILJS TRAGUARDI)
       const handleAddReview = (reviewPayload) => {
         // 1. SALVATAGGIO PERSISTENTE SU CLOUD FIRESTORE
         const firestore = window.db;
@@ -1870,8 +1933,29 @@
           return;
         }
 
-        const authorName = (firebaseAuthUser && firebaseAuthUser.displayName) || (currentUser ? currentUser.name : (reviewPayload.userName || 'Cittadino'));
+        const authorName = (firebaseAuthUser && firebaseAuthUser.displayName) || (currentUser ? currentUser.name : (reviewPayload.userName || 'Cittadino della Riviera'));
+        const authorEmail = ((firebaseAuthUser && firebaseAuthUser.email) || (currentUser ? currentUser.email : '') || '').trim();
         const authorAvatar = (firebaseAuthUser && firebaseAuthUser.photoURL) || (currentUser ? currentUser.avatarUrl : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80');
+
+        // A. CALCOLO TRAGUARDI PRIMA DEL SALVATAGGIO SU FIRESTORE
+        const activeUserObj = { id: authorId, name: authorName, email: authorEmail, avatarUrl: authorAvatar };
+        const preSaveGamification = computeGamificationData(streetsRef.current, activeUserObj);
+        const prevProfile = preSaveGamification.currentUserProfile;
+        const prevLevel = prevProfile.levelInfo.level;
+        const prevUnlockedBadgeIds = prevProfile.badges.filter(b => b.unlocked).map(b => b.id);
+        const prevUnlockedBadgeSet = new Set(prevUnlockedBadgeIds);
+
+        // Costruisci il set anti-duplicati con tutti i traguardi già notificati o già posseduti prima di questa recensione
+        const awardedMilestonesSet = new Set([
+          ...(prevProfile.awardedMilestones || []),
+          ...getLocalAwardedMilestones(authorId),
+        ]);
+        for (let lvlNum = 2; lvlNum <= prevLevel; lvlNum++) {
+          awardedMilestonesSet.add(`level_${lvlNum}`);
+        }
+        prevUnlockedBadgeIds.forEach(bId => {
+          awardedMilestonesSet.add(`badge_${bId}`);
+        });
 
         // Risolvi le coordinate canoniche e il comune normalizzato della via
         const canonicalAnchor = getCanonicalStreetAnchor(selectedStreet.name, selectedStreet.city, selectedStreet.latitude, selectedStreet.longitude);
@@ -1892,33 +1976,8 @@
           ? existingUserRev.id
           : `${authorId}_${safeStreetKey}`;
 
-        const reviewDoc = {
-          streetId: selectedStreet.id || ('street-' + streetCompKey.replace(/[^a-z0-9]/g, '-')),
-          streetName: canonicalAnchor.canonicalName || selectedStreet.name,
-          streetCity: finalCity,
-          postalCode: finalPostal,
-          placeId: selectedStreet.placeId || null,
-          latitude: finalLat,
-          longitude: finalLng,
-          authorId: authorId,
-          authorName: authorName,
-          authorAvatar: authorAvatar,
-          ratingOverall: reviewPayload.overallRating,
-          ratings: reviewPayload.ratings,
-          parkingTypes: reviewPayload.parkingTypes,
-          hasCyclePath: reviewPayload.hasCyclePath,
-          amenities: reviewPayload.amenities || [],
-          comment: reviewPayload.comment,
-          updatedAt: new Date().toISOString(),
-        };
-
         const nowIso = new Date().toISOString();
         const existingCreatedAt = editingReview?.createdAt || existingUserRev?.createdAt || null;
-        if (!editingReview && !existingCreatedAt) {
-          reviewDoc.createdAt = nowIso;
-        } else if (existingCreatedAt) {
-          reviewDoc.createdAt = existingCreatedAt;
-        }
 
         // Calcolo XP guadagnati per il Toast celebrativo
         const otherReviewsOnStreet = (selectedStreet.reviews || []).filter(r =>
@@ -1937,22 +1996,13 @@
           isPioneerForThisStreet
         );
 
-        firestore.collection('reviews').doc(docId).set(reviewDoc, { merge: true })
-          .then(() => {
-            console.log('Recensione salvata con successo con ID:', docId);
-          })
-          .catch(err => {
-            console.error('Errore salvataggio Firestore:', err);
-            alert('Errore nel salvataggio su Firestore: ' + (err.message || err) + '\n\nVerifica che la sessione Firebase Auth sia attiva e che le Regole di Sicurezza consentano la scrittura a request.auth.uid == authorId.');
-          });
-
-        // 2. AGGIORNAMENTO OTTIMISTICO STATO LOCALE
-        setStreets(prev => prev.map(s => {
+        // B. SIMULAZIONE STATO POST-RECENSIONE E CONTROLLO NUOVI TRAGUARDI (LIVELLO / BADGE)
+        const nextStreets = (streetsRef.current || []).map(s => {
           if (s.id !== selectedStreet.id) return s;
 
-          // Cerca se esiste già una recensione dell'utente corrente (per ID, nome o editingReview)
           const existingIndex = s.reviews ? s.reviews.findIndex(r =>
             (editingReview && r.id === editingReview.id) ||
+            (r.userId && r.userId === authorId) ||
             (currentUser && (r.userId === currentUser.id || r.user === currentUser.name))
           ) : -1;
 
@@ -1960,7 +2010,6 @@
           let newCount;
 
           if (existingIndex !== -1) {
-            // MODIFICA RECENSIONE ESISTENTE: aggiorna in-place, reviewsCount non aumenta
             const oldRev = s.reviews[existingIndex];
             const editedRev = {
               ...oldRev,
@@ -1978,12 +2027,11 @@
             updatedReviews[existingIndex] = editedRev;
             newCount = s.reviews.length;
           } else {
-            // NUOVA RECENSIONE
             const newReview = {
               id: docId || ('r-' + Date.now()),
-              userId: currentUser ? currentUser.id : 'usr-' + Date.now(),
-              user: currentUser ? currentUser.name : (reviewPayload.userName || 'Utente'),
-              avatarUrl: currentUser ? currentUser.avatarUrl : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
+              userId: authorId,
+              user: authorName,
+              avatarUrl: authorAvatar,
               date: 'Oggi',
               createdAt: nowIso,
               updatedAt: nowIso,
@@ -1998,7 +2046,6 @@
             newCount = updatedReviews.length;
           }
 
-          // RICALCOLO ACCURATO DELLE MEDIE DI CATEGORIA E DEL GLOBAL SCORE (13 CATEGORIE)
           const catKeys = [
             'roadSurface', 'groundSignage', 'verticalSignage', 'parkingQuantity',
             'sidewalkQuality', 'lighting', 'cleanliness', 'accessibility',
@@ -2012,12 +2059,11 @@
           });
           const newAvg = Number((Object.values(updatedCat).reduce((a, b) => a + b, 0) / catKeys.length).toFixed(1));
 
-          // RICALCOLO PARCHEGGI, CICLABILE E AMENITIES AGGREGATI
           const mergedParking = Array.from(new Set(updatedReviews.flatMap(r => r.parkingTypes || [])));
           const mergedCycle = updatedReviews.some(r => r.hasCyclePath);
           const mergedAmenities = Array.from(new Set(updatedReviews.flatMap(r => r.amenities || [])));
 
-          const updatedStreet = {
+          return {
             ...s,
             reviewsCount: newCount,
             avgOverallRating: newAvg,
@@ -2027,10 +2073,160 @@
             amenities: mergedAmenities,
             reviews: updatedReviews,
           };
+        });
 
-          setSelectedStreet(updatedStreet);
-          return updatedStreet;
-        }));
+        // Ricalcola i traguardi dell'utente dopo l'inserimento/aggiornamento della recensione
+        const postSaveGamification = computeGamificationData(nextStreets, activeUserObj);
+        const nextProfile = postSaveGamification.currentUserProfile;
+        const nextLevelInfo = nextProfile.levelInfo;
+        const nextUnlockedBadges = nextProfile.badges.filter(b => b.unlocked);
+
+        // Verifica se è stato raggiunto un nuovo livello o sbloccato uno o più nuovi badge non ancora notificati
+        const newlyReachedLevel = (
+          nextLevelInfo.level > prevLevel &&
+          !awardedMilestonesSet.has(`level_${nextLevelInfo.level}`)
+        ) ? nextLevelInfo : null;
+
+        const newlyUnlockedBadges = nextUnlockedBadges.filter(b =>
+          !prevUnlockedBadgeSet.has(b.id) &&
+          !awardedMilestonesSet.has(`badge_${b.id}`)
+        );
+
+        const hasNewMilestones = Boolean(newlyReachedLevel || newlyUnlockedBadges.length > 0);
+        if (newlyReachedLevel) {
+          for (let l = 2; l <= newlyReachedLevel.level; l++) {
+            awardedMilestonesSet.add(`level_${l}`);
+          }
+        }
+        newlyUnlockedBadges.forEach(b => {
+          awardedMilestonesSet.add(`badge_${b.id}`);
+        });
+
+        const updatedAwardedMilestones = Array.from(awardedMilestonesSet);
+        saveLocalAwardedMilestones(authorId, updatedAwardedMilestones);
+
+        // Includi awardedMilestones anche nelle recensioni nello stato locale ottimistico
+        const finalNextStreets = nextStreets.map(s => {
+          if (s.id !== selectedStreet.id) return s;
+          return {
+            ...s,
+            reviews: (s.reviews || []).map(r =>
+              (r.id === docId || r.userId === authorId)
+                ? { ...r, awardedMilestones: updatedAwardedMilestones }
+                : r
+            ),
+          };
+        });
+
+        const reviewDoc = {
+          streetId: selectedStreet.id || ('street-' + streetCompKey.replace(/[^a-z0-9]/g, '-')),
+          streetName: canonicalAnchor.canonicalName || selectedStreet.name,
+          streetCity: finalCity,
+          postalCode: finalPostal,
+          placeId: selectedStreet.placeId || null,
+          latitude: finalLat,
+          longitude: finalLng,
+          authorId: authorId,
+          authorName: authorName,
+          authorAvatar: authorAvatar,
+          ratingOverall: reviewPayload.overallRating,
+          ratings: reviewPayload.ratings,
+          parkingTypes: reviewPayload.parkingTypes,
+          hasCyclePath: reviewPayload.hasCyclePath,
+          amenities: reviewPayload.amenities || [],
+          comment: reviewPayload.comment,
+          awardedMilestones: updatedAwardedMilestones,
+          updatedAt: nowIso,
+        };
+
+        if (!editingReview && !existingCreatedAt) {
+          reviewDoc.createdAt = nowIso;
+        } else if (existingCreatedAt) {
+          reviewDoc.createdAt = existingCreatedAt;
+        }
+
+        // Salvataggio su Firestore e trigger EmailJS post-salvataggio
+        firestore.collection('reviews').doc(docId).set(reviewDoc, { merge: true })
+          .then(() => {
+            console.log('Recensione salvata con successo con ID:', docId);
+
+            // Aggiorna opzionalmente anche il documento profilo utente se la collezione users è abilitata
+            firestore.collection('users').doc(authorId).set({
+              authorId: authorId,
+              name: authorName,
+              email: authorEmail,
+              avatarUrl: authorAvatar,
+              xp: nextProfile.xp,
+              level: nextLevelInfo.level,
+              levelTitle: nextLevelInfo.title,
+              awardedMilestones: updatedAwardedMilestones,
+              updatedAt: nowIso,
+            }, { merge: true }).catch(() => {});
+
+            // Se l'utente ha sbloccato nuovi traguardi (Livello e/o Badge), invia UNA SOLA email riassuntiva tramite EmailJS
+            if (hasNewMilestones) {
+              const targetStreetName = canonicalAnchor.canonicalName || selectedStreet.name;
+              let achievementTitle = '';
+              let achievementDescription = '';
+
+              if (newlyReachedLevel && newlyUnlockedBadges.length > 0) {
+                const badgeNames = newlyUnlockedBadges.map(b => b.name).join(', ');
+                achievementTitle = `Nuovo Livello: ${newlyReachedLevel.title} + Badge: ${badgeNames}`;
+                achievementDescription = `Complimenti! Con la tua recensione su ${targetStreetName} hai centrato un doppio traguardo su Street Review: sei salito al Livello ${newlyReachedLevel.level} (${newlyReachedLevel.fullTitle}) raggiungendo ${nextProfile.xp} XP e hai sbloccato ${newlyUnlockedBadges.length === 1 ? 'il badge' : 'i badge'} ${newlyUnlockedBadges.map(b => `${b.icon} "${b.name}" (${b.description})`).join(' e ')}. Grazie per il tuo contributo alla community della Riviera delle Palme!`;
+              } else if (newlyReachedLevel) {
+                achievementTitle = `Nuovo Livello: ${newlyReachedLevel.title}`;
+                achievementDescription = `Complimenti! Grazie alla tua recensione su ${targetStreetName} hai raggiunto ${nextProfile.xp} XP totali salendo al Livello ${newlyReachedLevel.level} con il titolo "${newlyReachedLevel.fullTitle}". Continua a esplorare e valutare le strade della Riviera delle Palme!`;
+              } else if (newlyUnlockedBadges.length === 1) {
+                const badge = newlyUnlockedBadges[0];
+                achievementTitle = `Nuovo Badge: ${badge.name}`;
+                achievementDescription = `Complimenti! Con la tua recensione su ${targetStreetName} hai completato l'obiettivo "${badge.description}" sbloccando la medaglia ${badge.icon} "${badge.name}". Hai ora ${nextProfile.xp} XP totali su Street Review!`;
+              } else if (newlyUnlockedBadges.length > 1) {
+                achievementTitle = `Nuovi Badge: ${newlyUnlockedBadges.map(b => b.name).join(' + ')}`;
+                achievementDescription = `Complimenti! Con la tua recensione su ${targetStreetName} hai sbloccato ${newlyUnlockedBadges.length} nuove medaglie: ${newlyUnlockedBadges.map(b => `${b.icon} "${b.name}" (${b.description})`).join('; ')}. Hai ora ${nextProfile.xp} XP totali su Street Review!`;
+              }
+
+              if (!authorEmail || !authorEmail.includes('@')) {
+                console.log('[EmailJS] Traguardo raggiunto ma utente privo di indirizzo email valido; invio email saltato senza errori:', achievementTitle);
+                return;
+              }
+
+              const templateParams = {
+                to_email: authorEmail,
+                user_name: authorName || 'Cittadino della Riviera',
+                achievement_title: achievementTitle,
+                achievement_description: achievementDescription,
+              };
+
+              if (window.emailjs && typeof window.emailjs.send === 'function') {
+                window.emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, templateParams)
+                  .then((response) => {
+                    console.log('[EmailJS] Email di congratulazioni inviata con successo!', response.status, response.text, templateParams);
+                    triggerMilestoneEmailToast({
+                      achievementTitle,
+                      achievementDescription,
+                      toEmail: authorEmail,
+                    });
+                  })
+                  .catch((emailErr) => {
+                    console.error('[EmailJS] Errore durante l\'invio dell\'email di congratulazioni:', emailErr);
+                  });
+              } else {
+                console.error('[EmailJS] SDK EmailJS non disponibile per l\'invio della notifica traguardo.');
+              }
+            }
+          })
+          .catch(err => {
+            console.error('Errore salvataggio Firestore:', err);
+            alert('Errore nel salvataggio su Firestore: ' + (err.message || err) + '\n\nVerifica che la sessione Firebase Auth sia attiva e che le Regole di Sicurezza consentano la scrittura a request.auth.uid == authorId.');
+          });
+
+        // 2. AGGIORNAMENTO OTTIMISTICO STATO LOCALE
+        streetsRef.current = finalNextStreets;
+        setStreets(finalNextStreets);
+        const updatedCurrentStreet = finalNextStreets.find(s => s.id === selectedStreet.id);
+        if (updatedCurrentStreet) {
+          setSelectedStreet(updatedCurrentStreet);
+        }
 
         // 3. NOTIFICA TOAST DI GRATIFICAZIONE XP
         triggerRewardToast({
@@ -2040,6 +2236,8 @@
           baseXP: xpEarned.baseXP,
           pioneerXP: xpEarned.pioneerXP,
           detailXP: xpEarned.detailXP,
+          newlyReachedLevel,
+          newlyUnlockedBadges,
         });
 
         setIsReviewOpen(false);
@@ -2266,52 +2464,78 @@
           </div>
         </div>
 
-          {/* NOTIFICA TOAST CELEBRATIVA DI GRATIFICAZIONE XP */}
-          {rewardToast && (
-            <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[90] w-[calc(100vw-32px)] max-w-md pointer-events-auto animate-slide-up">
-              <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-amber-400/50 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-2xl shrink-0 shadow-lg shadow-amber-500/30">
-                    🎉
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-black text-amber-300 truncate">
-                      {rewardToast.isEdit ? 'Recensione aggiornata!' : 'Recensione pubblicata!'} +{rewardToast.totalXP} XP guadagnati!
-                    </p>
-                    <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px] font-bold text-slate-200">
-                      <span className="bg-white/15 px-2 py-0.5 rounded-full">+{rewardToast.baseXP} XP Base</span>
-                      {rewardToast.pioneerXP > 0 && (
-                        <span className="bg-amber-400/25 text-amber-200 border border-amber-400/40 px-2 py-0.5 rounded-full">
-                          🧭 +{rewardToast.pioneerXP} XP Pioniere
-                        </span>
-                      )}
-                      {rewardToast.detailXP > 0 && (
-                        <span className="bg-emerald-400/25 text-emerald-200 border border-emerald-400/40 px-2 py-0.5 rounded-full">
-                          ✍️ +{rewardToast.detailXP} XP Dettaglio
-                        </span>
-                      )}
+          {/* NOTIFICHE TOAST CELEBRATIVE (XP GUADAGNATI & EMAIL DI CONGRATULAZIONI TRAGUARDI) */}
+          {(rewardToast || milestoneEmailToast) && (
+            <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[90] w-[calc(100vw-32px)] max-w-md pointer-events-auto space-y-2">
+              {rewardToast && (
+                <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-amber-400/50 flex items-center justify-between gap-3 animate-slide-up">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-2xl shrink-0 shadow-lg shadow-amber-500/30">
+                      🎉
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-black text-amber-300 truncate">
+                        {rewardToast.isEdit ? 'Recensione aggiornata!' : 'Recensione pubblicata!'} +{rewardToast.totalXP} XP guadagnati!
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px] font-bold text-slate-200">
+                        <span className="bg-white/15 px-2 py-0.5 rounded-full">+{rewardToast.baseXP} XP Base</span>
+                        {rewardToast.pioneerXP > 0 && (
+                          <span className="bg-amber-400/25 text-amber-200 border border-amber-400/40 px-2 py-0.5 rounded-full">
+                            🧭 +{rewardToast.pioneerXP} XP Pioniere
+                          </span>
+                        )}
+                        {rewardToast.detailXP > 0 && (
+                          <span className="bg-emerald-400/25 text-emerald-200 border border-emerald-400/40 px-2 py-0.5 rounded-full">
+                            ✍️ +{rewardToast.detailXP} XP Dettaglio
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => {
+                        setRewardToast(null);
+                        setGamificationTab('progress');
+                        setIsGamificationOpen(true);
+                      }}
+                      className="px-2.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-[11px] rounded-xl transition-colors cursor-pointer"
+                    >
+                      Progressi
+                    </button>
+                    <button
+                      onClick={() => setRewardToast(null)}
+                      className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      <IconClose size={16} />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
+              )}
+
+              {milestoneEmailToast && (
+                <div className="bg-gradient-to-r from-emerald-900/95 via-teal-900/95 to-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-emerald-400/60 flex items-center justify-between gap-3 animate-slide-up">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-xl shrink-0 shadow-lg shadow-emerald-500/30">
+                      📩
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs sm:text-sm font-black text-emerald-300 leading-snug">
+                        🎉 Traguardo raggiunto! Ti abbiamo inviato una mail di congratulazioni!
+                      </p>
+                      <p className="text-[11px] font-bold text-white truncate mt-0.5">
+                        🏆 {milestoneEmailToast.achievementTitle}
+                      </p>
+                    </div>
+                  </div>
                   <button
-                    onClick={() => {
-                      setRewardToast(null);
-                      setGamificationTab('progress');
-                      setIsGamificationOpen(true);
-                    }}
-                    className="px-2.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-[11px] rounded-xl transition-colors cursor-pointer"
-                  >
-                    Progressi
-                  </button>
-                  <button
-                    onClick={() => setRewardToast(null)}
-                    className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                    onClick={() => setMilestoneEmailToast(null)}
+                    className="p-1 text-emerald-200 hover:text-white shrink-0 cursor-pointer"
                   >
                     <IconClose size={16} />
                   </button>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
