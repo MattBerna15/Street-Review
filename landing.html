@@ -1491,6 +1491,15 @@
                 <span>☕</span> Offri un Caffè (PayPal)
               </a>
             </li>
+            <li>
+              <button
+                type="button"
+                onclick="window.openPrivacyModal()"
+                class="hover:text-brand-cyan transition-colors flex items-center gap-1.5 cursor-pointer text-left"
+              >
+                <span>🛡️</span> Privacy &amp; Regolamento Community
+              </button>
+            </li>
           </ul>
         </div>
 
@@ -1501,7 +1510,15 @@
         <p>
           © <span id="currentYear">2026</span> Street Review · Tutti i diritti riservati. Nato con passione a San Benedetto del Tronto · Attivo in tutta Italia · <a href="mailto:streetreview.app@gmail.com" class="hover:text-brand-cyan transition-colors">streetreview.app@gmail.com</a>
         </p>
-        <div class="flex items-center gap-4">
+        <div class="flex flex-wrap items-center gap-4">
+          <button
+            type="button"
+            onclick="window.openPrivacyModal()"
+            class="text-slate-300 hover:text-brand-cyan font-bold transition-colors flex items-center gap-1 cursor-pointer"
+          >
+            <span>🛡️</span>
+            <span>Privacy &amp; Regolamento (GDPR)</span>
+          </button>
           <a href="index.html" class="text-cyan-400 hover:text-cyan-300 font-bold transition-colors">
             Avvia Web App →
           </a>
@@ -1511,9 +1528,131 @@
     </div>
   </footer>
 
-  <!-- Script per aggiornamento dinamico anno corrente & Classifica Generale Live da Firestore -->
+  <!-- MODALE PRIVACY POLICY & REGOLAMENTO COMMUNITY (GDPR) -->
+  <div
+    id="privacyModal"
+    class="fixed inset-0 z-[100] hidden items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/80 backdrop-blur-md"
+    onclick="if(event.target === this) window.closePrivacyModal()"
+  >
+    <div class="bg-slate-900 text-slate-200 w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-700/80">
+      <div class="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center text-xl">
+            🛡️
+          </div>
+          <div>
+            <h3 class="font-black text-sm sm:text-base text-white">Privacy &amp; Regolamento Community</h3>
+            <p class="text-[11px] text-slate-400">Informativa GDPR (Reg. UE 2016/679) e Termini di Servizio</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onclick="window.closePrivacyModal()"
+          class="p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 cursor-pointer"
+          aria-label="Chiudi"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-6 space-y-4 text-xs text-slate-300 leading-relaxed">
+        <div class="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-1.5">
+          <h4 class="font-black text-white text-xs uppercase tracking-wider flex items-center gap-1.5">
+            <span>🏛️</span> 1. Titolare e Contatti
+          </h4>
+          <p>
+            <strong class="text-white">Street Review</strong> è un progetto civico indipendente dedicato alla mappatura collaborativa della qualità stradale e dell'accessibilità urbana in Italia, ideato da <strong class="text-white">Matteo Bernardini</strong>. Per qualsiasi richiesta relativa alla privacy, moderazione o segnalazione è possibile contattare direttamente il responsabile all'indirizzo ufficiale:
+            <a href="mailto:streetreview.app@gmail.com" class="text-brand-cyan font-bold hover:underline">streetreview.app@gmail.com</a>.
+          </p>
+        </div>
+
+        <div class="p-4 rounded-2xl bg-cyan-950/25 border border-cyan-500/30 space-y-1.5">
+          <h4 class="font-black text-cyan-300 text-xs uppercase tracking-wider flex items-center gap-1.5">
+            <span>🔐</span> 2. Dati Raccolti e Finalità del Trattamento
+          </h4>
+          <p>
+            La consultazione della mappa è libera e anonima (Modalità Ospite). Quando scegli volontariamente di effettuare l'accesso tramite <strong class="text-white">Google Sign-In (Firebase Authentication)</strong>, raccogliamo esclusivamente:
+          </p>
+          <ul class="list-disc pl-5 space-y-1 text-slate-200 font-medium">
+            <li><strong class="text-white">Nome pubblico e Avatar Google:</strong> mostrati accanto alle recensioni pubblicate e nella classifica civica degli Esploratori.</li>
+            <li><strong class="text-white">Indirizzo Email e UID univoco:</strong> utilizzati al solo scopo tecnico di autenticare la tua sessione, prevenire abusi (garantendo il vincolo di <strong class="text-white">1 sola recensione per via per ciascun utente</strong>), calcolare i progressi Gamification (XP, Livelli, Badge) e inviare notifiche celebrative sui traguardi raggiunti.</li>
+          </ul>
+          <p class="text-[11px] text-slate-400 pt-1">
+            I tuoi dati non vengono mai ceduti a terzi per fini commerciali o di profilazione pubblicitaria. La posizione GPS ("📍 La mia posizione") viene elaborata esclusivamente nel tuo browser per centrare la mappa e non viene mai salvata sui nostri server.
+          </p>
+        </div>
+
+        <div class="p-4 rounded-2xl bg-amber-950/25 border border-amber-500/30 space-y-1.5">
+          <h4 class="font-black text-amber-300 text-xs uppercase tracking-wider flex items-center gap-1.5">
+            <span>⚖️</span> 3. Regole di Moderazione della Community
+          </h4>
+          <p>
+            Le recensioni devono riguardare esclusivamente le caratteristiche oggettive dell'infrastruttura stradale (asfalto, marciapiedi, parcheggi, illuminazione, accessibilità). È posto il <strong class="text-amber-300">divieto assoluto</strong> di pubblicare nei commenti:
+          </p>
+          <ul class="list-disc pl-5 space-y-1 text-amber-200 font-semibold">
+            <li>Nomi e cognomi di privati cittadini o riferimenti a persone specifiche;</li>
+            <li>Numeri di targa automobilistica, numeri di telefono o indirizzi email;</li>
+            <li>Insulti, bestemmie, linguaggio osceno, diffamazioni o contenuti discriminatori.</li>
+          </ul>
+          <p class="text-[11px] text-slate-400 pt-1">
+            Un filtro automatico pre-salvataggio blocca l'inserimento di targhe, contatti e linguaggio offensivo. Ogni utente può inoltre segnalare eventuali abusi tramite il pulsante <strong class="text-white">"🚩 Segnala"</strong> presente su ciascun commento.
+          </p>
+        </div>
+
+        <div class="p-4 rounded-2xl bg-emerald-950/25 border border-emerald-500/30 space-y-1.5">
+          <h4 class="font-black text-emerald-300 text-xs uppercase tracking-wider flex items-center gap-1.5">
+            <span>🇪🇺</span> 4. Diritti dell'Utente (GDPR - Artt. 15-22)
+          </h4>
+          <p>
+            In conformità al Regolamento UE 2016/679 (GDPR), hai sempre il diritto di:
+          </p>
+          <ul class="list-disc pl-5 space-y-1 text-slate-200 font-medium">
+            <li><strong class="text-white">Rettifica immediata:</strong> puoi modificare e aggiornare in qualsiasi momento le tue recensioni direttamente dall'app.</li>
+            <li><strong class="text-white">Diritto all'oblio e cancellazione dati:</strong> puoi richiedere in qualsiasi momento la rimozione di una tua recensione o la cancellazione completa del tuo profilo e di tutti i dati associati scrivendo a
+              <a href="mailto:streetreview.app@gmail.com?subject=Richiesta%20Cancellazione%20Dati%20GDPR%20-%20Street%20Review" class="text-emerald-400 font-bold hover:underline">streetreview.app@gmail.com</a>.
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="px-6 py-3.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-3">
+        <a
+          href="mailto:streetreview.app@gmail.com"
+          class="text-xs font-bold text-brand-cyan hover:underline flex items-center gap-1.5"
+        >
+          <span>✉️</span>
+          <span>streetreview.app@gmail.com</span>
+        </a>
+        <button
+          type="button"
+          onclick="window.closePrivacyModal()"
+          class="px-5 py-2 bg-brand-cyan hover:bg-cyan-400 text-slate-950 font-black text-xs rounded-xl transition-colors cursor-pointer"
+        >
+          Ho capito, chiudi
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Script per aggiornamento dinamico anno corrente, Modale Privacy & Classifica Generale Live da Firestore -->
   <script>
     document.getElementById('currentYear').textContent = new Date().getFullYear();
+
+    window.openPrivacyModal = function() {
+      var m = document.getElementById('privacyModal');
+      if (m) {
+        m.classList.remove('hidden');
+        m.classList.add('flex');
+      }
+    };
+
+    window.closePrivacyModal = function() {
+      var m = document.getElementById('privacyModal');
+      if (m) {
+        m.classList.add('hidden');
+        m.classList.remove('flex');
+      }
+    };
 
     (function initLiveLeaderboard() {
       // 1. DEFINIZIONE DEI 10 LIVELLI E CORNICI PERK (IDENTICI ALL'APP)

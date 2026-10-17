@@ -901,6 +901,82 @@
       return trimmed.length >= 40;
     };
 
+    // --- FILTRO AUTOMATICO ANTI-PROFANITY E DATI SENSIBILI (PRE-SALVATAGGIO) ---
+    const BLOCKED_PROFANITY_WORDS = [
+      'cazzo', 'cazzi', 'cazzata', 'cazzate', 'incazzato', 'stocazzo',
+      'vaffanculo', 'fanculo', 'affanculo', 'culo',
+      'stronzo', 'stronza', 'stronzi', 'stronze', 'stronzata', 'stronzate',
+      'merda', 'merde', 'merdoso', 'merdosa',
+      'puttana', 'puttane', 'puttaniere', 'puttanata', 'puttanate',
+      'troia', 'troie', 'troione', 'zoccola', 'zoccole', 'mignotta', 'mignotte', 'bagascia', 'baldracca',
+      'bastardo', 'bastarda', 'bastardi', 'bastarde',
+      'coglione', 'coglioni', 'cogliona', 'coglionata',
+      'minchia', 'minchie', 'minchiata', 'minchiate',
+      'fregna', 'figa', 'fica', 'pompino', 'pompini', 'succhiacazzi', 'leccaculo',
+      'ricchione', 'ricchioni', 'frocio', 'froci', 'negro', 'negri',
+      'handicappato', 'handicappati', 'ritardato', 'ritardata', 'mongoloide',
+      'deficiente', 'deficienti', 'imbecille', 'imbecilli', 'idiota', 'idioti',
+      'cretino', 'cretina', 'cretini', 'cornuto', 'cornuta', 'mortacci',
+      'porcodio', 'diocane', 'dioporco', 'dioboia', 'diobestia', 'porcamadonna'
+    ];
+
+    const PROFANITY_WORD_REGEX = new RegExp(`\\b(${BLOCKED_PROFANITY_WORDS.join('|')})\\b`, 'i');
+    const BLASPHEMY_PHRASE_REGEX = /\b(?:dio\s*(?:cane|porco|boia|fa|bestia|maiale|ladro|infame|schifoso|merda|bastardo)|porco\s*(?:dio|ddio|zii|zio)|madonna\s*(?:puttana|troia|maiala|bastarda|cagna| ladra)|gesu\s*(?:cristo\s*)?(?:cane|porco|ladro)|cristo\s*(?:cane|porco)|porca\s*madonna|pezzo\s+di\s+merda|testa\s+di\s+cazzo|figli[oa]?\s+di\s+puttana)\b/i;
+
+    // Regex dati personali e targhe (Tutela Privacy GDPR)
+    const ITALIAN_PLATE_REGEX = /\b[A-Za-z]{2}\s?\d{3}\s?[A-Za-z]{2}\b/i;
+    const PHONE_NUMBER_REGEX = /(?:\+39[\s.-]?|0039[\s.-]?)?\b(?:0\d{1,3}[\s.-]?\d{5,8}|3\d{2}[\s.-]?\d{3}[\s.-]?\d{3,4}|\d{9,11}|(?:\d[\s.-]?){8,10}\d)\b/;
+    const EMAIL_IN_COMMENT_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
+
+    const validateReviewComment = (text) => {
+      if (!text) return { valid: true };
+      const raw = String(text).trim();
+      if (!raw || raw === 'Recensione pubblicata con successo.') {
+        return { valid: true };
+      }
+
+      // Normalizza gli accenti per garantire che i word boundaries \b funzionino su tutte le parole italiane
+      const normalizedText = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+      // 1. Controllo Linguaggio Offensivo / Bestemmie / Insulti
+      if (PROFANITY_WORD_REGEX.test(normalizedText) || BLASPHEMY_PHRASE_REGEX.test(normalizedText)) {
+        return {
+          valid: false,
+          reason: 'profanity',
+          message: 'Per tutelare la privacy e il rispetto della community, rimuovi linguaggio offensivo, numeri di targa o contatti personali dal commento. (Rilevato linguaggio inappropriato o offensivo)',
+        };
+      }
+
+      // 2. Controllo Targhe Automobilistiche Italiane (es. AB123CD o AB 123 CD)
+      if (ITALIAN_PLATE_REGEX.test(raw)) {
+        return {
+          valid: false,
+          reason: 'plate',
+          message: 'Per tutelare la privacy e il rispetto della community, rimuovi linguaggio offensivo, numeri di targa o contatti personali dal commento. (Rilevato possibile numero di targa)',
+        };
+      }
+
+      // 3. Controllo Numeri di Telefono (9-10+ cifre consecutive o separate da spazi/trattini)
+      if (PHONE_NUMBER_REGEX.test(raw)) {
+        return {
+          valid: false,
+          reason: 'phone',
+          message: 'Per tutelare la privacy e il rispetto della community, rimuovi linguaggio offensivo, numeri di targa o contatti personali dal commento. (Rilevato possibile numero di telefono)',
+        };
+      }
+
+      // 4. Controllo Indirizzi Email nel testo del commento
+      if (EMAIL_IN_COMMENT_REGEX.test(raw)) {
+        return {
+          valid: false,
+          reason: 'email',
+          message: 'Per tutelare la privacy e il rispetto della community, rimuovi linguaggio offensivo, numeri di targa o contatti personali dal commento. (Rilevato indirizzo email nel commento)',
+        };
+      }
+
+      return { valid: true };
+    };
+
     const hasAnyParkingOrAmenityTag = (rev) => {
       if (!rev) return false;
       const hasPark = Array.isArray(rev.parkingTypes) && rev.parkingTypes.length > 0;
@@ -1215,6 +1291,8 @@
       const [editingReview, setEditingReview] = useState(null);
       const [isGamificationOpen, setIsGamificationOpen] = useState(false);
       const [gamificationTab, setGamificationTab] = useState('progress'); // 'progress' | 'leaderboard'
+      const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
+      const [reportingReview, setReportingReview] = useState(null);
       const [rewardToast, setRewardToast] = useState(null);
       const [milestoneEmailToast, setMilestoneEmailToast] = useState(null);
       const toastTimerRef = useRef(null);
@@ -2113,17 +2191,24 @@
       };
       handleSelectStreetRef.current = handleSelectStreet;
 
-      // AGGIORNAMENTO DINAMICO POST-RECENSIONE / MODIFICA (VINCOLO UNICITÀ + NOTIFICA EMAILJS TRAGUARDI)
+      // AGGIORNAMENTO DINAMICO POST-RECENSIONE / MODIFICA (VINCOLO UNICITÀ + MODERAZIONE + NOTIFICA EMAILJS TRAGUARDI)
       const handleAddReview = (reviewPayload) => {
+        // 0. FILTRO AUTOMATICO ANTI-PROFANITY E DATI SENSIBILI (PRE-SALVATAGGIO)
+        const moderationCheck = validateReviewComment(reviewPayload?.comment);
+        if (!moderationCheck.valid) {
+          alert(moderationCheck.message);
+          return false;
+        }
+
         // 1. SALVATAGGIO PERSISTENTE SU CLOUD FIRESTORE
         const firestore = window.db;
         if (!firestore) {
           console.error("Errore salvataggio Firestore: Database 'street-review-database' non disponibile in window.db.");
           alert("Impossibile connettersi a Firestore ('street-review-database'). Verifica la connessione a internet o la configurazione.");
-          return;
+          return false;
         }
 
-        if (!selectedStreet) return;
+        if (!selectedStreet) return false;
 
         // Recupera la sessione Firebase Auth attiva per rispettare le regole (request.auth.uid == authorId)
         const firebaseAuthUser = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser) || null;
@@ -2132,7 +2217,7 @@
         if (!authorId) {
           alert("Autenticazione richiesta: devi effettuare l'accesso con Google prima di pubblicare una recensione.");
           setIsAuthOpen(true);
-          return;
+          return false;
         }
 
         const authorName = (firebaseAuthUser && firebaseAuthUser.displayName) || (currentUser ? currentUser.name : (reviewPayload.userName || 'Cittadino Esploratore'));
@@ -2357,7 +2442,7 @@
           reviewDoc.createdAt = existingCreatedAt;
         }
 
-        // Salvataggio su Firestore e trigger EmailJS post-salvataggio
+        // Salvataggio su Firestore e trigger EmailJS post-salvataggio (ottimizzato per il limite di 200 email/mese)
         firestore.collection('reviews').doc(docId).set(reviewDoc, { merge: true })
           .then(() => {
             console.log('Recensione salvata con successo con ID:', docId);
@@ -2375,26 +2460,34 @@
               updatedAt: nowIso,
             }, { merge: true }).catch(() => {});
 
-            // Se l'utente ha sbloccato nuovi traguardi (Livello e/o Badge), invia UNA SOLA email riassuntiva tramite EmailJS
-            if (hasNewMilestones) {
+            // OTTIMIZZAZIONE CREDITI EMAILJS (max 200 email/mese):
+            // Invia l'email ESCLUSIVAMENTE quando l'utente sale a un Nuovo Livello (Liv. 2 - 10)
+            // OPPURE sblocca un Badge di fascia alta (escludendo il solo primo badge base "Battesimo dell'Asfalto", id: 'first_review').
+            const emailEligibleBadges = newlyUnlockedBadges.filter(b => b.id !== 'first_review');
+            const shouldSendMilestoneEmail = Boolean(
+              (newlyReachedLevel && newlyReachedLevel.level >= 2) ||
+              emailEligibleBadges.length > 0
+            );
+
+            if (shouldSendMilestoneEmail) {
               const targetStreetName = canonicalAnchor.canonicalName || selectedStreet.name;
               let achievementTitle = '';
               let achievementDescription = '';
 
-              if (newlyReachedLevel && newlyUnlockedBadges.length > 0) {
-                const badgeNames = newlyUnlockedBadges.map(b => b.name).join(', ');
+              if (newlyReachedLevel && emailEligibleBadges.length > 0) {
+                const badgeNames = emailEligibleBadges.map(b => b.name).join(', ');
                 achievementTitle = `Nuovo Livello: ${newlyReachedLevel.title} + Badge: ${badgeNames}`;
-                achievementDescription = `Complimenti! Con la tua recensione su ${targetStreetName} hai centrato un doppio traguardo su Street Review: sei salito al Livello ${newlyReachedLevel.level} (${newlyReachedLevel.fullTitle}) raggiungendo ${nextProfile.xp} XP e hai sbloccato ${newlyUnlockedBadges.length === 1 ? 'il badge' : 'i badge'} ${newlyUnlockedBadges.map(b => `${b.icon} "${b.name}" (${b.description})`).join(' e ')}. Grazie per il tuo contributo alla community di Street Review!`;
+                achievementDescription = `Complimenti! Con la tua recensione su ${targetStreetName} hai centrato un doppio traguardo su Street Review: sei salito al Livello ${newlyReachedLevel.level} (${newlyReachedLevel.fullTitle}) raggiungendo ${nextProfile.xp} XP e hai sbloccato ${emailEligibleBadges.length === 1 ? 'il badge' : 'i badge'} ${emailEligibleBadges.map(b => `${b.icon} "${b.name}" (${b.description})`).join(' e ')}. Grazie per il tuo contributo alla community di Street Review!`;
               } else if (newlyReachedLevel) {
                 achievementTitle = `Nuovo Livello: ${newlyReachedLevel.title}`;
                 achievementDescription = `Complimenti! Grazie alla tua recensione su ${targetStreetName} hai raggiunto ${nextProfile.xp} XP totali salendo al Livello ${newlyReachedLevel.level} con il titolo "${newlyReachedLevel.fullTitle}". Continua a esplorare e valutare le strade della tua città e di tutta Italia!`;
-              } else if (newlyUnlockedBadges.length === 1) {
-                const badge = newlyUnlockedBadges[0];
+              } else if (emailEligibleBadges.length === 1) {
+                const badge = emailEligibleBadges[0];
                 achievementTitle = `Nuovo Badge: ${badge.name}`;
                 achievementDescription = `Complimenti! Con la tua recensione su ${targetStreetName} hai completato l'obiettivo "${badge.description}" sbloccando la medaglia ${badge.icon} "${badge.name}". Hai ora ${nextProfile.xp} XP totali su Street Review!`;
-              } else if (newlyUnlockedBadges.length > 1) {
-                achievementTitle = `Nuovi Badge: ${newlyUnlockedBadges.map(b => b.name).join(' + ')}`;
-                achievementDescription = `Complimenti! Con la tua recensione su ${targetStreetName} hai sbloccato ${newlyUnlockedBadges.length} nuove medaglie: ${newlyUnlockedBadges.map(b => `${b.icon} "${b.name}" (${b.description})`).join('; ')}. Hai ora ${nextProfile.xp} XP totali su Street Review!`;
+              } else if (emailEligibleBadges.length > 1) {
+                achievementTitle = `Nuovi Badge: ${emailEligibleBadges.map(b => b.name).join(' + ')}`;
+                achievementDescription = `Complimenti! Con la tua recensione su ${targetStreetName} hai sbloccato ${emailEligibleBadges.length} nuove medaglie: ${emailEligibleBadges.map(b => `${b.icon} "${b.name}" (${b.description})`).join('; ')}. Hai ora ${nextProfile.xp} XP totali su Street Review!`;
               }
 
               if (!authorEmail || !authorEmail.includes('@')) {
@@ -2425,6 +2518,8 @@
               } else {
                 console.error('[EmailJS] SDK EmailJS non disponibile per l\'invio della notifica traguardo.');
               }
+            } else if (hasNewMilestones) {
+              console.log('[EmailJS] Primo badge base ("Battesimo dell\'Asfalto") sbloccato: notificato con Toast in-app (quota EmailJS preservata per livelli e badge di fascia alta).');
             }
           })
           .catch(err => {
@@ -2649,6 +2744,15 @@
                     >
                       <span>🏆 Top Esploratori d'Italia</span>
                     </button>
+                    <button
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        setIsPrivacyOpen(true);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <span>🛡️ Privacy &amp; Regolamento</span>
+                    </button>
                     <div className="my-1 border-t border-slate-100" />
                     <button
                       onClick={handleLogout}
@@ -2676,7 +2780,7 @@
           </div>
         </div>
 
-          {/* NOTIFICHE TOAST CELEBRATIVE (XP GUADAGNATI & EMAIL DI CONGRATULAZIONI TRAGUARDI) */}
+          {/* NOTIFICHE TOAST CELEBRATIVE (XP GUADAGNATI, LIVELLI, BADGE & EMAIL DI CONGRATULAZIONI TRAGUARDI) */}
           {(rewardToast || milestoneEmailToast) && (
             <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[90] w-[calc(100vw-32px)] max-w-md pointer-events-auto space-y-2">
               {rewardToast && (
@@ -2702,6 +2806,20 @@
                           </span>
                         )}
                       </div>
+                      {(rewardToast.newlyReachedLevel || (rewardToast.newlyUnlockedBadges && rewardToast.newlyUnlockedBadges.length > 0)) && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[10px] font-black">
+                          {rewardToast.newlyReachedLevel && (
+                            <span className="bg-gradient-to-r from-amber-400 to-orange-400 text-slate-950 px-2 py-0.5 rounded-full shadow-xs">
+                              🆙 Liv. {rewardToast.newlyReachedLevel.level}: {rewardToast.newlyReachedLevel.fullTitle}
+                            </span>
+                          )}
+                          {rewardToast.newlyUnlockedBadges && rewardToast.newlyUnlockedBadges.map(b => (
+                            <span key={b.id} className="bg-indigo-500/30 text-indigo-200 border border-indigo-400/50 px-2 py-0.5 rounded-full">
+                              🏅 Badge: {b.icon} {b.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -2853,13 +2971,23 @@
             )}
           </div>
 
-          {/* 4. BADGE DI STATO IN BASSO A SINISTRA */}
-          <div className="absolute left-4 bottom-6 z-20 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-slate-200 shadow-md flex items-center gap-2 text-xs">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="font-bold text-slate-800">
-              {mapEngine === 'google' ? 'Google Maps Italia (Attivo)' : 'Mappa Nazionale Italia'}
-            </span>
-            <span className="text-slate-400">· {streets.length} {streets.length === 1 ? 'strada attiva' : 'strade attive'}</span>
+          {/* 4. BADGE DI STATO E LINK PRIVACY/REGOLAMENTO IN BASSO A SINISTRA */}
+          <div className="absolute left-4 bottom-6 z-20 flex flex-wrap items-center gap-2">
+            <div className="bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-slate-200 shadow-md flex items-center gap-2 text-xs">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="font-bold text-slate-800">
+                {mapEngine === 'google' ? 'Google Maps Italia (Attivo)' : 'Mappa Nazionale Italia'}
+              </span>
+              <span className="text-slate-400">· {streets.length} {streets.length === 1 ? 'strada attiva' : 'strade attive'}</span>
+            </div>
+            <button
+              onClick={() => setIsPrivacyOpen(true)}
+              title="Leggi l'Informativa Privacy (GDPR) e il Regolamento della Community"
+              className="bg-white/95 backdrop-blur-md hover:bg-slate-50 px-3 py-2 rounded-2xl border border-slate-200 shadow-md flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors cursor-pointer"
+            >
+              <span>🛡️</span>
+              <span>Privacy &amp; Regolamento</span>
+            </button>
           </div>
 
           {/* 5. BOTTOM SHEET DELLA STRADA SELEZIONATA */}
@@ -3169,7 +3297,7 @@
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-2 shrink-0 ml-auto">
+                                <div className="flex items-center gap-1.5 shrink-0 ml-auto">
                                   {isMyReview && (
                                     <button
                                       onClick={() => {
@@ -3182,6 +3310,20 @@
                                       <span>✏️</span> Modifica
                                     </button>
                                   )}
+                                  <button
+                                    type="button"
+                                    onClick={() => setReportingReview({
+                                      review: r,
+                                      streetName: selectedStreet.name,
+                                      streetCity: selectedStreet.city,
+                                      streetProvince: selectedStreet.province,
+                                    })}
+                                    className="p-1 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                    title="Segnala questo commento per linguaggio inappropriato, dati sensibili o spam"
+                                  >
+                                    <span>🚩</span>
+                                    <span>Segnala</span>
+                                  </button>
                                   <span className="text-slate-400 text-[11px]">{r.date}</span>
                                 </div>
                               </div>
@@ -3213,6 +3355,7 @@
                 setEditingReview(null);
               }}
               onSubmit={(data) => handleAddReview(data)}
+              onOpenPrivacy={() => setIsPrivacyOpen(true)}
             />
           )}
 
@@ -3221,6 +3364,7 @@
             isOpen={isAuthOpen}
             onClose={() => setIsAuthOpen(false)}
             onLoginSuccess={handleGoogleLogin}
+            onOpenPrivacy={() => setIsPrivacyOpen(true)}
           />
 
           {/* 8. MODALE PROFILO & CLASSIFICA (GAMIFICATION DASHBOARD) */}
@@ -3236,6 +3380,18 @@
               setIsGamificationOpen(false);
               setIsAuthOpen(true);
             }}
+          />
+
+          {/* 9. MODALE SEGNALAZIONE COMMENTO ("🚩 SEGNALA" VIA MAILTO) */}
+          <ReportCommentModal
+            reportData={reportingReview}
+            onClose={() => setReportingReview(null)}
+          />
+
+          {/* 10. MODALE PRIVACY POLICY & REGOLAMENTO COMMUNITY (GDPR) */}
+          <PrivacyModal
+            isOpen={isPrivacyOpen}
+            onClose={() => setIsPrivacyOpen(false)}
           />
         </div>
       );
@@ -3622,7 +3778,7 @@
     }
 
     // --- SOTTORAPPRESENTAZIONE MODALE RECENSIONE INTERATTIVA ---
-    function ReviewModal({ streetName, currentUser, initialData, isPioneerCandidate, onClose, onSubmit }) {
+    function ReviewModal({ streetName, currentUser, initialData, isPioneerCandidate, onClose, onSubmit, onOpenPrivacy }) {
       const isEditing = Boolean(initialData);
       const defaultRatings = {
         roadSurface: 4, groundSignage: 4, verticalSignage: 4,
@@ -3638,8 +3794,10 @@
       const [hasCyclePath, setHasCyclePath] = useState(initialData?.hasCyclePath || false);
       const [amenities, setAmenities] = useState(initialData?.amenities || []);
       const [comment, setComment] = useState(initialData?.comment || '');
+      const [moderationError, setModerationError] = useState('');
 
       useEffect(() => {
+        setModerationError('');
         if (initialData) {
           setRatings({
             ...defaultRatings,
@@ -3737,11 +3895,18 @@
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                const finalComment = comment.trim() || 'Recensione pubblicata con successo.';
+                const check = validateReviewComment(finalComment);
+                if (!check.valid) {
+                  setModerationError(check.message);
+                  return;
+                }
+                setModerationError('');
                 onSubmit({
                   userName: currentUser ? currentUser.name : 'Tu (Cittadino)',
                   ratings,
                   overallRating: overall,
-                  comment: comment.trim() || 'Recensione pubblicata con successo.',
+                  comment: finalComment,
                   parkingTypes,
                   hasCyclePath,
                   amenities,
@@ -3863,7 +4028,7 @@
                 </div>
               </div>
 
-              {/* Commento Libero con indicatore Bonus Dettaglio (+20 XP) */}
+              {/* Commento Libero con indicatore Bonus Dettaglio (+20 XP) e Moderazione Live */}
               <div className="space-y-1.5 pt-1">
                 <div className="flex items-center justify-between">
                   <label className="font-bold text-slate-700">Commento libero:</label>
@@ -3879,23 +4044,47 @@
                 </div>
                 <textarea 
                   value={comment}
-                  onChange={(e) => setComment(e.target.value)}
+                  onChange={(e) => {
+                    setComment(e.target.value);
+                    if (moderationError) setModerationError('');
+                  }}
                   rows={3} 
-                  placeholder="Aggiungi almeno 40 caratteri utili per i residenti (es. 'Zona tranquilla, marciapiedi larghi ma pochi parcheggi la sera') per ottenere +20 XP extra..."
-                  className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
+                  placeholder="Aggiungi almeno 40 caratteri utili per i residenti (es. 'Zona tranquilla, marciapiedi larghi ma pochi parcheggi la sera') per ottenere +20 XP extra. Non inserire targhe, telefoni o dati personali."
+                  className={`w-full p-2.5 rounded-xl border focus:outline-none focus:ring-2 text-slate-800 ${
+                    moderationError ? 'border-rose-400 focus:ring-rose-500 bg-rose-50/30' : 'border-slate-200 focus:ring-blue-500'
+                  }`}
                 />
+                {moderationError && (
+                  <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-start gap-2 animate-fade-in">
+                    <span className="text-sm leading-none shrink-0 mt-0.5">🛡️</span>
+                    <span>{moderationError}</span>
+                  </div>
+                )}
               </div>
 
-              <button
-                type="submit"
-                className={`w-full py-3.5 text-white font-bold rounded-2xl shadow-lg active:scale-[0.99] text-sm cursor-pointer transition-all ${
-                  isEditing
-                    ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/25'
-                    : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25'
-                }`}
-              >
-                {isEditing ? `💾 Aggiorna recensione (+${liveXP.totalXP} XP)` : `Pubblica Recensione (+${liveXP.totalXP} XP)`}
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="submit"
+                  className={`w-full py-3.5 text-white font-bold rounded-2xl shadow-lg active:scale-[0.99] text-sm cursor-pointer transition-all ${
+                    isEditing
+                      ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/25'
+                      : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25'
+                  }`}
+                >
+                  {isEditing ? `💾 Aggiorna recensione (+${liveXP.totalXP} XP)` : `Pubblica Recensione (+${liveXP.totalXP} XP)`}
+                </button>
+                <p className="text-[10px] text-center text-slate-400 leading-relaxed">
+                  Continuando accetti i{' '}
+                  <button
+                    type="button"
+                    onClick={onOpenPrivacy}
+                    className="text-blue-600 hover:underline font-bold cursor-pointer"
+                  >
+                    Termini d'Uso e la Privacy Policy
+                  </button>{' '}
+                  della community.
+                </p>
+              </div>
             </form>
           </div>
         </div>
@@ -3905,7 +4094,7 @@
     // --- MODALE AUTENTICAZIONE GOOGLE OAUTH 2.0 ---
     const GOOGLE_CLIENT_ID = "512832291400-m97714l26jqki67cjr9bkmr7cfaibq1b.apps.googleusercontent.com";
 
-    function AuthModal({ isOpen, onClose, onLoginSuccess }) {
+    function AuthModal({ isOpen, onClose, onLoginSuccess, onOpenPrivacy }) {
       const googleBtnRef = useRef(null);
       const isFileProtocol = window.location.protocol === 'file:';
       const currentOrigin = window.location.origin;
@@ -4127,9 +4316,248 @@
                 </button>
               </div>
 
-              <div className="text-[10px] text-slate-400 border-t border-slate-100 pt-2.5">
-                Modalità Ospite: puoi sempre navigare e consultare i voti delle strade senza effettuare il login.
+              <div className="text-[10px] text-slate-500 border-t border-slate-100 pt-2.5 space-y-1">
+                <p>
+                  Continuando accetti i{' '}
+                  <button
+                    type="button"
+                    onClick={onOpenPrivacy}
+                    className="text-blue-600 hover:underline font-bold cursor-pointer"
+                  >
+                    Termini d'Uso e la Privacy Policy
+                  </button>{' '}
+                  della community.
+                </p>
+                <p className="text-slate-400">
+                  Modalità Ospite: puoi sempre navigare e consultare i voti delle strade senza effettuare il login.
+                </p>
               </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // --- MODALE SEGNALAZIONE COMMENTO ("🚩 SEGNALA" VIA MAILTO) ---
+    function ReportCommentModal({ reportData, onClose }) {
+      const [reason, setReason] = useState('Linguaggio inappropriato / offensivo');
+
+      useEffect(() => {
+        if (reportData) {
+          setReason('Linguaggio inappropriato / offensivo');
+        }
+      }, [reportData]);
+
+      if (!reportData || !reportData.review) return null;
+
+      const { review, streetName, streetCity, streetProvince } = reportData;
+      const locationStr = `${streetName}${streetCity ? ` (${streetCity}${streetProvince ? ` - ${streetProvince}` : ''})` : ''}`;
+      const subject = `Segnalazione Recensione - ${streetName}`;
+      const bodyLines = [
+        `Segnalazione commento sulla piattaforma Street Review`,
+        `----------------------------------------------------`,
+        `Motivo segnalazione: ${reason}`,
+        `Strada: ${locationStr}`,
+        `ID Recensione: ${review.id || 'N/D'}`,
+        `Autore: ${review.user || 'Utente'} (ID: ${review.userId || 'N/D'})`,
+        `Data commento: ${review.date || 'N/D'}`,
+        ``,
+        `Testo del commento segnalato:`,
+        `"${review.comment || ''}"`,
+        `----------------------------------------------------`,
+        `Note aggiuntive dell'utente segnalante (opzionale):`,
+        ``
+      ];
+      const mailtoHref = `mailto:streetreview.app@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyLines.join('\n'))}`;
+
+      return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-fade-in">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slide-up border border-slate-100">
+            <div className="px-6 py-4 bg-rose-50 border-b border-rose-100 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">🚩</span>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Segnala Commento alla Moderazione</h3>
+                  <p className="text-[11px] text-rose-700 font-semibold truncate">{locationStr}</p>
+                </div>
+              </div>
+              <button
+                onClick={onClose}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-white/80 cursor-pointer"
+              >
+                <IconClose size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+                <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold">
+                  <span>Autore: <strong className="text-slate-700">{review.user}</strong></span>
+                  <span>ID: <code>{review.id}</code></span>
+                </div>
+                <p className="text-slate-700 italic leading-relaxed">"{review.comment}"</p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="font-bold text-slate-800">Seleziona il motivo della segnalazione:</p>
+                {[
+                  'Linguaggio inappropriato / offensivo',
+                  'Dati sensibili (Targa, Telefono, Nome privato)',
+                  'Spam o contenuto non pertinente alla viabilità',
+                ].map((opt) => (
+                  <label
+                    key={opt}
+                    className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                      reason === opt
+                        ? 'bg-rose-50/70 border-rose-300 text-rose-950 font-bold'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="reportReason"
+                      value={opt}
+                      checked={reason === opt}
+                      onChange={() => setReason(opt)}
+                      className="accent-rose-600"
+                    />
+                    <span>{opt}</span>
+                  </label>
+                ))}
+              </div>
+
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Cliccando su <strong>Invia Segnalazione</strong> si aprirà il tuo client email con un messaggio precompilato indirizzato a <code className="font-bold text-slate-700">streetreview.app@gmail.com</code> contenente i riferimenti del commento da verificare.
+              </p>
+
+              <div className="flex items-center gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 py-2.5 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                >
+                  Annulla
+                </button>
+                <a
+                  href={mailtoHref}
+                  onClick={() => {
+                    setTimeout(() => onClose(), 150);
+                  }}
+                  className="flex-1 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-center shadow-lg shadow-rose-500/25 no-underline transition-all"
+                >
+                  🚩 Invia Segnalazione
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // --- MODALE "PRIVACY POLICY & TERMINI DI SERVIZIO" (GDPR) ---
+    function PrivacyModal({ isOpen, onClose }) {
+      if (!isOpen) return null;
+
+      return (
+        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-fade-in">
+          <div className="bg-white w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden animate-slide-up border border-slate-100">
+            <div className="px-6 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-xl">
+                  🛡️
+                </div>
+                <div>
+                  <h3 className="font-black text-sm sm:text-base">Privacy &amp; Regolamento Community</h3>
+                  <p className="text-[11px] text-slate-300">Informativa GDPR (Reg. UE 2016/679) e Termini di Servizio</p>
+                </div>
+              </div>
+              <button
+                onClick={onClose}
+                className="p-1.5 text-slate-300 hover:text-white rounded-full hover:bg-white/10 cursor-pointer"
+              >
+                <IconClose size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs text-slate-600 leading-relaxed">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+                <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  <span>🏛️</span> 1. Titolare e Contatti
+                </h4>
+                <p>
+                  <strong>Street Review</strong> è un progetto civico indipendente dedicato alla mappatura collaborativa della qualità stradale e dell'accessibilità urbana in Italia, ideato da <strong>Matteo Bernardini</strong>. Per qualsiasi richiesta relativa alla privacy, moderazione o segnalazione è possibile contattare direttamente il responsabile all'indirizzo ufficiale:{' '}
+                  <a href="mailto:streetreview.app@gmail.com" className="text-blue-600 font-bold hover:underline">
+                    streetreview.app@gmail.com
+                  </a>.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-blue-50/50 border border-blue-100 space-y-1.5">
+                <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  <span>🔐</span> 2. Dati Raccolti e Finalità del Trattamento
+                </h4>
+                <p>
+                  La consultazione della mappa è libera e anonima (Modalità Ospite). Quando scegli volontariamente di effettuare l'accesso tramite <strong>Google Sign-In (Firebase Authentication)</strong>, raccogliamo esclusivamente:
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-slate-700 font-medium">
+                  <li><strong>Nome pubblico e Avatar Google:</strong> mostrati accanto alle recensioni pubblicate e nella classifica civica degli Esploratori.</li>
+                  <li><strong>Indirizzo Email e UID univoco:</strong> utilizzati al solo scopo tecnico di autenticare la tua sessione, prevenire abusi (garantendo il vincolo di <strong>1 sola recensione per via per ciascun utente</strong>), calcolare i progressi Gamification (XP, Livelli, Badge) e inviare notifiche celebrative sui traguardi raggiunti.</li>
+                </ul>
+                <p className="text-[11px] text-slate-500 pt-1">
+                  I tuoi dati non vengono mai ceduti a terzi per fini commerciali o di profilazione pubblicitaria. La posizione GPS ("📍 La mia posizione") viene elaborata esclusivamente nel tuo browser per centrare la mappa e non viene mai salvata sui nostri server.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80 space-y-1.5">
+                <h4 className="font-black text-amber-950 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  <span>⚖️</span> 3. Regole di Moderazione della Community
+                </h4>
+                <p className="text-slate-700">
+                  Le recensioni devono riguardare esclusivamente le caratteristiche oggettive dell'infrastruttura stradale (asfalto, marciapiedi, parcheggi, illuminazione, accessibilità). È posto il <strong>divieto assoluto</strong> di pubblicare nei commenti:
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-amber-950 font-semibold">
+                  <li>Nomi e cognomi di privati cittadini o riferimenti a persone specifiche;</li>
+                  <li>Numeri di targa automobilistica, numeri di telefono o indirizzi email;</li>
+                  <li>Insulti, bestemmie, linguaggio osceno, diffamazioni o contenuti discriminatori.</li>
+                </ul>
+                <p className="text-[11px] text-slate-600 pt-1">
+                  Un filtro automatico pre-salvataggio blocca l'inserimento di targhe, contatti e linguaggio offensivo. Ogni utente può inoltre segnalare eventuali abusi tramite il pulsante <strong>"🚩 Segnala"</strong> presente su ciascun commento.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200/80 space-y-1.5">
+                <h4 className="font-black text-emerald-950 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  <span>🇪🇺</span> 4. Diritti dell'Utente (GDPR - Artt. 15-22)
+                </h4>
+                <p className="text-slate-700">
+                  In conformità al Regolamento UE 2016/679 (GDPR), hai sempre il diritto di:
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-slate-700 font-medium">
+                  <li><strong>Rettifica immediata:</strong> puoi modificare e aggiornare in qualsiasi momento le tue recensioni direttamente dall'app.</li>
+                  <li><strong>Diritto all'oblio e cancellazione dati:</strong> puoi richiedere in qualsiasi momento la rimozione di una tua recensione o la cancellazione completa del tuo profilo e di tutti i dati associati scrivendo a{' '}
+                    <a href="mailto:streetreview.app@gmail.com?subject=Richiesta%20Cancellazione%20Dati%20GDPR%20-%20Street%20Review" className="text-emerald-700 font-bold hover:underline">
+                      streetreview.app@gmail.com
+                    </a>.
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
+              <a
+                href="mailto:streetreview.app@gmail.com"
+                className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1.5"
+              >
+                <span>✉️</span>
+                <span>streetreview.app@gmail.com</span>
+              </a>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Ho capito, chiudi
+              </button>
             </div>
           </div>
         </div>
