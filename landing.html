@@ -2240,7 +2240,7 @@
         }
       };
 
-      // 5. SOTTOSCRIZIONE REAL-TIME A FIRESTORE (COLLEZIONE 'reviews')
+      // 5. SOTTOSCRIZIONE LEGGERA REAL-TIME A FIRESTORE (COLLEZIONE PRE-AGGREGATA 'users' TOP 10 + 'streets')
       const firestore = window.db;
       const statusEl = document.getElementById('liveLeaderboardStatus');
       const dotEl = document.getElementById('liveLeaderboardDot');
@@ -2251,18 +2251,169 @@
         return;
       }
 
-      firestore.collection('reviews').onSnapshot(
-        (snapshot) => {
-          const cloudReviews = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          const computed = computeLeaderboardFromCloudReviews(cloudReviews);
-          renderLeaderboardUI(computed);
-          if (statusEl) {
-            statusEl.textContent = 'Classifica Live aggiornata in tempo reale · Firestore';
+      const hydrateLandingUserEntry = (uDoc, rankIndex) => {
+        const xp = Number(uDoc.xp) || 0;
+        const reviewsCount = Number(uDoc.reviewsCount) || 0;
+        const pioneerCount = Number(uDoc.pioneerCount) || 0;
+        const citiesCount = Number(uDoc.citiesCount ?? uDoc.uniqueCitiesCount) || (reviewsCount > 0 ? 1 : 0);
+        const uniqueStreetsCount = Number(uDoc.uniqueStreetsCount) || reviewsCount;
+        const unlockedIds = Array.isArray(uDoc.unlockedBadges) ? uDoc.unlockedBadges : [];
+        const unlockedSet = new Set(unlockedIds);
+
+        const statsObj = {
+          authorId: uDoc.authorId || uDoc.id,
+          name: uDoc.authorName || uDoc.name || 'Cittadino Esploratore',
+          avatarUrl: uDoc.authorAvatar || uDoc.avatarUrl || '',
+          xp,
+          reviewsCount,
+          uniqueStreetsCount,
+          uniqueCitiesCount: citiesCount,
+          pioneerCount,
+          parkingReviewsCount: Number(uDoc.parkingReviewsCount) || (unlockedSet.has('parking_hound') ? 5 : 0),
+          detailedCommentsCount: Number(uDoc.detailedCommentsCount) || (unlockedSet.has('street_critic') ? 5 : 0),
+          accessibilityStreetsCount: Number(uDoc.accessibilityStreetsCount) || (unlockedSet.has('accessibility_paladin') ? 5 : 0),
+        };
+
+        const levelInfo = getLevelByXP(xp);
+        const unlockedBadges = GAMIFICATION_BADGES.filter(b =>
+          unlockedSet.has(b.id) || b.getValue(statsObj) >= b.target
+        );
+
+        return {
+          ...statsObj,
+          levelInfo,
+          unlockedBadges,
+          unlockedBadgesCount: unlockedBadges.length,
+          rank: rankIndex + 1,
+        };
+      };
+
+      let latestLeaderboard = [];
+      let totalExplorersCount = 0;
+      let totalStreetsCount = 0;
+      let totalReviewsCount = 0;
+      let migrationRunning = false;
+      let migrationDone = false;
+
+      const refreshLandingView = () => {
+        renderLeaderboardUI({
+          leaderboard: latestLeaderboard,
+          totalExplorers: Math.max(totalExplorersCount, latestLeaderboard.length),
+          totalStreets: totalStreetsCount,
+          totalReviews: totalReviewsCount,
+        });
+      };
+
+      const ensureDataMigration = async () => {
+        if (migrationRunning || migrationDone) return;
+        migrationRunning = true;
+        try {
+          const [streetsCheck, usersCheck] = await Promise.all([
+            firestore.collection('streets').limit(1).get(),
+            firestore.collection('users').limit(1).get(),
+          ]);
+          if (!streetsCheck.empty && !usersCheck.empty) {
+            migrationDone = true;
+            migrationRunning = false;
+            return;
           }
+
+          const reviewsSnap = await firestore.collection('reviews').get();
+          if (reviewsSnap.empty) {
+            migrationDone = true;
+            migrationRunning = false;
+            return;
+          }
+
+          const cloudReviews = reviewsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const computed = computeLeaderboardFromCloudReviews(cloudReviews);
+          latestLeaderboard = computed.leaderboard;
+          totalExplorersCount = computed.totalExplorers;
+          totalStreetsCount = computed.totalStreets;
+          totalReviewsCount = computed.totalReviews;
+          refreshLandingView();
+
+          // Salva i profili aggregati in 'users' se i permessi lo consentono
+          computed.leaderboard.forEach(u => {
+            if (u.authorId) {
+              firestore.collection('users').doc(String(u.authorId)).set({
+                authorId: String(u.authorId),
+                authorName: u.name,
+                name: u.name,
+                authorAvatar: u.avatarUrl || '',
+                avatarUrl: u.avatarUrl || '',
+                xp: u.xp,
+                level: u.levelInfo.level,
+                levelTitle: u.levelInfo.title,
+                reviewsCount: u.reviewsCount,
+                pioneerCount: u.pioneerCount,
+                citiesCount: u.uniqueCitiesCount,
+                uniqueCitiesCount: u.uniqueCitiesCount,
+                uniqueStreetsCount: u.uniqueStreetsCount,
+                unlockedBadges: u.unlockedBadges.map(b => b.id),
+                updatedAt: new Date().toISOString(),
+              }, { merge: true }).catch(() => {});
+            }
+          });
+          migrationDone = true;
+        } catch (e) {
+          console.warn('[Landing Auto-Migration] Fallback:', e);
+        } finally {
+          migrationRunning = false;
+        }
+      };
+
+      // Query leggera Top 10 sulla collezione 'users' (solo 10 letture anziché migliaia)
+      firestore.collection('users')
+        .orderBy('xp', 'desc')
+        .limit(10)
+        .onSnapshot(
+          (snapshot) => {
+            if (snapshot.empty) {
+              ensureDataMigration();
+              return;
+            }
+            const rawDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            rawDocs.sort((a, b) => {
+              if ((Number(b.xp) || 0) !== (Number(a.xp) || 0)) return (Number(b.xp) || 0) - (Number(a.xp) || 0);
+              if ((Number(b.pioneerCount) || 0) !== (Number(a.pioneerCount) || 0)) return (Number(b.pioneerCount) || 0) - (Number(a.pioneerCount) || 0);
+              return (Number(b.reviewsCount) || 0) - (Number(a.reviewsCount) || 0);
+            });
+            latestLeaderboard = rawDocs.slice(0, 10).map((u, idx) => hydrateLandingUserEntry(u, idx));
+            totalExplorersCount = Math.max(totalExplorersCount, latestLeaderboard.length);
+            if (totalReviewsCount === 0) {
+              totalReviewsCount = latestLeaderboard.reduce((acc, u) => acc + (u.reviewsCount || 0), 0);
+            }
+            if (totalStreetsCount === 0) {
+              totalStreetsCount = latestLeaderboard.reduce((acc, u) => Math.max(acc, u.uniqueStreetsCount || 0), 0);
+            }
+            refreshLandingView();
+            if (statusEl) {
+              statusEl.textContent = 'Classifica Live aggiornata in tempo reale · Firestore (Top 10)';
+            }
+          },
+          (err) => {
+            console.error('Errore lettura classifica live da Firestore (users):', err);
+            if (statusEl) statusEl.textContent = 'Connessione classifica in sola lettura';
+          }
+        );
+
+      // Query leggera sulla collezione 'streets' per aggiornare i contatori globali strade/recensioni
+      firestore.collection('streets').onSnapshot(
+        (snapshot) => {
+          if (snapshot.empty) {
+            ensureDataMigration();
+            return;
+          }
+          totalStreetsCount = snapshot.docs.length;
+          totalReviewsCount = snapshot.docs.reduce((acc, doc) => {
+            const d = doc.data();
+            return acc + Number(d.reviewCount ?? d.reviewsCount ?? 0);
+          }, 0);
+          refreshLandingView();
         },
         (err) => {
-          console.error('Errore lettura classifica live da Firestore:', err);
-          if (statusEl) statusEl.textContent = 'Connessione classifica in sola lettura';
+          console.warn('Lettura contatori streets:', err);
         }
       );
     })();

@@ -1046,155 +1046,628 @@
       } catch (e) {}
     };
 
-    const computeGamificationData = (streetsList, activeUser) => {
-      const dedupedStreets = [];
-      const sortedStreets = [...(streetsList || [])].sort((a, b) => (b.reviewsCount || 0) - (a.reviewsCount || 0));
-      sortedStreets.forEach(s => {
-        if (s.reviewsCount > 0 && Array.isArray(s.reviews) && s.reviews.length > 0) {
-          if (!dedupedStreets.some(d => isSameStreet(d, s))) {
-            dedupedStreets.push(s);
-          }
+    // --- ARCHITETTURA SCALABILE STEP 3: PRE-AGGREGAZIONE ('streets' & 'users') + CARICAMENTO COMMENTI ON-DEMAND ---
+    const CATEGORY_KEYS = [
+      'roadSurface', 'groundSignage', 'verticalSignage', 'parkingQuantity',
+      'sidewalkQuality', 'lighting', 'cleanliness', 'accessibility',
+      'rainDrainage', 'greeneryShade', 'quietness', 'intersectionVisibility',
+      'laneWidth'
+    ];
+
+    const createDefaultProfile = (usr) => {
+      const base = {
+        authorId: usr?.id || usr?.authorId || 'guest',
+        name: usr?.name || usr?.authorName || 'Esploratore Ospite',
+        avatarUrl: usr?.avatarUrl || usr?.authorAvatar || '',
+        xp: 0,
+        reviewsCount: 0,
+        uniqueStreetsCount: 0,
+        uniqueCitiesCount: 0,
+        citiesCount: 0,
+        pioneerCount: 0,
+        parkingReviewsCount: 0,
+        detailedCommentsCount: 0,
+        accessibilityStreetsCount: 0,
+        unlockedBadges: [],
+        awardedMilestones: (usr?.id || usr?.authorId) ? getLocalAwardedMilestones(usr.id || usr.authorId) : [],
+      };
+      return {
+        ...base,
+        levelInfo: getLevelByXP(0),
+        badges: buildUserBadges(base),
+        unlockedBadgesCount: 0,
+      };
+    };
+
+    const hydrateUserProfileFromDoc = (uDoc) => {
+      if (!uDoc) return createDefaultProfile(null);
+      const authorId = String(uDoc.authorId || uDoc.id || 'guest');
+      const authorName = uDoc.authorName || uDoc.name || 'Cittadino Esploratore';
+      const authorAvatar = uDoc.authorAvatar || uDoc.avatarUrl || '';
+      const xp = Number(uDoc.xp) || 0;
+      const reviewsCount = Number(uDoc.reviewsCount) || 0;
+      const pioneerCount = Number(uDoc.pioneerCount) || 0;
+      const citiesCount = Number(uDoc.citiesCount ?? uDoc.uniqueCitiesCount) || (reviewsCount > 0 ? 1 : 0);
+      const uniqueStreetsCount = Number(uDoc.uniqueStreetsCount) || reviewsCount;
+      const unlockedBadgeIds = Array.isArray(uDoc.unlockedBadges) ? uDoc.unlockedBadges : [];
+      const unlockedSet = new Set(unlockedBadgeIds);
+
+      const statsObj = {
+        authorId,
+        authorName,
+        name: authorName,
+        authorAvatar,
+        avatarUrl: authorAvatar,
+        xp,
+        reviewsCount,
+        uniqueStreetsCount,
+        uniqueCitiesCount: citiesCount,
+        citiesCount,
+        pioneerCount,
+        parkingReviewsCount: Number(uDoc.parkingReviewsCount) || (unlockedSet.has('parking_hound') ? 5 : 0),
+        detailedCommentsCount: Number(uDoc.detailedCommentsCount) || (unlockedSet.has('street_critic') ? 5 : 0),
+        accessibilityStreetsCount: Number(uDoc.accessibilityStreetsCount) || (unlockedSet.has('accessibility_paladin') ? 5 : 0),
+        unlockedBadges: unlockedBadgeIds,
+        awardedMilestones: Array.from(new Set([
+          ...(Array.isArray(uDoc.awardedMilestones) ? uDoc.awardedMilestones : []),
+          ...getLocalAwardedMilestones(authorId),
+        ])),
+      };
+
+      const levelInfo = getLevelByXP(xp);
+      const badges = GAMIFICATION_BADGES.map(b => {
+        const rawCurrent = b.getValue(statsObj);
+        const unlocked = unlockedSet.has(b.id) || rawCurrent >= b.target;
+        const current = unlocked ? Math.max(rawCurrent, b.target) : rawCurrent;
+        const progress = Math.min(current, b.target);
+        return {
+          ...b,
+          current,
+          progress,
+          unlocked,
+        };
+      });
+      const unlockedBadgesCount = badges.filter(b => b.unlocked).length;
+
+      return {
+        ...statsObj,
+        levelInfo,
+        badges,
+        unlockedBadgesCount,
+      };
+    };
+
+    const formatCloudReviewToUI = (r, fallbackStreet = {}) => {
+      const lat = Number(r.latitude) || Number(fallbackStreet.latitude) || 42.9517;
+      const lng = Number(r.longitude) || Number(fallbackStreet.longitude) || 13.8822;
+      const city = r.streetCity || fallbackStreet.city || fallbackStreet.streetCity || '';
+      const province = r.streetProvince || r.province || fallbackStreet.province || '';
+      const streetName = r.streetName || fallbackStreet.name || fallbackStreet.streetName || '';
+      const streetKey = r.streetKey || fallbackStreet.streetKey || createStreetCompositeKey(streetName, city, lat, lng, province);
+      return {
+        id: r.id,
+        streetKey,
+        streetName,
+        userId: r.authorId || r.userId,
+        user: r.authorName || r.user || 'Cittadino Esploratore',
+        avatarUrl: r.authorAvatar || r.avatarUrl || '',
+        streetCity: city,
+        streetProvince: province,
+        latitude: lat,
+        longitude: lng,
+        date: r.date || (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString('it-IT') : 'Recente'),
+        createdAt: r.createdAt || r.updatedAt || null,
+        updatedAt: r.updatedAt || r.createdAt || null,
+        overallRating: Number(r.ratingOverall ?? r.overallRating ?? 0),
+        comment: r.comment || '',
+        ratings: r.ratings || {},
+        parkingTypes: Array.isArray(r.parkingTypes) ? r.parkingTypes : [],
+        hasCyclePath: Boolean(r.hasCyclePath),
+        amenities: Array.isArray(r.amenities) ? r.amenities : [],
+        awardedMilestones: Array.isArray(r.awardedMilestones) ? r.awardedMilestones : [],
+      };
+    };
+
+    // Costruisce il documento sommario per la collezione 'streets/{streetKey}' a partire dalle recensioni di quella via
+    const buildStreetSummaryDocFromReviews = (revList, fallbackMeta = {}) => {
+      const safeReviews = Array.isArray(revList) ? revList : [];
+      const sample = safeReviews[0] || fallbackMeta;
+      const validCoords = safeReviews.filter(rev =>
+        rev.latitude && rev.longitude && !isNaN(Number(rev.latitude)) && !isNaN(Number(rev.longitude))
+      );
+      const baryLat = validCoords.length > 0
+        ? Number((validCoords.reduce((acc, rev) => acc + Number(rev.latitude), 0) / validCoords.length).toFixed(6))
+        : (Number(fallbackMeta.latitude ?? sample?.latitude) || 42.9517);
+      const baryLng = validCoords.length > 0
+        ? Number((validCoords.reduce((acc, rev) => acc + Number(rev.longitude), 0) / validCoords.length).toFixed(6))
+        : (Number(fallbackMeta.longitude ?? sample?.longitude) || 13.8822);
+
+      const rawName = (fallbackMeta.streetName || fallbackMeta.name || sample?.streetName || sample?.name || '').trim();
+      const inferredCityKey = inferCityKeyFromCoords(baryLat, baryLng);
+      const matchingCityReview = inferredCityKey
+        ? safeReviews.find(rev => normalizeCityKey(rev.streetCity, rev.latitude, rev.longitude) === inferredCityKey)
+        : null;
+      const rawCity = (matchingCityReview && matchingCityReview.streetCity) ||
+        resolveCanonicalCityName(fallbackMeta.streetCity || fallbackMeta.city || sample?.streetCity || sample?.city, baryLat, baryLng);
+      const rawProvince = fallbackMeta.province || fallbackMeta.streetProvince || sample?.streetProvince || sample?.province || '';
+
+      const anchor = getCanonicalStreetAnchor(rawName, rawCity, baryLat, baryLng, rawProvince);
+      const streetName = anchor.canonicalName || rawName;
+      const streetCity = anchor.city || resolveCanonicalCityName(rawCity, baryLat, baryLng);
+      const streetCityKey = normalizeCityKey(streetCity, anchor.lat, anchor.lng);
+      const province = anchor.province || normalizeProvinceCode(rawProvince, streetCityKey, anchor.lat, anchor.lng);
+      const postalCode = anchor.postalCode || fallbackMeta.postalCode || sample?.postalCode || resolveDefaultPostalCode(streetCityKey);
+      const streetKey = fallbackMeta.streetKey || createStreetCompositeKey(streetName, streetCity, anchor.lat, anchor.lng, province);
+
+      const categoryAverages = {};
+      CATEGORY_KEYS.forEach(k => {
+        if (safeReviews.length === 0) {
+          categoryAverages[k] = 0;
+        } else {
+          const sum = safeReviews.reduce((acc, r) => acc + Number(r.ratings?.[k] || 0), 0);
+          categoryAverages[k] = Number((sum / safeReviews.length).toFixed(1));
         }
       });
 
-      const usersMap = new Map();
+      const ratingOverall = safeReviews.length === 0
+        ? 0
+        : Number((Object.values(categoryAverages).reduce((a, b) => a + b, 0) / CATEGORY_KEYS.length).toFixed(1));
+
+      const parkingTypes = Array.from(new Set(safeReviews.flatMap(r => r.parkingTypes || [])));
+      const hasCyclePath = safeReviews.some(r => Boolean(r.hasCyclePath));
+      const amenities = Array.from(new Set(safeReviews.flatMap(r => r.amenities || [])));
+
+      // Determina l'autore Pioniere (prima recensione storica della via per timestamp createdAt)
+      let pioneerRev = safeReviews[safeReviews.length - 1] || null;
+      let minTime = pioneerRev ? parseReviewTimestampMs(pioneerRev) : Number.MAX_SAFE_INTEGER;
+      for (let i = safeReviews.length - 1; i >= 0; i--) {
+        const r = safeReviews[i];
+        const t = parseReviewTimestampMs(r);
+        if (t < minTime) {
+          minTime = t;
+          pioneerRev = r;
+        }
+      }
+      const pioneerAuthorId = pioneerRev
+        ? String(pioneerRev.authorId || pioneerRev.userId || `name:${(pioneerRev.authorName || pioneerRev.user || 'utente').trim().toLowerCase()}`)
+        : null;
+      const pioneerReviewId = pioneerRev ? (pioneerRev.id || null) : null;
+      const pioneerAuthorName = pioneerRev ? (pioneerRev.authorName || pioneerRev.user || '') : '';
+
+      return {
+        streetKey,
+        streetName,
+        streetCity,
+        province,
+        postalCode,
+        latitude: Number(anchor.lat),
+        longitude: Number(anchor.lng),
+        ratingOverall,
+        reviewCount: safeReviews.length,
+        categoryAverages,
+        parkingTypes,
+        hasCyclePath,
+        amenities,
+        pioneerAuthorId,
+        pioneerReviewId,
+        pioneerAuthorName,
+        updatedAt: new Date().toISOString(),
+      };
+    };
+
+    // Converte un documento 'streets/{streetKey}' nel formato strada utilizzato dalla UI e dai PIN mappa
+    const mapStreetDocToUIStreet = (docData, existingStreet = null) => {
+      const rawName = docData.streetName || docData.name || '';
+      const rawCity = docData.streetCity || docData.city || '';
+      const lat = Number(docData.latitude) || 42.9517;
+      const lng = Number(docData.longitude) || 13.8822;
+      const cityKey = normalizeCityKey(rawCity, lat, lng);
+      const province = docData.province || docData.streetProvince || normalizeProvinceCode('', cityKey, lat, lng);
+      const streetKey = docData.streetKey || docData.id || createStreetCompositeKey(rawName, rawCity, lat, lng, province);
+      const canonicalId = 'street-' + streetKey.replace(/[^a-z0-9]/g, '-');
+
+      const defaultCats = {};
+      CATEGORY_KEYS.forEach(k => {
+        defaultCats[k] = Number(docData.categoryAverages?.[k] || 0);
+      });
+
+      const preservedReviews = (existingStreet && Array.isArray(existingStreet.reviews) && existingStreet.reviews.length > 0)
+        ? existingStreet.reviews
+        : [];
+
+      return {
+        id: existingStreet?.id || canonicalId,
+        streetKey,
+        name: rawName,
+        city: rawCity,
+        province,
+        postalCode: docData.postalCode || existingStreet?.postalCode || resolveDefaultPostalCode(cityKey),
+        latitude: lat,
+        longitude: lng,
+        reviewsCount: Number(docData.reviewCount ?? docData.reviewsCount ?? preservedReviews.length ?? 0),
+        avgOverallRating: Number(docData.ratingOverall ?? docData.avgOverallRating ?? 0),
+        categoryAverages: defaultCats,
+        commonParkingTypes: Array.isArray(docData.parkingTypes)
+          ? docData.parkingTypes
+          : (Array.isArray(docData.commonParkingTypes) ? docData.commonParkingTypes : []),
+        hasCyclePath: Boolean(docData.hasCyclePath),
+        amenities: Array.isArray(docData.amenities) ? docData.amenities : [],
+        pioneerAuthorId: docData.pioneerAuthorId || existingStreet?.pioneerAuthorId || null,
+        pioneerReviewId: docData.pioneerReviewId || existingStreet?.pioneerReviewId || null,
+        pioneerAuthorName: docData.pioneerAuthorName || existingStreet?.pioneerAuthorName || '',
+        reviews: preservedReviews,
+        reviewsLoaded: Boolean(existingStreet?.reviewsLoaded),
+      };
+    };
+
+    // Costruisce il documento 'users/{authorId}' pre-aggregato a partire dalle recensioni dell'utente
+    const buildUserSummaryDocFromReviews = (authorId, userReviews, streetsList = [], extraMilestones = [], profileMeta = {}) => {
+      const safeReviews = Array.isArray(userReviews) ? userReviews : [];
+      const streetIds = new Set();
+      const cityKeys = new Set();
+      const pioneerStreetIds = new Set();
+      const accessibilityStreetIds = new Set();
+      const awardedMilestonesSet = new Set([
+        ...(Array.isArray(extraMilestones) ? extraMilestones : []),
+        ...getLocalAwardedMilestones(authorId),
+      ]);
+
+      let xp = 0;
+      let parkingReviewsCount = 0;
+      let detailedCommentsCount = 0;
+      let resolvedName = profileMeta.authorName || profileMeta.name || '';
+      let resolvedAvatar = profileMeta.authorAvatar || profileMeta.avatarUrl || '';
+      let resolvedEmail = profileMeta.email || '';
+
+      safeReviews.forEach(r => {
+        if (!resolvedName && (r.authorName || r.user)) resolvedName = r.authorName || r.user;
+        if (!resolvedAvatar && (r.authorAvatar || r.avatarUrl)) resolvedAvatar = r.authorAvatar || r.avatarUrl;
+
+        const rLat = Number(r.latitude) || 42.9517;
+        const rLng = Number(r.longitude) || 13.8822;
+        const rCity = r.streetCity || r.city || '';
+        const rProv = r.streetProvince || r.province || '';
+        const rStreetKey = r.streetKey || createStreetCompositeKey(r.streetName || r.name || '', rCity, rLat, rLng, rProv);
+
+        // Verifica se l'utente è il Pioniere per questa strada (controllando il documento streets o il flag)
+        const matchingStreet = (streetsList || []).find(s =>
+          (s.streetKey && s.streetKey === rStreetKey) ||
+          isSameStreet(s, { name: r.streetName || r.name, city: rCity, province: rProv, lat: rLat, lng: rLng })
+        );
+        const canonicalStreetKey = matchingStreet?.streetKey || rStreetKey;
+
+        const isPioneer = Boolean(
+          r.isPioneer ||
+          (matchingStreet && (
+            (matchingStreet.pioneerAuthorId && String(matchingStreet.pioneerAuthorId) === String(authorId)) ||
+            (matchingStreet.pioneerReviewId && matchingStreet.pioneerReviewId === r.id) ||
+            Number(matchingStreet.reviewsCount ?? matchingStreet.reviewCount ?? 0) <= 1
+          ))
+        );
+
+        const xpBreakdown = computeSingleReviewXP(r, isPioneer);
+        xp += xpBreakdown.totalXP;
+        streetIds.add(canonicalStreetKey);
+
+        const revCityKey = normalizeCityKey(rCity, rLat, rLng);
+        if (revCityKey) cityKeys.add(revCityKey);
+
+        if (isPioneer) {
+          pioneerStreetIds.add(canonicalStreetKey);
+        }
+        if (Array.isArray(r.parkingTypes) && r.parkingTypes.length > 0) {
+          parkingReviewsCount += 1;
+        }
+        if (isDetailedCommentText(r.comment)) {
+          detailedCommentsCount += 1;
+        }
+        const hasAccessibilitySignal =
+          (Array.isArray(r.parkingTypes) && (r.parkingTypes.includes('DISABLED') || r.parkingTypes.includes('PINK'))) ||
+          Number(r.ratings?.accessibility) > 0;
+        if (hasAccessibilitySignal) {
+          accessibilityStreetIds.add(canonicalStreetKey);
+        }
+        if (Array.isArray(r.awardedMilestones)) {
+          r.awardedMilestones.forEach(m => {
+            if (m) awardedMilestonesSet.add(String(m));
+          });
+        }
+      });
+
+      const finalName = resolvedName || 'Cittadino Esploratore';
+      const statsObj = {
+        authorId: String(authorId),
+        authorName: finalName,
+        name: finalName,
+        authorAvatar: resolvedAvatar,
+        avatarUrl: resolvedAvatar,
+        xp,
+        reviewsCount: safeReviews.length,
+        uniqueStreetsCount: streetIds.size,
+        uniqueCitiesCount: cityKeys.size,
+        citiesCount: cityKeys.size,
+        pioneerCount: pioneerStreetIds.size,
+        parkingReviewsCount,
+        detailedCommentsCount,
+        accessibilityStreetsCount: accessibilityStreetIds.size,
+        awardedMilestones: Array.from(awardedMilestonesSet),
+      };
+
+      const levelInfo = getLevelByXP(xp);
+      const badges = buildUserBadges(statsObj);
+      const unlockedBadgeIds = badges.filter(b => b.unlocked).map(b => b.id);
+
+      const userDoc = {
+        authorId: String(authorId),
+        authorName: finalName,
+        name: finalName,
+        authorAvatar: resolvedAvatar,
+        avatarUrl: resolvedAvatar,
+        ...(resolvedEmail ? { email: resolvedEmail } : {}),
+        xp,
+        level: levelInfo.level,
+        levelTitle: levelInfo.title,
+        reviewsCount: safeReviews.length,
+        pioneerCount: pioneerStreetIds.size,
+        citiesCount: cityKeys.size,
+        uniqueCitiesCount: cityKeys.size,
+        uniqueStreetsCount: streetIds.size,
+        parkingReviewsCount,
+        detailedCommentsCount,
+        accessibilityStreetsCount: accessibilityStreetIds.size,
+        unlockedBadges: unlockedBadgeIds,
+        awardedMilestones: Array.from(awardedMilestonesSet),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const fullProfile = {
+        ...statsObj,
+        unlockedBadges: unlockedBadgeIds,
+        levelInfo,
+        badges,
+        unlockedBadgesCount: unlockedBadgeIds.length,
+      };
+
+      return { userDoc, fullProfile };
+    };
+
+    // Routine di Auto-Migrazione Iniziale: eseguita una sola volta se 'streets' o 'users' è vuota (0 documenti)
+    let autoMigrationInFlight = false;
+    let autoMigrationDone = false;
+
+    const ensureDataMigration = async (firestore, onMigratedData) => {
+      if (!firestore || autoMigrationInFlight || autoMigrationDone) return;
+      autoMigrationInFlight = true;
+      try {
+        const [streetsCheckSnap, usersCheckSnap] = await Promise.all([
+          firestore.collection('streets').limit(1).get(),
+          firestore.collection('users').limit(1).get(),
+        ]);
+
+        const needsStreetsMigration = streetsCheckSnap.empty;
+        const needsUsersMigration = usersCheckSnap.empty;
+
+        if (!needsStreetsMigration && !needsUsersMigration) {
+          autoMigrationDone = true;
+          autoMigrationInFlight = false;
+          return;
+        }
+
+        console.log('[Auto-Migration] Rilevata collezione pre-aggregata vuota (streets empty:', needsStreetsMigration, ', users empty:', needsUsersMigration, '). Avvio migrazione automatica da reviews...');
+        const reviewsSnap = await firestore.collection('reviews').get();
+        if (reviewsSnap.empty) {
+          console.log('[Auto-Migration] Nessuna recensione storica presente in reviews.');
+          autoMigrationDone = true;
+          autoMigrationInFlight = false;
+          return;
+        }
+
+        const cloudReviews = reviewsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // 1. Raggruppa le recensioni per strada con deduplicazione spaziale/toponomastica
+        const streetGroups = [];
+        cloudReviews.forEach(r => {
+          const rawName = (r.streetName || '').trim();
+          if (!rawName) return;
+          const candidate = {
+            name: rawName,
+            city: r.streetCity,
+            province: r.streetProvince || r.province || '',
+            lat: r.latitude,
+            lng: r.longitude,
+          };
+          let targetGroup = streetGroups.find(g => isSameStreet(g, candidate));
+          if (!targetGroup) {
+            targetGroup = {
+              canonicalName: rawName,
+              city: r.streetCity || '',
+              province: r.streetProvince || r.province || '',
+              postalCode: r.postalCode || '',
+              latitude: Number(r.latitude) || 0,
+              longitude: Number(r.longitude) || 0,
+              reviews: [],
+            };
+            streetGroups.push(targetGroup);
+          }
+          if (!targetGroup.province && (r.streetProvince || r.province)) {
+            targetGroup.province = r.streetProvince || r.province;
+          }
+          if (!targetGroup.postalCode && r.postalCode) {
+            targetGroup.postalCode = r.postalCode;
+          }
+          targetGroup.reviews.push(r);
+        });
+
+        const migratedStreetDocs = [];
+        const migratedUIStreets = [];
+        const reviewsByAuthor = new Map();
+
+        streetGroups.forEach(group => {
+          const streetDoc = buildStreetSummaryDocFromReviews(group.reviews, {
+            streetName: group.canonicalName,
+            streetCity: group.city,
+            province: group.province,
+            postalCode: group.postalCode,
+            latitude: group.latitude,
+            longitude: group.longitude,
+          });
+          migratedStreetDocs.push(streetDoc);
+
+          const formattedReviews = group.reviews.map(r => formatCloudReviewToUI(r, streetDoc));
+          const uiStreet = mapStreetDocToUIStreet(streetDoc, {
+            reviews: formattedReviews,
+            reviewsLoaded: true,
+          });
+          migratedUIStreets.push(uiStreet);
+
+          group.reviews.forEach(r => {
+            const authorKey = r.authorId
+              ? String(r.authorId)
+              : `name:${(r.authorName || r.user || 'utente').trim().toLowerCase()}`;
+            if (!reviewsByAuthor.has(authorKey)) {
+              reviewsByAuthor.set(authorKey, []);
+            }
+            reviewsByAuthor.get(authorKey).push({
+              ...r,
+              streetKey: streetDoc.streetKey,
+              streetName: streetDoc.streetName,
+              streetCity: streetDoc.streetCity,
+              streetProvince: streetDoc.province,
+              isPioneer: Boolean(streetDoc.pioneerReviewId && r.id === streetDoc.pioneerReviewId),
+            });
+          });
+        });
+
+        // 2. Genera i documenti 'users/{authorId}'
+        const migratedUserDocs = [];
+        const migratedUserProfiles = [];
+        reviewsByAuthor.forEach((userRevs, authorKey) => {
+          const { userDoc, fullProfile } = buildUserSummaryDocFromReviews(
+            authorKey,
+            userRevs,
+            migratedStreetDocs
+          );
+          migratedUserDocs.push(userDoc);
+          migratedUserProfiles.push(fullProfile);
+        });
+
+        // Aggiorna immediatamente lo stato in memoria (così la UI mostra tutto anche prima del completamento scrittura)
+        if (typeof onMigratedData === 'function') {
+          onMigratedData({
+            uiStreets: migratedUIStreets,
+            userProfiles: migratedUserProfiles,
+          });
+        }
+
+        // 3. Salva i documenti aggregati su Firestore in 'streets' e 'users' (e allinea streetKey sulle recensioni)
+        const writePromises = [];
+        migratedStreetDocs.forEach(sDoc => {
+          writePromises.push(
+            firestore.collection('streets').doc(sDoc.streetKey).set(sDoc, { merge: true }).catch(err => {
+              console.warn('[Auto-Migration] Impossibile scrivere streets/' + sDoc.streetKey + ':', err?.message || err);
+            })
+          );
+        });
+
+        migratedUserDocs.forEach(uDoc => {
+          writePromises.push(
+            firestore.collection('users').doc(uDoc.authorId).set(uDoc, { merge: true }).catch(err => {
+              console.warn('[Auto-Migration] Impossibile scrivere users/' + uDoc.authorId + ':', err?.message || err);
+            })
+          );
+        });
+
+        cloudReviews.forEach(r => {
+          if (!r.streetKey && r.streetName) {
+            const matchingS = migratedStreetDocs.find(s =>
+              isSameStreet(s, { name: r.streetName, city: r.streetCity, province: r.streetProvince || r.province, lat: r.latitude, lng: r.longitude })
+            );
+            if (matchingS) {
+              writePromises.push(
+                firestore.collection('reviews').doc(r.id).set({
+                  streetKey: matchingS.streetKey,
+                  streetProvince: matchingS.province || '',
+                }, { merge: true }).catch(() => {})
+              );
+            }
+          }
+        });
+
+        await Promise.all(writePromises);
+        autoMigrationDone = true;
+        console.log(`[Auto-Migration] Migrazione completata con successo: ${migratedStreetDocs.length} strade in 'streets' e ${migratedUserDocs.length} profili in 'users'.`);
+      } catch (err) {
+        console.warn('[Auto-Migration] Errore durante la verifica/migrazione iniziale:', err);
+      } finally {
+        autoMigrationInFlight = false;
+      }
+    };
+
+    // Combina i dati pre-aggregati di 'streets' e 'users' per la UI Gamification & Classifica Top 10
+    const computeGamificationData = (streetsList, activeUser, leaderboardUsersList = [], activeUserDocProfile = null, cachedUsersMap = {}) => {
       const reviewMetaMap = {};
       const streetPioneerMap = {};
 
-      const resolveAuthorKey = (rev) => {
-        if (rev?.userId) return String(rev.userId);
-        const cleanName = (rev?.user || 'Utente').trim().toLowerCase();
-        return `name:${cleanName}`;
-      };
-
-      dedupedStreets.forEach(street => {
+      (streetsList || []).forEach(street => {
         const revList = street.reviews || [];
-        if (revList.length === 0) return;
+        const pioneerId = street.pioneerAuthorId || null;
+        const pioneerRevId = street.pioneerReviewId || null;
 
-        const streetCityNormalized = normalizeCityKey(street.city, street.latitude, street.longitude);
-
-        // Trova la recensione "Pioniere" (timestamp createdAt più vecchio per questa strada)
-        let pioneerRev = revList[revList.length - 1];
-        let minTime = parseReviewTimestampMs(pioneerRev);
-        for (let i = revList.length - 1; i >= 0; i--) {
-          const r = revList[i];
-          const t = parseReviewTimestampMs(r);
-          if (t < minTime) {
-            minTime = t;
-            pioneerRev = r;
+        let fallbackPioneerRev = null;
+        if (!pioneerId && !pioneerRevId && revList.length > 0) {
+          fallbackPioneerRev = revList[revList.length - 1];
+          let minTime = parseReviewTimestampMs(fallbackPioneerRev);
+          for (let i = revList.length - 1; i >= 0; i--) {
+            const r = revList[i];
+            const t = parseReviewTimestampMs(r);
+            if (t < minTime) {
+              minTime = t;
+              fallbackPioneerRev = r;
+            }
           }
         }
 
-        if (pioneerRev) {
+        if (pioneerId || fallbackPioneerRev) {
           streetPioneerMap[street.id] = {
-            reviewId: pioneerRev.id,
-            authorKey: resolveAuthorKey(pioneerRev),
-            authorName: pioneerRev.user,
+            reviewId: pioneerRevId || fallbackPioneerRev?.id || null,
+            authorKey: pioneerId || fallbackPioneerRev?.userId || fallbackPioneerRev?.user,
+            authorName: street.pioneerAuthorName || fallbackPioneerRev?.user || '',
           };
         }
 
         revList.forEach(r => {
-          const authorKey = resolveAuthorKey(r);
-          const isPioneer = pioneerRev && r.id === pioneerRev.id;
-          const xpBreakdown = computeSingleReviewXP(r, isPioneer);
-          reviewMetaMap[r.id] = xpBreakdown;
-
-          if (!usersMap.has(authorKey)) {
-            usersMap.set(authorKey, {
-              authorId: r.userId || authorKey,
-              name: r.user || 'Cittadino Esploratore',
-              avatarUrl: r.avatarUrl || '',
-              xp: 0,
-              reviewsCount: 0,
-              streetIds: new Set(),
-              cityKeys: new Set(),
-              pioneerStreetIds: new Set(),
-              parkingReviewsCount: 0,
-              detailedCommentsCount: 0,
-              accessibilityStreetIds: new Set(),
-              awardedMilestones: new Set(),
-            });
-          }
-
-          const u = usersMap.get(authorKey);
-          if (r.user && (!u.name || u.name === 'Cittadino Esploratore')) u.name = r.user;
-          if (r.avatarUrl && !u.avatarUrl) u.avatarUrl = r.avatarUrl;
-
-          u.xp += xpBreakdown.totalXP;
-          u.reviewsCount += 1;
-          u.streetIds.add(street.id);
-
-          const revCityKey = normalizeCityKey(
-            r.streetCity || street.city,
-            r.latitude || street.latitude,
-            r.longitude || street.longitude
-          ) || streetCityNormalized;
-          if (revCityKey) {
-            u.cityKeys.add(revCityKey);
-          }
-
-          if (isPioneer) {
-            u.pioneerStreetIds.add(street.id);
-          }
-          if (Array.isArray(r.parkingTypes) && r.parkingTypes.length > 0) {
-            u.parkingReviewsCount += 1;
-          }
-          if (isDetailedCommentText(r.comment)) {
-            u.detailedCommentsCount += 1;
-          }
-          const hasAccessibilitySignal =
-            (Array.isArray(r.parkingTypes) && (r.parkingTypes.includes('DISABLED') || r.parkingTypes.includes('PINK'))) ||
-            Number(r.ratings?.accessibility) > 0;
-          if (hasAccessibilitySignal) {
-            u.accessibilityStreetIds.add(street.id);
-          }
-          if (Array.isArray(r.awardedMilestones)) {
-            r.awardedMilestones.forEach(m => {
-              if (m) u.awardedMilestones.add(String(m));
-            });
-          }
+          const isPioneer = Boolean(
+            (pioneerRevId && r.id === pioneerRevId) ||
+            (pioneerId && r.userId && String(r.userId) === String(pioneerId)) ||
+            (fallbackPioneerRev && r.id === fallbackPioneerRev.id)
+          );
+          reviewMetaMap[r.id] = computeSingleReviewXP(r, isPioneer);
         });
       });
 
-      const finalizedUsers = [];
-      const userStatsByKey = {};
+      const userStatsByKey = { ...cachedUsersMap };
       const userStatsByName = {};
 
-      usersMap.forEach((u, key) => {
-        const statsObj = {
-          authorId: u.authorId,
-          name: u.name,
-          avatarUrl: u.avatarUrl,
-          xp: u.xp,
-          reviewsCount: u.reviewsCount,
-          uniqueStreetsCount: u.streetIds.size,
-          uniqueCitiesCount: u.cityKeys.size,
-          pioneerCount: u.pioneerStreetIds.size,
-          parkingReviewsCount: u.parkingReviewsCount,
-          detailedCommentsCount: u.detailedCommentsCount,
-          accessibilityStreetsCount: u.accessibilityStreetIds.size,
-          awardedMilestones: Array.from(u.awardedMilestones),
-        };
-        const levelInfo = getLevelByXP(statsObj.xp);
-        const badges = buildUserBadges(statsObj);
-        const unlockedBadgesCount = badges.filter(b => b.unlocked).length;
-
-        const fullProfile = {
-          ...statsObj,
-          levelInfo,
-          badges,
-          unlockedBadgesCount,
-        };
-
-        finalizedUsers.push(fullProfile);
-        userStatsByKey[key] = fullProfile;
-        if (u.name) {
-          userStatsByName[u.name.trim().toLowerCase()] = fullProfile;
+      Object.values(userStatsByKey).forEach(prof => {
+        if (prof && prof.name) {
+          userStatsByName[prof.name.trim().toLowerCase()] = prof;
         }
       });
 
-      // Classifica Top 10 ordinata per XP decrescente (a parità: più strade da Pioniere, più recensioni)
-      const leaderboard = [...finalizedUsers]
+      const hydratedLeaderboardUsers = (leaderboardUsersList || []).map(u => {
+        const prof = u.levelInfo ? u : hydrateUserProfileFromDoc(u);
+        if (prof.authorId) userStatsByKey[String(prof.authorId)] = prof;
+        if (prof.name) userStatsByName[prof.name.trim().toLowerCase()] = prof;
+        return prof;
+      });
+
+      if (activeUserDocProfile) {
+        const prof = activeUserDocProfile.levelInfo ? activeUserDocProfile : hydrateUserProfileFromDoc(activeUserDocProfile);
+        if (prof.authorId) userStatsByKey[String(prof.authorId)] = prof;
+        if (prof.name) userStatsByName[prof.name.trim().toLowerCase()] = prof;
+      }
+
+      const leaderboard = [...hydratedLeaderboardUsers]
         .sort((a, b) => {
           if (b.xp !== a.xp) return b.xp - a.xp;
           if (b.pioneerCount !== a.pioneerCount) return b.pioneerCount - a.pioneerCount;
@@ -1202,29 +1675,6 @@
         })
         .slice(0, 10)
         .map((u, idx) => ({ ...u, rank: idx + 1 }));
-
-      const createDefaultProfile = (usr) => {
-        const base = {
-          authorId: usr?.id || 'guest',
-          name: usr?.name || 'Esploratore Ospite',
-          avatarUrl: usr?.avatarUrl || '',
-          xp: 0,
-          reviewsCount: 0,
-          uniqueStreetsCount: 0,
-          uniqueCitiesCount: 0,
-          pioneerCount: 0,
-          parkingReviewsCount: 0,
-          detailedCommentsCount: 0,
-          accessibilityStreetsCount: 0,
-          awardedMilestones: usr?.id ? getLocalAwardedMilestones(usr.id) : [],
-        };
-        return {
-          ...base,
-          levelInfo: getLevelByXP(0),
-          badges: buildUserBadges(base),
-          unlockedBadgesCount: 0,
-        };
-      };
 
       let currentUserProfile = createDefaultProfile(activeUser);
       if (activeUser) {
@@ -1253,7 +1703,18 @@
         if (rev.user && userStatsByName[rev.user.trim().toLowerCase()]) {
           return userStatsByName[rev.user.trim().toLowerCase()];
         }
-        return createDefaultProfile({ id: rev.userId, name: rev.user, avatarUrl: rev.avatarUrl });
+        // Fallback leggero per autori non presenti in Top 10 e non ancora in cache
+        const singleXp = reviewMetaMap[rev.id]?.totalXP || 50;
+        return hydrateUserProfileFromDoc({
+          authorId: rev.userId || rev.user,
+          authorName: rev.user || 'Cittadino Esploratore',
+          authorAvatar: rev.avatarUrl || '',
+          xp: singleXp,
+          reviewsCount: 1,
+          uniqueStreetsCount: 1,
+          citiesCount: 1,
+          pioneerCount: reviewMetaMap[rev.id]?.isPioneer ? 1 : 0,
+        });
       };
 
       return {
@@ -1262,13 +1723,17 @@
         reviewMetaMap,
         streetPioneerMap,
         getAuthorProfile,
-        totalExplorers: finalizedUsers.length,
+        totalExplorers: Math.max(leaderboard.length, Object.keys(userStatsByKey).length),
       };
     };
 
     function App() {
       // 1. ELIMINAZIONE DATI FITTIZI: L'app parte con 0 PIN fittizi!
       const [streets, setStreets] = useState([]);
+      const [leaderboardUsers, setLeaderboardUsers] = useState([]);
+      const [currentUserProfileDoc, setCurrentUserProfileDoc] = useState(null);
+      const [cachedUsersById, setCachedUsersById] = useState({});
+      const [isLoadingComments, setIsLoadingComments] = useState(false);
       const [selectedStreet, setSelectedStreet] = useState(null);
       const [sheetSnap, setSheetSnap] = useState('hidden');
       const [isReviewOpen, setIsReviewOpen] = useState(false);
@@ -1298,11 +1763,13 @@
       const toastTimerRef = useRef(null);
       const milestoneToastTimerRef = useRef(null);
       const userMenuRef = useRef(null);
+      const cachedUsersRef = useRef({});
+      cachedUsersRef.current = cachedUsersById;
 
-      // Calcolo dinamico in tempo reale di Livelli, XP, Badge e Classifica Top 10
+      // Calcolo leggero di Livelli, XP, Badge e Classifica Top 10 (da collezione pre-aggregata 'users')
       const gamification = useMemo(
-        () => computeGamificationData(streets, currentUser),
-        [streets, currentUser]
+        () => computeGamificationData(streets, currentUser, leaderboardUsers, currentUserProfileDoc, cachedUsersById),
+        [streets, currentUser, leaderboardUsers, currentUserProfileDoc, cachedUsersById]
       );
 
       const triggerRewardToast = (toastData) => {
@@ -1337,10 +1804,36 @@
             try {
               localStorage.setItem('sr_auth_user', JSON.stringify(profile));
             } catch (e) {}
+            // Se al primo avvio non autenticato la migrazione non aveva i permessi di scrittura, riprova ora
+            if (window.db && !autoMigrationDone) {
+              ensureDataMigration(window.db);
+            }
           }
         });
         return () => unsubscribe();
       }, []);
+
+      // Listener leggero sul singolo profilo 'users/{uid}' dell'utente loggato (1 sola lettura)
+      useEffect(() => {
+        const firestore = window.db;
+        if (!firestore || !currentUser?.id) {
+          setCurrentUserProfileDoc(null);
+          return;
+        }
+        const unsubUser = firestore.collection('users').doc(String(currentUser.id)).onSnapshot(
+          (docSnap) => {
+            if (docSnap.exists) {
+              const hydrated = hydrateUserProfileFromDoc({ id: docSnap.id, ...docSnap.data() });
+              setCurrentUserProfileDoc(hydrated);
+              setCachedUsersById(prev => ({ ...prev, [String(currentUser.id)]: hydrated }));
+            }
+          },
+          (err) => {
+            console.warn('Lettura profilo utente users/' + currentUser.id + ':', err?.message || err);
+          }
+        );
+        return () => unsubUser();
+      }, [currentUser?.id]);
 
       const handleGoogleLogin = (profile) => {
         try {
@@ -1364,6 +1857,7 @@
           localStorage.removeItem('sr_auth_user');
         } catch (e) {}
         setCurrentUser(null);
+        setCurrentUserProfileDoc(null);
         setIsUserMenuOpen(false);
       };
 
@@ -1441,7 +1935,7 @@
         return () => document.removeEventListener('mousedown', handleClickOutside);
       }, []);
 
-      // --- SINCRONIZZAZIONE IN TEMPO REALE CON CLOUD FIRESTORE ---
+      // --- 1. SINCRONIZZAZIONE LEGGERA ALL'AVVIO: COLLEZIONI PRE-AGGREGATE 'streets' E 'users' (TOP 10) ---
       useEffect(() => {
         const firestore = window.db;
         if (!firestore) {
@@ -1450,168 +1944,53 @@
         }
 
         console.log('Database collegato con successo:', (window.db._databaseId && window.db._databaseId.database) || window.db._databaseId || 'street-review-database');
-        console.log("Attivazione listener su Firestore collection 'reviews'...");
-        const unsubscribe = firestore.collection('reviews').onSnapshot(
-          snapshot => {
-            console.log('Recensioni caricate da Firestore:', snapshot.docs.length);
-            const cloudReviews = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // Raggruppa le recensioni per strada con Deduplicazione Spaziale & Toponomastica su scala nazionale:
-            // Se due gruppi hanno lo stesso nome strada normalizzato e condividono il comune/provincia (o sono entro 2.5 km nella stessa città),
-            // vengono fusi in un singolo badge mantenendo totale retrocompatibilità con i documenti senza provincia.
-            const streetGroups = [];
-            cloudReviews.forEach(r => {
-              const rawName = (r.streetName || '').trim();
-              if (!rawName) return;
-
-              const candidate = {
-                name: rawName,
-                city: r.streetCity,
-                province: r.streetProvince || r.province || '',
-                lat: r.latitude,
-                lng: r.longitude,
-              };
-
-              let targetGroup = streetGroups.find(g => isSameStreet(g, candidate));
-              if (!targetGroup) {
-                targetGroup = {
-                  canonicalName: rawName,
-                  city: r.streetCity || '',
-                  province: r.streetProvince || r.province || '',
-                  postalCode: r.postalCode || '',
-                  latitude: Number(r.latitude) || 0,
-                  longitude: Number(r.longitude) || 0,
-                  reviews: [],
-                };
-                streetGroups.push(targetGroup);
-              }
-              if (!targetGroup.province && (r.streetProvince || r.province)) {
-                targetGroup.province = r.streetProvince || r.province;
-              }
-              if (!targetGroup.postalCode && r.postalCode) {
-                targetGroup.postalCode = r.postalCode;
-              }
-              targetGroup.reviews.push(r);
-
-              // Ricalcola dinamicamente il baricentro geometrico dell'asse stradale
-              const validCoords = targetGroup.reviews.filter(rev =>
-                rev.latitude && rev.longitude && !isNaN(Number(rev.latitude)) && !isNaN(Number(rev.longitude))
-              );
-              if (validCoords.length > 0) {
-                targetGroup.latitude = Number((validCoords.reduce((acc, rev) => acc + Number(rev.latitude), 0) / validCoords.length).toFixed(6));
-                targetGroup.longitude = Number((validCoords.reduce((acc, rev) => acc + Number(rev.longitude), 0) / validCoords.length).toFixed(6));
-              }
+        const handleMigratedCallback = ({ uiStreets, userProfiles }) => {
+          if (Array.isArray(uiStreets) && uiStreets.length > 0) {
+            setStreets(prev => {
+              const zeroRev = prev.filter(s => s.reviewsCount === 0 && !uiStreets.some(u => isSameStreet(u, s)));
+              const merged = [...uiStreets, ...zeroRev];
+              streetsRef.current = merged;
+              return merged;
             });
+          }
+          if (Array.isArray(userProfiles) && userProfiles.length > 0) {
+            const sortedTop10 = [...userProfiles]
+              .sort((a, b) => (b.xp - a.xp) || (b.pioneerCount - a.pioneerCount) || (b.reviewsCount - a.reviewsCount))
+              .slice(0, 10);
+            setLeaderboardUsers(sortedTop10);
+            const mapById = {};
+            userProfiles.forEach(p => {
+              if (p.authorId) mapById[String(p.authorId)] = p;
+            });
+            setCachedUsersById(prev => ({ ...prev, ...mapById }));
+          }
+        };
 
-            // Ricostruisci o aggiorna l'elenco delle strade attive con recensioni da Firestore
+        // Listener 1: Collezione leggera 'streets' per disegnare i PIN sulla mappa e popolare i filtri
+        console.log("Attivazione listener leggero su Firestore collection 'streets'...");
+        const unsubscribeStreets = firestore.collection('streets').onSnapshot(
+          snapshot => {
+            if (snapshot.empty) {
+              ensureDataMigration(firestore, handleMigratedCallback);
+              return;
+            }
+            console.log('Sommari strade caricati da Firestore (streets):', snapshot.docs.length);
             setStreets(prevStreets => {
               const updated = [];
-
-              streetGroups.forEach(group => {
-                const revList = group.reviews;
-                const sample = revList[0];
-                const rawName = group.canonicalName || sample.streetName;
-                const baryLat = group.latitude || Number(sample.latitude) || 42.9517;
-                const baryLng = group.longitude || Number(sample.longitude) || 13.8822;
-
-                // Risolvi il comune effettivo usando il contesto geografico del baricentro (se in Riviera) e il City Aliasing
-                const inferredCityKey = inferCityKeyFromCoords(baryLat, baryLng);
-                const matchingCityReview = inferredCityKey
-                  ? revList.find(rev => normalizeCityKey(rev.streetCity, rev.latitude, rev.longitude) === inferredCityKey)
-                  : null;
-                const rawCity = (matchingCityReview && matchingCityReview.streetCity) || resolveCanonicalCityName(group.city || sample.streetCity, baryLat, baryLng);
-                const rawProvince = group.province || sample.streetProvince || sample.province || '';
-
-                // Determina un unico punto di ancoraggio geometrico coerente (gazetteer o baricentro dell'asse stradale)
-                const anchor = getCanonicalStreetAnchor(rawName, rawCity, baryLat, baryLng, rawProvince);
-                const streetName = anchor.canonicalName || rawName;
-                const streetCity = anchor.city || resolveCanonicalCityName(rawCity, baryLat, baryLng);
-                const streetCityKey = normalizeCityKey(streetCity, anchor.lat, anchor.lng);
-                const streetProvince = anchor.province || normalizeProvinceCode(rawProvince, streetCityKey, anchor.lat, anchor.lng);
-                const compKey = createStreetCompositeKey(streetName, streetCity, anchor.lat, anchor.lng, streetProvince);
-                const canonicalStreetId = 'street-' + compKey.replace(/[^a-z0-9]/g, '-');
-
-                // Auto-allineamento silenzioso su Firestore per eventuali recensioni storiche dell'utente autenticato con comune/chiave non allineati
-                const activeAuthUid = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser && window.firebase.auth().currentUser.uid) || null;
-                if (activeAuthUid) {
-                  revList.forEach(rev => {
-                    if (rev.authorId === activeAuthUid && (rev.streetCity !== streetCity || rev.streetId !== canonicalStreetId)) {
-                      firestore.collection('reviews').doc(rev.id).update({
-                        streetName: streetName,
-                        streetCity: streetCity,
-                        postalCode: anchor.postalCode || group.postalCode || resolveDefaultPostalCode(streetCityKey),
-                        streetId: canonicalStreetId,
-                        latitude: Number(anchor.lat),
-                        longitude: Number(anchor.lng),
-                      }).catch(() => {});
-                    }
-                  });
-                }
-
-                // Controlla corrispondenza con strade precedentemente caricate
+              snapshot.docs.forEach(doc => {
+                const data = { id: doc.id, streetKey: doc.id, ...doc.data() };
                 const existing = prevStreets.find(s =>
-                  isSameStreet(s, { name: streetName, city: streetCity, province: streetProvince, lat: anchor.lat, lng: anchor.lng })
+                  (s.streetKey && s.streetKey === data.streetKey) ||
+                  isSameStreet(s, { name: data.streetName, city: data.streetCity, province: data.province, lat: data.latitude, lng: data.longitude })
                 );
-
-                const catKeys = [
-                  'roadSurface', 'groundSignage', 'verticalSignage', 'parkingQuantity',
-                  'sidewalkQuality', 'lighting', 'cleanliness', 'accessibility',
-                  'rainDrainage', 'greeneryShade', 'quietness', 'intersectionVisibility',
-                  'laneWidth'
-                ];
-                const updatedCat = {};
-                catKeys.forEach(k => {
-                  const sum = revList.reduce((acc, r) => acc + (r.ratings?.[k] || 0), 0);
-                  updatedCat[k] = Number((sum / revList.length).toFixed(1));
-                });
-                const newAvg = Number((Object.values(updatedCat).reduce((a, b) => a + b, 0) / catKeys.length).toFixed(1));
-
-                const mergedParking = Array.from(new Set(revList.flatMap(r => r.parkingTypes || [])));
-                const mergedCycle = revList.some(r => r.hasCyclePath);
-                const mergedAmenities = Array.from(new Set(revList.flatMap(r => r.amenities || [])));
-
-                const formattedReviews = revList.map(r => ({
-                  id: r.id,
-                  userId: r.authorId,
-                  user: r.authorName,
-                  avatarUrl: r.authorAvatar,
-                  streetCity: r.streetCity || streetCity,
-                  streetProvince: r.streetProvince || streetProvince,
-                  latitude: Number(r.latitude) || anchor.lat,
-                  longitude: Number(r.longitude) || anchor.lng,
-                  date: r.updatedAt ? new Date(r.updatedAt).toLocaleDateString('it-IT') : 'Recente',
-                  createdAt: r.createdAt || r.updatedAt || null,
-                  updatedAt: r.updatedAt || r.createdAt || null,
-                  overallRating: r.ratingOverall,
-                  comment: r.comment,
-                  ratings: r.ratings,
-                  parkingTypes: r.parkingTypes || [],
-                  hasCyclePath: r.hasCyclePath,
-                  amenities: r.amenities || [],
-                  awardedMilestones: Array.isArray(r.awardedMilestones) ? r.awardedMilestones : [],
-                }));
-
-                const streetObj = {
-                  id: existing?.id || ('street-' + compKey.replace(/[^a-z0-9]/g, '-')),
-                  name: streetName,
-                  city: streetCity,
-                  province: streetProvince,
-                  postalCode: anchor.postalCode || group.postalCode || resolveDefaultPostalCode(streetCityKey),
-                  latitude: anchor.lat,
-                  longitude: anchor.lng,
-                  reviewsCount: revList.length,
-                  avgOverallRating: newAvg,
-                  categoryAverages: updatedCat,
-                  commonParkingTypes: mergedParking,
-                  hasCyclePath: mergedCycle,
-                  amenities: mergedAmenities,
-                  reviews: formattedReviews,
-                };
-
-                updated.push(streetObj);
+                const uiStreet = mapStreetDocToUIStreet(data, existing);
+                if (!updated.some(u => isSameStreet(u, uiStreet))) {
+                  updated.push(uiStreet);
+                }
               });
 
-              // Mantieni eventuali strade temporanee a 0 recensioni attualmente aperte dall'utente se non già fuse
+              // Mantieni eventuali strade temporanee a 0 recensioni attualmente selezionate dall'utente
               prevStreets.forEach(s => {
                 const alreadyMerged = updated.some(u => isSameStreet(u, s));
                 if (!alreadyMerged && s.reviewsCount === 0) {
@@ -1624,12 +2003,164 @@
             });
           },
           err => {
-            console.error('Errore lettura Firestore:', err);
+            console.error('Errore lettura Firestore (streets):', err);
           }
         );
 
-        return () => unsubscribe();
+        // Listener 2: Classifica Top 10 leggera da 'users' ordinata per XP decrescente (max 10 letture)
+        console.log("Attivazione listener leggero su Firestore collection 'users' (Top 10 XP)...");
+        const unsubscribeUsers = firestore.collection('users')
+          .orderBy('xp', 'desc')
+          .limit(10)
+          .onSnapshot(
+            snapshot => {
+              if (snapshot.empty) {
+                ensureDataMigration(firestore, handleMigratedCallback);
+                return;
+              }
+              const topUsers = snapshot.docs.map(doc => hydrateUserProfileFromDoc({ id: doc.id, ...doc.data() }));
+              setLeaderboardUsers(topUsers);
+              setCachedUsersById(prev => {
+                const next = { ...prev };
+                topUsers.forEach(u => {
+                  if (u.authorId) next[String(u.authorId)] = u;
+                });
+                return next;
+              });
+            },
+            err => {
+              console.error('Errore lettura Firestore (users top 10):', err);
+            }
+          );
+
+        return () => {
+          unsubscribeStreets();
+          unsubscribeUsers();
+        };
       }, []);
+
+      // --- 2. CARICAMENTO COMMENTI "ON-DEMAND" (SOLO ALL'APERTURA DELLA SCHEDA DI UNA VIA) ---
+      const fetchReviewsForStreetOnDemand = async (targetStreet) => {
+        const firestore = window.db;
+        if (!firestore || !targetStreet) return;
+
+        const targetStreetKey = targetStreet.streetKey || createStreetCompositeKey(
+          targetStreet.name,
+          targetStreet.city,
+          targetStreet.latitude,
+          targetStreet.longitude,
+          targetStreet.province
+        );
+
+        // Se la strada è un segnaposto nuovo a 0 recensioni, non serve interrogare Firestore
+        if ((targetStreet.reviewsCount || 0) === 0 && (!targetStreet.reviews || targetStreet.reviews.length === 0)) {
+          setIsLoadingComments(false);
+          return;
+        }
+
+        setIsLoadingComments(true);
+        try {
+          const collectedDocsMap = new Map();
+
+          // Query 1: Ricerca mirata tramite streetKey normalizzata
+          const byKeySnap = await firestore.collection('reviews')
+            .where('streetKey', '==', targetStreetKey)
+            .get();
+          byKeySnap.docs.forEach(doc => {
+            collectedDocsMap.set(doc.id, { id: doc.id, ...doc.data() });
+          });
+
+          // Query 2 (Fallback Retrocompatibilità): se ci sono documenti legacy salvati prima dell'introduzione di streetKey
+          if (collectedDocsMap.size < (targetStreet.reviewsCount || 1) && targetStreet.name) {
+            const byNameSnap = await firestore.collection('reviews')
+              .where('streetName', '==', targetStreet.name)
+              .get();
+            byNameSnap.docs.forEach(doc => {
+              if (!collectedDocsMap.has(doc.id)) {
+                const rData = doc.data();
+                if (isSameStreet(targetStreet, {
+                  name: rData.streetName,
+                  city: rData.streetCity,
+                  province: rData.streetProvince || rData.province,
+                  lat: rData.latitude,
+                  lng: rData.longitude,
+                })) {
+                  collectedDocsMap.set(doc.id, { id: doc.id, ...rData });
+                }
+              }
+            });
+          }
+
+          const rawReviewsList = Array.from(collectedDocsMap.values());
+          const formattedReviews = rawReviewsList.map(r => formatCloudReviewToUI(r, { ...targetStreet, streetKey: targetStreetKey }));
+
+          // Carica on-demand anche i profili 'users/{authorId}' degli autori dei commenti non ancora presenti in cache
+          const missingAuthorIds = Array.from(new Set(
+            formattedReviews
+              .map(r => r.userId && String(r.userId))
+              .filter(uid => uid && !uid.startsWith('name:') && !cachedUsersRef.current[uid])
+          ));
+          if (missingAuthorIds.length > 0) {
+            const authorSnaps = await Promise.all(
+              missingAuthorIds.map(uid => firestore.collection('users').doc(uid).get().catch(() => null))
+            );
+            const newCachedAuthors = {};
+            authorSnaps.forEach(snap => {
+              if (snap && snap.exists) {
+                const prof = hydrateUserProfileFromDoc({ id: snap.id, ...snap.data() });
+                newCachedAuthors[String(snap.id)] = prof;
+              }
+            });
+            if (Object.keys(newCachedAuthors).length > 0) {
+              setCachedUsersById(prev => ({ ...prev, ...newCachedAuthors }));
+            }
+          }
+
+          // Aggiorna la strada selezionata e la lista strade con i commenti caricati on-demand
+          setStreets(prevStreets => {
+            const next = prevStreets.map(s => {
+              if ((s.streetKey && s.streetKey === targetStreetKey) || isSameStreet(s, targetStreet)) {
+                return {
+                  ...s,
+                  streetKey: targetStreetKey,
+                  reviews: formattedReviews,
+                  reviewsCount: Math.max(s.reviewsCount || 0, formattedReviews.length),
+                  reviewsLoaded: true,
+                };
+              }
+              return s;
+            });
+            streetsRef.current = next;
+            return next;
+          });
+
+          setSelectedStreet(prevSel => {
+            if (!prevSel) return prevSel;
+            if ((prevSel.streetKey && prevSel.streetKey === targetStreetKey) || isSameStreet(prevSel, targetStreet)) {
+              return {
+                ...prevSel,
+                streetKey: targetStreetKey,
+                reviews: formattedReviews,
+                reviewsCount: Math.max(prevSel.reviewsCount || 0, formattedReviews.length),
+                reviewsLoaded: true,
+              };
+            }
+            return prevSel;
+          });
+        } catch (err) {
+          console.error('Errore caricamento commenti on-demand per la strada:', targetStreetKey, err);
+        } finally {
+          setIsLoadingComments(false);
+        }
+      };
+
+      // Trigger automatico del caricamento commenti On-Demand quando l'utente apre la Scheda della Strada
+      useEffect(() => {
+        if (!selectedStreet || sheetSnap === 'hidden') return;
+        if (!selectedStreet.reviewsLoaded && (selectedStreet.reviewsCount || 0) > 0) {
+          fetchReviewsForStreetOnDemand(selectedStreet);
+        }
+      }, [selectedStreet?.id, selectedStreet?.streetKey, sheetSnap]);
 
       // Mantieni allineata la scheda della strada attualmente aperta con i dati in tempo reale
       useEffect(() => {
@@ -1639,7 +2170,7 @@
           matching.id !== selectedStreet.id ||
           matching.reviewsCount !== selectedStreet.reviewsCount ||
           matching.avgOverallRating !== selectedStreet.avgOverallRating ||
-          matching.reviews?.length !== selectedStreet.reviews?.length ||
+          (matching.reviews?.length || 0) !== (selectedStreet.reviews?.length || 0) ||
           matching.latitude !== selectedStreet.latitude ||
           matching.longitude !== selectedStreet.longitude
         )) {
@@ -2145,6 +2676,7 @@
         if (!street) {
           street = {
             id: 'street-' + targetCompKey.replace(/[^a-z0-9]/g, '-'),
+            streetKey: targetCompKey,
             name: resolvedName,
             city: resolvedCity,
             province: resolvedProvince,
@@ -2165,6 +2697,7 @@
               laneWidth: 0,
             },
             reviews: [],
+            reviewsLoaded: true,
           };
           setStreets(prev => {
             // Sostituisci eventuali precedenti segnaposto temporanei a 0 recensioni così da avere un solo badge '— Nuova' attivo
@@ -2191,7 +2724,7 @@
       };
       handleSelectStreetRef.current = handleSelectStreet;
 
-      // AGGIORNAMENTO DINAMICO POST-RECENSIONE / MODIFICA (VINCOLO UNICITÀ + MODERAZIONE + NOTIFICA EMAILJS TRAGUARDI)
+      // 4. AGGIORNAMENTO SINCRONO AL SALVATAGGIO/MODIFICA RECENSIONE (reviews + streets + users + EmailJS)
       const handleAddReview = (reviewPayload) => {
         // 0. FILTRO AUTOMATICO ANTI-PROFANITY E DATI SENSIBILI (PRE-SALVATAGGIO)
         const moderationCheck = validateReviewComment(reviewPayload?.comment);
@@ -2200,7 +2733,6 @@
           return false;
         }
 
-        // 1. SALVATAGGIO PERSISTENTE SU CLOUD FIRESTORE
         const firestore = window.db;
         if (!firestore) {
           console.error("Errore salvataggio Firestore: Database 'street-review-database' non disponibile in window.db.");
@@ -2224,10 +2756,8 @@
         const authorEmail = ((firebaseAuthUser && firebaseAuthUser.email) || (currentUser ? currentUser.email : '') || '').trim();
         const authorAvatar = (firebaseAuthUser && firebaseAuthUser.photoURL) || (currentUser ? currentUser.avatarUrl : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80');
 
-        // A. CALCOLO TRAGUARDI PRIMA DEL SALVATAGGIO SU FIRESTORE
-        const activeUserObj = { id: authorId, name: authorName, email: authorEmail, avatarUrl: authorAvatar };
-        const preSaveGamification = computeGamificationData(streetsRef.current, activeUserObj);
-        const prevProfile = preSaveGamification.currentUserProfile;
+        // A. STATO GAMIFICATION PRE-SALVATAGGIO (da profilo utente corrente in 'users')
+        const prevProfile = gamification.currentUserProfile || createDefaultProfile({ id: authorId, name: authorName, avatarUrl: authorAvatar });
         const prevLevel = prevProfile.levelInfo.level;
         const prevUnlockedBadgeIds = prevProfile.badges.filter(b => b.unlocked).map(b => b.id);
         const prevUnlockedBadgeSet = new Set(prevUnlockedBadgeIds);
@@ -2251,30 +2781,35 @@
         const finalCity = canonicalAnchor.city || resolveCanonicalCityName(selectedStreet.city, finalLat, finalLng);
         const finalProvince = canonicalAnchor.province || normalizeProvinceCode(selectedStreet.province || '');
         const finalPostal = canonicalAnchor.postalCode || selectedStreet.postalCode || resolveDefaultPostalCode(normalizeCityKey(finalCity, finalLat, finalLng));
+        const canonicalStreetName = canonicalAnchor.canonicalName || selectedStreet.name;
 
-        // ID documento deterministico per utente e per via (chiave composita nome + comune + provincia, retrocompatibile):
-        // Se l'autore ha già una recensione registrata su questa via, riutilizza il suo ID documento per aggiornarla senza duplicazioni
-        const streetCompKey = createStreetCompositeKey(canonicalAnchor.canonicalName || selectedStreet.name, finalCity, finalLat, finalLng, finalProvince);
-        const safeStreetKey = encodeURIComponent(streetCompKey.replace(/[^a-z0-9_]/g, '_'));
+        // Chiave composita normalizzata della via (streetKey, usata come ID documento in 'streets/{streetKey}')
+        const streetCompKey = selectedStreet.streetKey || createStreetCompositeKey(canonicalStreetName, finalCity, finalLat, finalLng, finalProvince);
         const existingUserRev = selectedStreet.reviews?.find(r =>
           (editingReview && r.id === editingReview.id) ||
           (r.userId && r.userId === authorId)
         );
         const docId = (existingUserRev && existingUserRev.id && !String(existingUserRev.id).startsWith('r-'))
           ? existingUserRev.id
-          : `${authorId}_${safeStreetKey}`;
+          : `${authorId}_${streetCompKey}`;
 
         const nowIso = new Date().toISOString();
         const existingCreatedAt = editingReview?.createdAt || existingUserRev?.createdAt || null;
 
-        // Calcolo XP guadagnati per il Toast celebrativo
+        // Calcolo XP guadagnati con questa recensione (Bonus Pioniere se prima recensione della via o già Pioniere)
         const otherReviewsOnStreet = (selectedStreet.reviews || []).filter(r =>
           r.id !== docId &&
           (!editingReview || r.id !== editingReview.id) &&
           r.userId !== authorId
         );
-        const wasAlreadyPioneer = editingReview && gamification.reviewMetaMap[editingReview.id]?.isPioneer;
-        const isPioneerForThisStreet = otherReviewsOnStreet.length === 0 || Boolean(wasAlreadyPioneer);
+        const wasAlreadyPioneer =
+          (selectedStreet.pioneerAuthorId && String(selectedStreet.pioneerAuthorId) === String(authorId)) ||
+          Boolean(editingReview && gamification.reviewMetaMap[editingReview.id]?.isPioneer);
+        const isPioneerForThisStreet =
+          (selectedStreet.reviewsCount || 0) === 0 ||
+          (selectedStreet.reviewsLoaded && otherReviewsOnStreet.length === 0) ||
+          Boolean(wasAlreadyPioneer);
+
         const xpEarned = computeSingleReviewXP(
           {
             comment: reviewPayload.comment,
@@ -2284,9 +2819,10 @@
           isPioneerForThisStreet
         );
 
-        // B. SIMULAZIONE STATO POST-RECENSIONE E CONTROLLO NUOVI TRAGUARDI (LIVELLO / BADGE)
-        const nextStreets = (streetsRef.current || []).map(s => {
-          if (s.id !== selectedStreet.id) return s;
+        // B. AGGIORNAMENTO OTTIMISTICO IMMEDIATO DELLA SCHEDA STRADA IN MEMORIA
+        const targetStreet = selectedStreet;
+        const optimisticStreets = (streetsRef.current || []).map(s => {
+          if (s.id !== targetStreet.id && s.streetKey !== streetCompKey) return s;
 
           const existingIndex = s.reviews ? s.reviews.findIndex(r =>
             (editingReview && r.id === editingReview.id) ||
@@ -2301,6 +2837,8 @@
             const oldRev = s.reviews[existingIndex];
             const editedRev = {
               ...oldRev,
+              streetKey: streetCompKey,
+              streetName: canonicalStreetName,
               streetCity: finalCity,
               streetProvince: finalProvince,
               latitude: finalLat,
@@ -2317,10 +2855,12 @@
             };
             updatedReviews = [...s.reviews];
             updatedReviews[existingIndex] = editedRev;
-            newCount = s.reviews.length;
+            newCount = Math.max(s.reviewsCount || 1, updatedReviews.length);
           } else {
             const newReview = {
-              id: docId || ('r-' + Date.now()),
+              id: docId,
+              streetKey: streetCompKey,
+              streetName: canonicalStreetName,
               userId: authorId,
               user: authorName,
               avatarUrl: authorAvatar,
@@ -2339,21 +2879,15 @@
               amenities: reviewPayload.amenities || [],
             };
             updatedReviews = [newReview, ...(s.reviews || [])];
-            newCount = updatedReviews.length;
+            newCount = Math.max((s.reviewsCount || 0) + 1, updatedReviews.length);
           }
 
-          const catKeys = [
-            'roadSurface', 'groundSignage', 'verticalSignage', 'parkingQuantity',
-            'sidewalkQuality', 'lighting', 'cleanliness', 'accessibility',
-            'rainDrainage', 'greeneryShade', 'quietness', 'intersectionVisibility',
-            'laneWidth'
-          ];
           const updatedCat = {};
-          catKeys.forEach(k => {
+          CATEGORY_KEYS.forEach(k => {
             const sum = updatedReviews.reduce((acc, r) => acc + (r.ratings?.[k] || 0), 0);
             updatedCat[k] = Number((sum / updatedReviews.length).toFixed(1));
           });
-          const newAvg = Number((Object.values(updatedCat).reduce((a, b) => a + b, 0) / catKeys.length).toFixed(1));
+          const newAvg = Number((Object.values(updatedCat).reduce((a, b) => a + b, 0) / CATEGORY_KEYS.length).toFixed(1));
 
           const mergedParking = Array.from(new Set(updatedReviews.flatMap(r => r.parkingTypes || [])));
           const mergedCycle = updatedReviews.some(r => r.hasCyclePath);
@@ -2361,66 +2895,46 @@
 
           return {
             ...s,
+            streetKey: streetCompKey,
+            name: canonicalStreetName,
+            city: finalCity,
+            province: finalProvince,
+            postalCode: finalPostal,
             reviewsCount: newCount,
             avgOverallRating: newAvg,
             categoryAverages: updatedCat,
             commonParkingTypes: mergedParking,
             hasCyclePath: mergedCycle,
             amenities: mergedAmenities,
+            pioneerAuthorId: s.pioneerAuthorId || (isPioneerForThisStreet ? authorId : null),
             reviews: updatedReviews,
+            reviewsLoaded: true,
           };
         });
 
-        // Ricalcola i traguardi dell'utente dopo l'inserimento/aggiornamento della recensione
-        const postSaveGamification = computeGamificationData(nextStreets, activeUserObj);
-        const nextProfile = postSaveGamification.currentUserProfile;
-        const nextLevelInfo = nextProfile.levelInfo;
-        const nextUnlockedBadges = nextProfile.badges.filter(b => b.unlocked);
-
-        // Verifica se è stato raggiunto un nuovo livello o sbloccato uno o più nuovi badge non ancora notificati
-        const newlyReachedLevel = (
-          nextLevelInfo.level > prevLevel &&
-          !awardedMilestonesSet.has(`level_${nextLevelInfo.level}`)
-        ) ? nextLevelInfo : null;
-
-        const newlyUnlockedBadges = nextUnlockedBadges.filter(b =>
-          !prevUnlockedBadgeSet.has(b.id) &&
-          !awardedMilestonesSet.has(`badge_${b.id}`)
-        );
-
-        const hasNewMilestones = Boolean(newlyReachedLevel || newlyUnlockedBadges.length > 0);
-        if (newlyReachedLevel) {
-          for (let l = 2; l <= newlyReachedLevel.level; l++) {
-            awardedMilestonesSet.add(`level_${l}`);
-          }
+        streetsRef.current = optimisticStreets;
+        setStreets(optimisticStreets);
+        const optimisticSelected = optimisticStreets.find(s => s.id === targetStreet.id || s.streetKey === streetCompKey);
+        if (optimisticSelected) {
+          setSelectedStreet(optimisticSelected);
         }
-        newlyUnlockedBadges.forEach(b => {
-          awardedMilestonesSet.add(`badge_${b.id}`);
-        });
 
-        const updatedAwardedMilestones = Array.from(awardedMilestonesSet);
-        saveLocalAwardedMilestones(authorId, updatedAwardedMilestones);
+        setIsReviewOpen(false);
+        setEditingReview(null);
 
-        // Includi awardedMilestones anche nelle recensioni nello stato locale ottimistico
-        const finalNextStreets = nextStreets.map(s => {
-          if (s.id !== selectedStreet.id) return s;
-          return {
-            ...s,
-            reviews: (s.reviews || []).map(r =>
-              (r.id === docId || r.userId === authorId)
-                ? { ...r, awardedMilestones: updatedAwardedMilestones }
-                : r
-            ),
-          };
-        });
-
+        // C. ESECUZIONE SINCRONA A 3 STEP SU FIRESTORE:
+        // Step 1: Salva/aggiorna 'reviews/{authorId}_{streetKey}' (con streetKey normalizzata)
+        // Step 2: Rileggi le recensioni di quella singola streetKey, ricalcola medie e tag e aggiorna 'streets/{streetKey}'
+        // Step 3: Rileggi le recensioni dell'utente (where('authorId', '==', authorId)), ricalcola XP, Livello e 8 Badge e aggiorna 'users/{authorId}'
         const reviewDoc = {
-          streetId: selectedStreet.id || ('street-' + streetCompKey.replace(/[^a-z0-9]/g, '-')),
-          streetName: canonicalAnchor.canonicalName || selectedStreet.name,
+          streetKey: streetCompKey,
+          streetId: targetStreet.id || ('street-' + streetCompKey.replace(/[^a-z0-9]/g, '-')),
+          streetName: canonicalStreetName,
           streetCity: finalCity,
           streetProvince: finalProvince,
+          province: finalProvince,
           postalCode: finalPostal,
-          placeId: selectedStreet.placeId || null,
+          placeId: targetStreet.placeId || null,
           latitude: finalLat,
           longitude: finalLng,
           authorId: authorId,
@@ -2432,33 +2946,154 @@
           hasCyclePath: reviewPayload.hasCyclePath,
           amenities: reviewPayload.amenities || [],
           comment: reviewPayload.comment,
-          awardedMilestones: updatedAwardedMilestones,
+          awardedMilestones: Array.from(awardedMilestonesSet),
           updatedAt: nowIso,
+          createdAt: (!editingReview && !existingCreatedAt) ? nowIso : (existingCreatedAt || nowIso),
         };
 
-        if (!editingReview && !existingCreatedAt) {
-          reviewDoc.createdAt = nowIso;
-        } else if (existingCreatedAt) {
-          reviewDoc.createdAt = existingCreatedAt;
-        }
+        (async () => {
+          try {
+            // STEP 1: Salva/aggiorna il documento nella collezione 'reviews/{authorId}_{streetKey}'
+            await firestore.collection('reviews').doc(docId).set(reviewDoc, { merge: true });
+            console.log('[Firestore Step 1/3] Recensione salvata in reviews/' + docId);
 
-        // Salvataggio su Firestore e trigger EmailJS post-salvataggio (ottimizzato per il limite di 200 email/mese)
-        firestore.collection('reviews').doc(docId).set(reviewDoc, { merge: true })
-          .then(() => {
-            console.log('Recensione salvata con successo con ID:', docId);
+            // STEP 2: Leggi le recensioni di quella singola streetKey e aggiorna 'streets/{streetKey}'
+            const streetRevsMap = new Map();
+            const byKeySnap = await firestore.collection('reviews')
+              .where('streetKey', '==', streetCompKey)
+              .get();
+            byKeySnap.docs.forEach(d => streetRevsMap.set(d.id, { id: d.id, ...d.data() }));
 
-            // Aggiorna opzionalmente anche il documento profilo utente se la collezione users è abilitata
-            firestore.collection('users').doc(authorId).set({
-              authorId: authorId,
-              name: authorName,
-              email: authorEmail,
-              avatarUrl: authorAvatar,
-              xp: nextProfile.xp,
-              level: nextLevelInfo.level,
-              levelTitle: nextLevelInfo.title,
-              awardedMilestones: updatedAwardedMilestones,
-              updatedAt: nowIso,
-            }, { merge: true }).catch(() => {});
+            // Fallback per includere eventuali recensioni legacy della stessa via prive di streetKey
+            const byNameSnap = await firestore.collection('reviews')
+              .where('streetName', '==', canonicalStreetName)
+              .get();
+            byNameSnap.docs.forEach(d => {
+              if (!streetRevsMap.has(d.id)) {
+                const rData = d.data();
+                if (isSameStreet(
+                  { name: canonicalStreetName, city: finalCity, province: finalProvince, lat: finalLat, lng: finalLng },
+                  { name: rData.streetName, city: rData.streetCity, province: rData.streetProvince || rData.province, lat: rData.latitude, lng: rData.longitude }
+                )) {
+                  streetRevsMap.set(d.id, { id: d.id, ...rData });
+                }
+              }
+            });
+
+            if (!streetRevsMap.has(docId)) {
+              streetRevsMap.set(docId, { id: docId, ...reviewDoc });
+            }
+
+            const allStreetReviews = Array.from(streetRevsMap.values());
+            const streetSummaryDoc = buildStreetSummaryDocFromReviews(allStreetReviews, {
+              streetKey: streetCompKey,
+              streetName: canonicalStreetName,
+              streetCity: finalCity,
+              province: finalProvince,
+              postalCode: finalPostal,
+              latitude: finalLat,
+              longitude: finalLng,
+            });
+
+            await firestore.collection('streets').doc(streetCompKey).set(streetSummaryDoc, { merge: true });
+            console.log('[Firestore Step 2/3] Sommario strada aggiornato in streets/' + streetCompKey, streetSummaryDoc);
+
+            // Aggiorna la UI della strada aperta con i commenti e le medie appena consolidati
+            const formattedStreetReviews = allStreetReviews.map(r => formatCloudReviewToUI(r, streetSummaryDoc));
+            const syncedStreetUI = mapStreetDocToUIStreet(streetSummaryDoc, {
+              id: targetStreet.id,
+              reviews: formattedStreetReviews,
+              reviewsLoaded: true,
+            });
+
+            setStreets(prev => {
+              const next = prev.map(s =>
+                (s.streetKey === streetCompKey || isSameStreet(s, syncedStreetUI)) ? syncedStreetUI : s
+              );
+              if (!next.some(s => s.streetKey === streetCompKey || isSameStreet(s, syncedStreetUI))) {
+                next.unshift(syncedStreetUI);
+              }
+              streetsRef.current = next;
+              return next;
+            });
+            setSelectedStreet(prevSel => {
+              if (!prevSel) return prevSel;
+              if (prevSel.streetKey === streetCompKey || isSameStreet(prevSel, syncedStreetUI)) {
+                return syncedStreetUI;
+              }
+              return prevSel;
+            });
+
+            // STEP 3: Leggi tutte le recensioni dell'utente (where('authorId', '==', authorId)), ricalcola XP, Livello e gli 8 Badge
+            const userRevsSnap = await firestore.collection('reviews')
+              .where('authorId', '==', authorId)
+              .get();
+            const userReviewsMap = new Map();
+            userRevsSnap.docs.forEach(d => userReviewsMap.set(d.id, { id: d.id, ...d.data() }));
+            if (!userReviewsMap.has(docId)) {
+              userReviewsMap.set(docId, { id: docId, ...reviewDoc });
+            }
+            const allUserReviews = Array.from(userReviewsMap.values());
+
+            const { userDoc, fullProfile: nextProfile } = buildUserSummaryDocFromReviews(
+              authorId,
+              allUserReviews,
+              streetsRef.current,
+              Array.from(awardedMilestonesSet),
+              { authorName, authorAvatar, email: authorEmail }
+            );
+
+            const nextLevelInfo = nextProfile.levelInfo;
+            const nextUnlockedBadges = nextProfile.badges.filter(b => b.unlocked);
+
+            const newlyReachedLevel = (
+              nextLevelInfo.level > prevLevel &&
+              !awardedMilestonesSet.has(`level_${nextLevelInfo.level}`)
+            ) ? nextLevelInfo : null;
+
+            const newlyUnlockedBadges = nextUnlockedBadges.filter(b =>
+              !prevUnlockedBadgeSet.has(b.id) &&
+              !awardedMilestonesSet.has(`badge_${b.id}`)
+            );
+
+            const hasNewMilestones = Boolean(newlyReachedLevel || newlyUnlockedBadges.length > 0);
+            if (newlyReachedLevel) {
+              for (let l = 2; l <= newlyReachedLevel.level; l++) {
+                awardedMilestonesSet.add(`level_${l}`);
+              }
+            }
+            newlyUnlockedBadges.forEach(b => {
+              awardedMilestonesSet.add(`badge_${b.id}`);
+            });
+
+            const updatedAwardedMilestones = Array.from(awardedMilestonesSet);
+            saveLocalAwardedMilestones(authorId, updatedAwardedMilestones);
+            userDoc.awardedMilestones = updatedAwardedMilestones;
+            nextProfile.awardedMilestones = updatedAwardedMilestones;
+
+            await firestore.collection('users').doc(authorId).set(userDoc, { merge: true });
+            console.log('[Firestore Step 3/3] Profilo gamification utente aggiornato in users/' + authorId, userDoc);
+
+            if (hasNewMilestones) {
+              firestore.collection('reviews').doc(docId).set({
+                awardedMilestones: updatedAwardedMilestones,
+              }, { merge: true }).catch(() => {});
+            }
+
+            setCurrentUserProfileDoc(nextProfile);
+            setCachedUsersById(prev => ({ ...prev, [String(authorId)]: nextProfile }));
+
+            // Notifica Toast di gratificazione XP (sempre visibile nell'app per qualsiasi traguardo)
+            triggerRewardToast({
+              isEdit: Boolean(editingReview),
+              streetName: canonicalStreetName,
+              totalXP: xpEarned.totalXP,
+              baseXP: xpEarned.baseXP,
+              pioneerXP: xpEarned.pioneerXP,
+              detailXP: xpEarned.detailXP,
+              newlyReachedLevel,
+              newlyUnlockedBadges,
+            });
 
             // OTTIMIZZAZIONE CREDITI EMAILJS (max 200 email/mese):
             // Invia l'email ESCLUSIVAMENTE quando l'utente sale a un Nuovo Livello (Liv. 2 - 10)
@@ -2470,7 +3105,7 @@
             );
 
             if (shouldSendMilestoneEmail) {
-              const targetStreetName = canonicalAnchor.canonicalName || selectedStreet.name;
+              const targetStreetName = canonicalStreetName;
               let achievementTitle = '';
               let achievementDescription = '';
 
@@ -2521,34 +3156,11 @@
             } else if (hasNewMilestones) {
               console.log('[EmailJS] Primo badge base ("Battesimo dell\'Asfalto") sbloccato: notificato con Toast in-app (quota EmailJS preservata per livelli e badge di fascia alta).');
             }
-          })
-          .catch(err => {
-            console.error('Errore salvataggio Firestore:', err);
-            alert('Errore nel salvataggio su Firestore: ' + (err.message || err) + '\n\nVerifica che la sessione Firebase Auth sia attiva e che le Regole di Sicurezza consentano la scrittura a request.auth.uid == authorId.');
-          });
-
-        // 2. AGGIORNAMENTO OTTIMISTICO STATO LOCALE
-        streetsRef.current = finalNextStreets;
-        setStreets(finalNextStreets);
-        const updatedCurrentStreet = finalNextStreets.find(s => s.id === selectedStreet.id);
-        if (updatedCurrentStreet) {
-          setSelectedStreet(updatedCurrentStreet);
-        }
-
-        // 3. NOTIFICA TOAST DI GRATIFICAZIONE XP
-        triggerRewardToast({
-          isEdit: Boolean(editingReview),
-          streetName: selectedStreet.name,
-          totalXP: xpEarned.totalXP,
-          baseXP: xpEarned.baseXP,
-          pioneerXP: xpEarned.pioneerXP,
-          detailXP: xpEarned.detailXP,
-          newlyReachedLevel,
-          newlyUnlockedBadges,
-        });
-
-        setIsReviewOpen(false);
-        setEditingReview(null);
+          } catch (err) {
+            console.error('Errore salvataggio sincrono Firestore (reviews/streets/users):', err);
+            alert('Errore nel salvataggio su Firestore: ' + (err.message || err) + '\n\nVerifica che la sessione Firebase Auth sia attiva e che le Regole di Sicurezza consentano la scrittura.');
+          }
+        })();
       };
 
       const isSelectedStreetNew = selectedStreet && selectedStreet.reviewsCount === 0;
@@ -3196,10 +3808,20 @@
 
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-bold text-slate-800">Commenti dei Residenti ({selectedStreet.reviews?.length || 0})</h4>
-                        <span className="text-[10px] font-semibold text-slate-400">Ordinati per Grado Esploratore</span>
+                        <h4 className="text-sm font-bold text-slate-800">
+                          Commenti dei Residenti ({selectedStreet.reviewsLoaded ? (selectedStreet.reviews?.length || 0) : (selectedStreet.reviewsCount || selectedStreet.reviews?.length || 0)})
+                        </h4>
+                        <span className="text-[10px] font-semibold text-slate-400">
+                          {isLoadingComments ? '⏳ Caricamento commenti...' : 'Ordinati per Grado Esploratore'}
+                        </span>
                       </div>
-                      {(() => {
+                      {isLoadingComments && (!selectedStreet.reviews || selectedStreet.reviews.length === 0) ? (
+                        <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-2 animate-pulse">
+                          <div className="text-xl">⏳</div>
+                          <p className="text-xs font-bold text-slate-700">Caricamento commenti...</p>
+                          <p className="text-[11px] text-slate-400">Recupero delle recensioni della community per {selectedStreet.name}</p>
+                        </div>
+                      ) : (() => {
                         const rawReviews = selectedStreet.reviews || [];
                         // Ordina i commenti mettendo in risalto gli utenti di livello/XP più alto
                         const sortedReviews = [...rawReviews].sort((a, b) => {
