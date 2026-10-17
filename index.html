@@ -2038,7 +2038,11 @@
           }
         };
         document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
+        document.addEventListener('touchstart', handleClickOutside, { passive: true });
+        return () => {
+          document.removeEventListener('mousedown', handleClickOutside);
+          document.removeEventListener('touchstart', handleClickOutside);
+        };
       }, []);
 
       // --- 1. SINCRONIZZAZIONE LEGGERA ALL'AVVIO: COLLEZIONI PRE-AGGREGATE 'streets' E 'users' (TOP 10) ---
@@ -3893,7 +3897,7 @@
           <div ref={mapContainerRef} className="w-full h-full z-0" />
 
           {/* 2. HEADER: LOGO UFFICIALE + BARRA DI RICERCA + WIDGET PROFILO GOOGLE */}
-          <div className="absolute top-4 left-4 right-4 z-30 flex items-start justify-between gap-2.5 sm:gap-3 pointer-events-none">
+          <div className="absolute top-2 left-2.5 right-2.5 sm:top-4 sm:left-4 sm:right-4 z-30 flex items-start justify-between gap-2 sm:gap-3 pointer-events-none">
             {/* Logo Ufficiale Street Review -> Link alla Landing Page */}
             <a
               href="landing.html"
@@ -3904,17 +3908,23 @@
               <img
                 src="assets/logo.jpg"
                 alt="Street Review Logo"
-                className="h-9 sm:h-10 w-9 sm:w-10 object-contain rounded-xl shadow-xs group-hover:scale-[1.03] transition-transform"
+                className="h-9 w-9 sm:h-10 sm:w-10 object-contain rounded-xl shadow-sm group-hover:scale-[1.03] transition-transform"
               />
-              <span className="font-black text-xs sm:text-sm text-slate-800 tracking-tight hidden md:inline pr-1 no-underline group-hover:text-blue-600 transition-colors">
+              <span className="font-black text-xs sm:text-sm text-slate-800 tracking-tight hidden lg:inline pr-1 no-underline group-hover:text-blue-600 transition-colors">
                 Street Review
               </span>
             </a>
 
-            {/* Barra di ricerca dinamica su scala nazionale + pulsante GPS */}
-            <div ref={searchContainerRef} className="flex-1 max-w-lg pointer-events-auto">
-              <div className="relative bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 flex items-center px-3.5 sm:px-4 py-2 transition-all focus-within:shadow-2xl focus-within:ring-2 focus-within:ring-blue-500/30">
-                <IconSearch className="text-slate-400 mr-2.5 shrink-0" />
+            {/* Barra di ricerca dinamica su scala nazionale + pulsante GPS (Priorità assoluta: flex-1, min-w-0 sul container e input sempre ampio e cliccabile) */}
+            <div ref={searchContainerRef} className="flex-1 min-w-0 max-w-lg pointer-events-auto">
+              <div
+                onClick={() => {
+                  setIsUserMenuOpen(false);
+                  if (searchInputRef.current) searchInputRef.current.focus();
+                }}
+                className="relative bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 flex items-center px-2.5 sm:px-4 py-2 transition-all focus-within:shadow-2xl focus-within:ring-2 focus-within:ring-blue-500/30 cursor-text"
+              >
+                <IconSearch className="text-slate-400 mr-1.5 sm:mr-2.5 shrink-0 pointer-events-none" />
                 <input
                   ref={searchInputRef}
                   type="text"
@@ -3925,27 +3935,37 @@
                     setIsSearchFocused(val.trim().length >= 2);
                   }}
                   onFocus={() => {
+                    setIsUserMenuOpen(false);
                     if (searchQuery.trim().length >= 2) setIsSearchFocused(true);
                   }}
                   placeholder="Cerca una via in tutta Italia..."
-                  className="w-full bg-transparent text-slate-800 placeholder-slate-400 text-xs sm:text-sm font-semibold focus:outline-none min-w-0"
+                  className="flex-1 w-full min-w-[115px] sm:min-w-[160px] bg-transparent text-slate-800 placeholder-slate-400 text-xs sm:text-sm font-semibold focus:outline-none"
                 />
                 {searchQuery && (
                   <button
-                    onClick={() => {
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
                       setSearchQuery('');
                       setIsSearchFocused(false);
+                      if (searchInputRef.current) searchInputRef.current.focus();
                     }}
-                    className="p-1 text-slate-400 hover:text-slate-600 mr-1 shrink-0 cursor-pointer"
+                    className="p-1 text-slate-400 hover:text-slate-600 mr-0.5 sm:mr-1 shrink-0 cursor-pointer"
+                    title="Cancella ricerca"
                   >
-                    <IconClose size={16} />
+                    <IconClose size={15} />
                   </button>
                 )}
                 <button
-                  onClick={handleLocateMe}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsUserMenuOpen(false);
+                    handleLocateMe();
+                  }}
                   disabled={isLocatingGps}
                   title="Centra la mappa sulla tua posizione attuale tramite GPS"
-                  className="ml-1 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 active:scale-95 text-blue-700 border border-blue-200/80 rounded-xl flex items-center gap-1 shrink-0 transition-all cursor-pointer"
+                  className="ml-1 px-2 py-1.5 sm:px-2.5 bg-blue-50 hover:bg-blue-100 active:scale-95 text-blue-700 border border-blue-200/80 rounded-xl flex items-center justify-center gap-1 shrink-0 transition-all cursor-pointer"
                 >
                   <span className="text-xs leading-none">{isLocatingGps ? '⏳' : '📍'}</span>
                   <span className="text-[11px] font-extrabold hidden sm:inline">
@@ -3991,16 +4011,18 @@
             )}
           </div>
 
-          {/* Widget Profilo Google / Livello XP / Classifica & Badge */}
+          {/* Widget Profilo Google / Livello XP / Classifica & Badge (Compatto su Mobile < 768px, Espandibile al Click) */}
           <div ref={userMenuRef} className="relative pointer-events-auto shrink-0 flex items-center gap-1.5 sm:gap-2">
-            {/* Pulsante dedicato Classifica & Badge (sempre visibile, anche per utenti guest) */}
+            {/* Pulsante dedicato Classifica & Badge (compatto col solo Trofeo 🏆 su mobile) */}
             <button
+              type="button"
               onClick={() => {
+                setIsUserMenuOpen(false);
                 setGamificationTab(currentUser ? 'progress' : 'leaderboard');
                 setIsGamificationOpen(true);
               }}
               title="Apri Classifica Top Esploratori d'Italia & Bacheca Badge"
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-slate-950 font-black text-xs rounded-2xl shadow-xl border border-amber-300/80 active:scale-95 transition-all cursor-pointer"
+              className="flex items-center justify-center gap-1.5 px-2.5 py-2 sm:px-3 bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-slate-950 font-black text-xs rounded-2xl shadow-xl border border-amber-300/80 active:scale-95 transition-all cursor-pointer"
             >
               <span className="text-sm leading-none">🏆</span>
               <span className="hidden lg:inline">Classifica &amp; Badge</span>
@@ -4008,122 +4030,181 @@
             </button>
 
             {currentUser ? (
-              <div className="flex items-center gap-1.5 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 p-1 pl-1.5 pr-2">
-                {/* Pillola cliccabile Livello attuale e XP */}
+              <div className="flex items-center md:gap-1.5 bg-white/95 backdrop-blur-md rounded-full md:rounded-2xl shadow-xl border border-slate-200 p-0.5 md:p-1 md:pl-1.5 md:pr-2">
+                {/* Pillola cliccabile Livello attuale e XP (visibile in linea solo da Desktop >= 768px) */}
                 <button
+                  type="button"
                   onClick={() => {
+                    setIsUserMenuOpen(false);
                     setGamificationTab('progress');
                     setIsGamificationOpen(true);
                   }}
                   title={`${gamification.currentUserProfile.levelInfo.fullTitle} · Clicca per vedere i tuoi progressi e i badge`}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-xl border text-[11px] font-extrabold transition-all active:scale-95 cursor-pointer ${gamification.currentUserProfile.levelInfo.headerPillClass}`}
+                  className={`hidden md:flex items-center gap-1 px-2.5 py-1 rounded-xl border text-[11px] font-extrabold transition-all active:scale-95 cursor-pointer ${gamification.currentUserProfile.levelInfo.headerPillClass}`}
                 >
                   <span>{gamification.currentUserProfile.levelInfo.icon}</span>
                   <span>Liv. {gamification.currentUserProfile.levelInfo.level} • {gamification.currentUserProfile.xp} XP</span>
                 </button>
 
-                {/* Avatar utente con cornice colorata in base al grado + eventuale Badge ADMIN */}
+                {/* Avatar utente circolare (Stato Chiuso su Mobile < 768px: solo Avatar con cornice livello e badge 🛡️ nell'angolo se Admin) */}
                 <button
-                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="flex items-center gap-1.5 pl-1 py-0.5 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
-                  title="Menu Profilo"
+                  type="button"
+                  onClick={() => setIsUserMenuOpen(prev => !prev)}
+                  aria-expanded={isUserMenuOpen}
+                  className="relative flex items-center gap-1.5 p-0.5 md:pl-1 md:py-0.5 hover:bg-slate-100 rounded-full md:rounded-xl transition-all cursor-pointer active:scale-95"
+                  title={`${currentUser.name} · Tocca per aprire il menu Account`}
                 >
-                  <img
-                    src={currentUser.avatarUrl}
-                    alt={currentUser.name}
-                    className={`w-7 h-7 rounded-full border-2 object-cover ${gamification.currentUserProfile.levelInfo.avatarBorderClass}`}
-                    referrerPolicy="no-referrer"
-                  />
+                  <div className="relative shrink-0">
+                    <img
+                      src={currentUser.avatarUrl}
+                      alt={currentUser.name}
+                      className={`w-8 h-8 md:w-7 md:h-7 rounded-full border-2 object-cover ${gamification.currentUserProfile.levelInfo.avatarBorderClass}`}
+                      referrerPolicy="no-referrer"
+                    />
+                    {isAdmin ? (
+                      <span
+                        title="Profilo Amministratore Street Review attivo"
+                        className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center shadow-sm border border-white leading-none"
+                      >
+                        🛡️
+                      </span>
+                    ) : (
+                      <span
+                        title={gamification.currentUserProfile.levelInfo.fullTitle}
+                        className="md:hidden absolute -bottom-1 -right-1 text-[9px] leading-none bg-white rounded-full px-0.5 shadow-sm border border-slate-200"
+                      >
+                        {gamification.currentUserProfile.levelInfo.icon}
+                      </span>
+                    )}
+                  </div>
                   <span className="text-xs font-bold text-slate-800 hidden xl:inline max-w-[95px] truncate">
                     {currentUser.name}
                   </span>
                   {isAdmin && (
                     <span
                       title="Profilo Amministratore Street Review attivo"
-                      className="px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black tracking-wide shadow-2xs border border-rose-400 whitespace-nowrap"
+                      className="hidden md:inline-flex px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black tracking-wide shadow-sm border border-rose-400 whitespace-nowrap"
                     >
                       🛡️ ADMIN
                     </span>
                   )}
-                  <span className="text-[10px] text-slate-400">▼</span>
+                  <span className="hidden md:inline text-[10px] text-slate-400">
+                    {isUserMenuOpen ? '▲' : '▼'}
+                  </span>
                 </button>
 
-                {/* Dropdown Profilo & Logout */}
+                {/* Popover / Menu Flottante Account (Stato Aperto al Click sull'Avatar) */}
                 {isUserMenuOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 animate-fade-in z-50">
-                    <div className="px-3 py-2.5 border-b border-slate-100 bg-slate-50 rounded-xl mb-1.5 space-y-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <div className="flex items-center gap-1 min-w-0">
-                          <p className="text-xs font-bold text-slate-900 truncate">{currentUser.name}</p>
-                          {isAdmin && (
-                            <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9px] font-black shrink-0">
-                              🛡️ ADMIN
-                            </span>
-                          )}
+                  <div className="absolute right-0 top-full mt-2 w-64 sm:w-72 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/90 p-2.5 animate-fade-in z-50">
+                    {/* 1. Nome utente, email e badge 🛡️ ADMIN */}
+                    <div className="px-3 py-2.5 border-b border-slate-100 bg-slate-50 rounded-xl mb-2 space-y-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <img
+                          src={currentUser.avatarUrl}
+                          alt={currentUser.name}
+                          className={`w-9 h-9 rounded-full border-2 object-cover shrink-0 ${gamification.currentUserProfile.levelInfo.avatarBorderClass}`}
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-xs font-extrabold text-slate-900 truncate">{currentUser.name}</p>
+                            {isAdmin && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[9px] font-black tracking-wide shrink-0 shadow-sm">
+                                🛡️ ADMIN
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-500 truncate">{currentUser.email}</p>
                         </div>
-                        <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-md border shrink-0 ${gamification.currentUserProfile.levelInfo.badgeClass}`}>
-                          Liv. {gamification.currentUserProfile.levelInfo.level}
-                        </span>
                       </div>
-                      <p className="text-[11px] font-bold text-slate-700">
-                        {gamification.currentUserProfile.levelInfo.fullTitle} · {gamification.currentUserProfile.xp} XP
-                      </p>
-                      <p className="text-[10px] text-slate-400 truncate">{currentUser.email}</p>
+
+                      {/* 2. Pillola del grado attuale: Liv. X • XXXX XP e titolo del livello */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          setGamificationTab('progress');
+                          setIsGamificationOpen(true);
+                        }}
+                        className={`w-full flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-extrabold transition-all active:scale-95 cursor-pointer ${gamification.currentUserProfile.levelInfo.headerPillClass}`}
+                      >
+                        <span className="flex items-center gap-1 truncate">
+                          <span>{gamification.currentUserProfile.levelInfo.icon}</span>
+                          <span className="truncate">{gamification.currentUserProfile.levelInfo.fullTitle}</span>
+                        </span>
+                        <span className="shrink-0 font-black">
+                          Liv. {gamification.currentUserProfile.levelInfo.level} • {gamification.currentUserProfile.xp} XP
+                        </span>
+                      </button>
                     </div>
+
+                    {/* 3. Pulsante "🎖️ Il Mio Profilo & Badge" */}
                     <button
+                      type="button"
                       onClick={() => {
                         setIsUserMenuOpen(false);
                         setGamificationTab('progress');
                         setIsGamificationOpen(true);
                       }}
-                      className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl flex items-center justify-between transition-colors cursor-pointer"
+                      className="w-full text-left px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl flex items-center justify-between transition-colors cursor-pointer"
                     >
-                      <span>🎯 I Miei Progressi &amp; Badge</span>
+                      <span>🎖️ Il Mio Profilo &amp; Badge</span>
                       <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded-full">
                         {gamification.currentUserProfile.unlockedBadgesCount}/{GAMIFICATION_BADGES.length}
                       </span>
                     </button>
+
+                    {/* 4. Pulsante "🏆 Classifica Generale" */}
                     <button
+                      type="button"
                       onClick={() => {
                         setIsUserMenuOpen(false);
                         setGamificationTab('leaderboard');
                         setIsGamificationOpen(true);
                       }}
-                      className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-800 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
+                      className="w-full text-left px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-800 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
                     >
-                      <span>🏆 Top Esploratori d'Italia</span>
+                      <span>🏆 Classifica Generale</span>
                     </button>
+
                     <button
+                      type="button"
                       onClick={() => {
                         setIsUserMenuOpen(false);
                         setIsPrivacyOpen(true);
                       }}
-                      className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
+                      className="w-full text-left px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
                     >
                       <span>🛡️ Privacy &amp; Regolamento</span>
                     </button>
+
                     <div className="my-1 border-t border-slate-100" />
+
+                    {/* 5. Pulsante "🚪 Esci (Logout)" */}
                     <button
+                      type="button"
                       onClick={handleLogout}
-                      className="w-full text-left px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
+                      className="w-full text-left px-3 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
                     >
-                      🚪 Esci / Disconnetti
+                      <span>🚪 Esci (Logout)</span>
                     </button>
                   </div>
                 )}
               </div>
             ) : (
               <button
+                type="button"
                 onClick={() => setIsAuthOpen(true)}
-                className="flex items-center gap-2 px-3.5 py-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 hover:bg-slate-50 transition-all text-slate-700 font-bold text-xs cursor-pointer"
+                className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 hover:bg-slate-50 transition-all text-slate-700 font-bold text-xs cursor-pointer"
+                title="Accedi con Google"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.15z"/>
                   <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
                   <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.97 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
                   <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
                 </svg>
-                <span>Accedi</span>
+                <span className="hidden sm:inline">Accedi</span>
               </button>
             )}
           </div>
@@ -4177,7 +4258,7 @@
                       {(rewardToast.newlyReachedLevel || (rewardToast.newlyUnlockedBadges && rewardToast.newlyUnlockedBadges.length > 0)) && (
                         <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[10px] font-black">
                           {rewardToast.newlyReachedLevel && (
-                            <span className="bg-gradient-to-r from-amber-400 to-orange-400 text-slate-950 px-2 py-0.5 rounded-full shadow-xs">
+                            <span className="bg-gradient-to-r from-amber-400 to-orange-400 text-slate-950 px-2 py-0.5 rounded-full shadow-sm">
                               🆙 Liv. {rewardToast.newlyReachedLevel.level}: {rewardToast.newlyReachedLevel.fullTitle}
                             </span>
                           )}
@@ -4238,7 +4319,7 @@
           )}
 
           {/* 3. SELETTORE RAPIDO "CITTÀ ATTIVE" (ANTI-COLD START) + FILTRI RAPIDI */}
-          <div className="absolute top-18 left-4 right-4 z-20 flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+          <div className="absolute top-16 sm:top-[72px] left-2.5 right-2.5 sm:left-4 sm:right-4 z-20 flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
             {activeCities.map((cityItem) => (
               <button
                 key={cityItem.cityKey}
