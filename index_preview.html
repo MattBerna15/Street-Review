@@ -1290,6 +1290,20 @@
         ? existingStreet.reviews
         : [];
 
+      const rawParking = Array.isArray(docData.parkingTypes)
+        ? docData.parkingTypes
+        : (Array.isArray(docData.commonParkingTypes) ? docData.commonParkingTypes : []);
+      const mergedParking = preservedReviews.length > 0
+        ? Array.from(new Set([...rawParking, ...preservedReviews.flatMap(r => r.parkingTypes || [])]))
+        : rawParking;
+
+      const rawAmenities = Array.isArray(docData.amenities) ? docData.amenities : [];
+      const mergedAmenities = preservedReviews.length > 0
+        ? Array.from(new Set([...rawAmenities, ...preservedReviews.flatMap(r => r.amenities || [])]))
+        : rawAmenities;
+
+      const mergedCyclePath = Boolean(docData.hasCyclePath) || preservedReviews.some(r => Boolean(r.hasCyclePath));
+
       return {
         id: existingStreet?.id || canonicalId,
         streetKey,
@@ -1302,11 +1316,9 @@
         reviewsCount: Number(docData.reviewCount ?? docData.reviewsCount ?? preservedReviews.length ?? 0),
         avgOverallRating: Number(docData.ratingOverall ?? docData.avgOverallRating ?? 0),
         categoryAverages: defaultCats,
-        commonParkingTypes: Array.isArray(docData.parkingTypes)
-          ? docData.parkingTypes
-          : (Array.isArray(docData.commonParkingTypes) ? docData.commonParkingTypes : []),
-        hasCyclePath: Boolean(docData.hasCyclePath),
-        amenities: Array.isArray(docData.amenities) ? docData.amenities : [],
+        commonParkingTypes: mergedParking,
+        hasCyclePath: mergedCyclePath,
+        amenities: mergedAmenities,
         pioneerAuthorId: docData.pioneerAuthorId || existingStreet?.pioneerAuthorId || null,
         pioneerReviewId: docData.pioneerReviewId || existingStreet?.pioneerReviewId || null,
         pioneerAuthorName: docData.pioneerAuthorName || existingStreet?.pioneerAuthorName || '',
@@ -1895,15 +1907,37 @@
         setIsUserMenuOpen(false);
       };
 
-      // Filtri
+      // Filtri Servizi & Mobilità
       const [filterFreeParking, setFilterFreeParking] = useState(false);
+      const [filterEvCharging, setFilterEvCharging] = useState(false);
       const [filterDisabledParking, setFilterDisabledParking] = useState(false);
       const [filterPinkParking, setFilterPinkParking] = useState(false);
-      const [filterParkingDisc, setFilterParkingDisc] = useState(false);
       const [filterLoadingZone, setFilterLoadingZone] = useState(false);
       const [filterCyclePath, setFilterCyclePath] = useState(false);
-      const [filterRoadOver3, setFilterRoadOver3] = useState(false);
-      const [filterTopRated, setFilterTopRated] = useState(false);
+      const [filterDrinkingFountain, setFilterDrinkingFountain] = useState(false);
+      const [filterDogArea, setFilterDogArea] = useState(false);
+
+      const hasAnyActiveFilter = Boolean(
+        filterFreeParking ||
+        filterEvCharging ||
+        filterDisabledParking ||
+        filterPinkParking ||
+        filterLoadingZone ||
+        filterCyclePath ||
+        filterDrinkingFountain ||
+        filterDogArea
+      );
+
+      const resetAllFilters = () => {
+        setFilterFreeParking(false);
+        setFilterEvCharging(false);
+        setFilterDisabledParking(false);
+        setFilterPinkParking(false);
+        setFilterLoadingZone(false);
+        setFilterCyclePath(false);
+        setFilterDrinkingFountain(false);
+        setFilterDogArea(false);
+      };
 
       const mapContainerRef = useRef(null);
       const googleMapRef = useRef(null);
@@ -2676,17 +2710,18 @@
         });
 
         return deduped.filter(s => {
+          const streetAmenities = Array.isArray(s.amenities) ? s.amenities : [];
           if (filterFreeParking && !s.commonParkingTypes?.includes('FREE')) return false;
+          if (filterEvCharging && !streetAmenities.includes('EV_CHARGING')) return false;
           if (filterDisabledParking && !s.commonParkingTypes?.includes('DISABLED')) return false;
           if (filterPinkParking && !s.commonParkingTypes?.includes('PINK')) return false;
-          if (filterParkingDisc && !s.commonParkingTypes?.includes('PARKING_DISC')) return false;
           if (filterLoadingZone && !s.commonParkingTypes?.includes('LOADING_UNLOADING')) return false;
-          if (filterCyclePath && !s.hasCyclePath) return false;
-          if (filterRoadOver3 && s.categoryAverages.roadSurface < 3.0) return false;
-          if (filterTopRated && s.avgOverallRating < 4.0) return false;
+          if (filterCyclePath && !(s.hasCyclePath || streetAmenities.includes('CYCLE_PATH'))) return false;
+          if (filterDrinkingFountain && !streetAmenities.includes('DRINKING_FOUNTAIN')) return false;
+          if (filterDogArea && !(streetAmenities.includes('DOG_AREA') || streetAmenities.includes('Area Cani'))) return false;
           return true;
         });
-      }, [streets, filterFreeParking, filterDisabledParking, filterPinkParking, filterParkingDisc, filterLoadingZone, filterCyclePath, filterRoadOver3, filterTopRated]);
+      }, [streets, filterFreeParking, filterEvCharging, filterDisabledParking, filterPinkParking, filterLoadingZone, filterCyclePath, filterDrinkingFountain, filterDogArea]);
 
       // OTTIMIZZAZIONE VIEWPORT RENDERING (Zoom >= 14): renderizza nel DOM solo i marker nell'area visibile (+ margine di buffer)
       const viewportStreets = useMemo(() => {
@@ -4318,123 +4353,107 @@
             </div>
           )}
 
-          {/* 3. SELETTORE RAPIDO "CITTÀ ATTIVE" (ANTI-COLD START) + FILTRI RAPIDI */}
+          {/* 3. BARRA FILTRI SERVIZI & MOBILITÀ SULLA MAPPA */}
           <div className="absolute top-16 sm:top-[72px] left-2.5 right-2.5 sm:left-4 sm:right-4 z-20 flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-            {activeCities.map((cityItem) => (
-              <button
-                key={cityItem.cityKey}
-                onClick={() => cityItem.isHub ? handleReturnToHub() : handleFlyToCity(cityItem)}
-                title={cityItem.isHub
-                  ? `Torna all'Hub storico di San Benedetto del Tronto (${cityItem.streetsCount} vie recensite)`
-                  : `Salta a ${cityItem.name} (${cityItem.streetsCount} ${cityItem.streetsCount === 1 ? 'via recensita' : 'vie recensite'})`
-                }
-                className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer active:scale-95 ${
-                  cityItem.isHub
-                    ? 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border-cyan-500/80 shadow-blue-500/20'
-                    : 'bg-slate-900/95 hover:bg-slate-800 text-amber-300 border-amber-400/70 shadow-slate-900/20'
-                }`}
-              >
-                <span>{cityItem.isHub ? '🌴' : '🏙️'}</span>
-                <span>{cityItem.isHub ? 'San Benedetto (Hub)' : cityItem.shortName}</span>
-                {cityItem.streetsCount > 0 && (
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                    cityItem.isHub ? 'bg-white/20 text-white' : 'bg-amber-400/20 text-amber-200'
-                  }`}>
-                    {cityItem.streetsCount} {cityItem.streetsCount === 1 ? 'via' : 'vie'}
-                  </span>
-                )}
-              </button>
-            ))}
+            <button
+              type="button"
+              onClick={resetAllFilters}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                !hasAnyActiveFilter
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-slate-900/20'
+                  : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <span>Tutti</span>
+            </button>
 
             <button
+              type="button"
               onClick={() => setFilterFreeParking(!filterFreeParking)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
-                filterFreeParking ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20' : 'bg-white/95 text-slate-700 border-slate-200'
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                filterFreeParking ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              <IconCar size={13} /> Parcheggio Gratuito
+              <span>🚗</span>
+              <span>Parcheggio Gratuito</span>
             </button>
 
             <button
+              type="button"
+              onClick={() => setFilterEvCharging(!filterEvCharging)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                filterEvCharging ? 'bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/20' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <span>⚡</span>
+              <span>Colonnine EV</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setFilterDisabledParking(!filterDisabledParking)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
-                filterDisabledParking ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-amber-500/30' : 'bg-white/95 text-slate-700 border-slate-200'
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                filterDisabledParking ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-amber-500/30' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              <span>♿</span> Posti Disabili
+              <span>♿</span>
+              <span>Posti Disabili</span>
             </button>
 
             <button
+              type="button"
               onClick={() => setFilterPinkParking(!filterPinkParking)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
-                filterPinkParking ? 'bg-pink-500 text-white border-pink-600 shadow-pink-500/30' : 'bg-white/95 text-slate-700 border-slate-200'
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                filterPinkParking ? 'bg-pink-500 text-white border-pink-600 shadow-pink-500/30' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              <span>🌸</span> Posti Rosa
+              <span>🌸</span>
+              <span>Posti Rosa</span>
             </button>
 
             <button
-              onClick={() => setFilterParkingDisc(!filterParkingDisc)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
-                filterParkingDisc ? 'bg-slate-800 text-white border-slate-800' : 'bg-white/95 text-slate-700 border-slate-200'
-              }`}
-            >
-              <span>⏱️</span> Disco Orario
-            </button>
-
-            <button
+              type="button"
               onClick={() => setFilterLoadingZone(!filterLoadingZone)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
-                filterLoadingZone ? 'bg-orange-500 text-white border-orange-600 shadow-orange-500/30' : 'bg-white/95 text-slate-700 border-slate-200'
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                filterLoadingZone ? 'bg-orange-500 text-white border-orange-600 shadow-orange-500/30' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              <span>🚚</span> Carico/Scarico
+              <span>🚚</span>
+              <span>Carico/Scarico</span>
             </button>
 
             <button
+              type="button"
               onClick={() => setFilterCyclePath(!filterCyclePath)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
-                filterCyclePath ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white/95 text-slate-700 border-slate-200'
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                filterCyclePath ? 'bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/20' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              <IconBike size={13} /> Pista Ciclabile
+              <span>🚴</span>
+              <span>Pista Ciclabile</span>
             </button>
 
             <button
-              onClick={() => setFilterRoadOver3(!filterRoadOver3)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
-                filterRoadOver3 ? 'bg-blue-600 text-white border-blue-600' : 'bg-white/95 text-slate-700 border-slate-200'
+              type="button"
+              onClick={() => setFilterDrinkingFountain(!filterDrinkingFountain)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                filterDrinkingFountain ? 'bg-sky-600 text-white border-sky-600 shadow-sky-500/20' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              🛣️ Manto &gt; 3★
+              <span>🚰</span>
+              <span>Fontanelle</span>
             </button>
 
             <button
-              onClick={() => setFilterTopRated(!filterTopRated)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer ${
-                filterTopRated ? 'bg-amber-500 text-white border-amber-500' : 'bg-white/95 text-slate-700 border-slate-200'
+              type="button"
+              onClick={() => setFilterDogArea(!filterDogArea)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                filterDogArea ? 'bg-lime-600 text-white border-lime-700 shadow-lime-500/25' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              <IconStar filled size={12} /> Top Rated (≥ 4★)
+              <span>🐕</span>
+              <span>Area Cani</span>
             </button>
-
-            {(filterFreeParking || filterDisabledParking || filterPinkParking || filterParkingDisc || filterLoadingZone || filterCyclePath || filterRoadOver3 || filterTopRated) && (
-              <button
-                onClick={() => {
-                  setFilterFreeParking(false);
-                  setFilterDisabledParking(false);
-                  setFilterPinkParking(false);
-                  setFilterParkingDisc(false);
-                  setFilterLoadingZone(false);
-                  setFilterCyclePath(false);
-                  setFilterRoadOver3(false);
-                  setFilterTopRated(false);
-                }}
-                className="px-3 py-1.5 rounded-full bg-slate-900 text-white text-xs font-bold flex-shrink-0 cursor-pointer"
-              >
-                Reset
-              </button>
-            )}
           </div>
 
           {/* 4. BADGE DI STATO E LINK PRIVACY/REGOLAMENTO IN BASSO A SINISTRA */}
@@ -4547,19 +4566,19 @@
                           icon = '🅿️';
                         } else if (t === 'PARKING_DISC') {
                           label = 'Disco Orario';
-                          colorCls = 'bg-slate-100 text-slate-700 border-slate-300 shadow-2xs';
+                          colorCls = 'bg-slate-100 text-slate-700 border-slate-300 shadow-sm';
                           icon = '⏱️';
                         } else if (t === 'DISABLED') {
                           label = 'Posti Disabili';
-                          colorCls = 'bg-amber-100 text-amber-900 border-amber-400 font-extrabold shadow-2xs';
+                          colorCls = 'bg-amber-100 text-amber-900 border-amber-400 font-extrabold shadow-sm';
                           icon = '♿';
                         } else if (t === 'PINK') {
                           label = 'Posti Rosa';
-                          colorCls = 'bg-pink-100 text-pink-800 border-pink-300 font-extrabold shadow-2xs';
+                          colorCls = 'bg-pink-100 text-pink-800 border-pink-300 font-extrabold shadow-sm';
                           icon = '🌸';
                         } else if (t === 'LOADING_UNLOADING') {
                           label = 'Carico / Scarico';
-                          colorCls = 'bg-orange-100 text-orange-950 border-orange-400 font-extrabold shadow-2xs';
+                          colorCls = 'bg-orange-100 text-orange-950 border-orange-400 font-extrabold shadow-sm';
                           icon = '🚚';
                         }
 
@@ -4581,11 +4600,13 @@
                         let icon = '✨';
                         let colorCls = 'bg-slate-100 text-slate-700 border-slate-200';
 
-                        if (a === 'EV_CHARGING') { label = 'Ricarica EV'; icon = '⚡'; colorCls = 'bg-emerald-50 text-emerald-800 border-emerald-200'; }
+                        if (a === 'EV_CHARGING') { label = 'Colonnine EV'; icon = '⚡'; colorCls = 'bg-emerald-50 text-emerald-800 border-emerald-200'; }
                         else if (a === 'BIKE_RACKS') { label = 'Rastrelliere Bici'; icon = '🚲'; colorCls = 'bg-cyan-50 text-cyan-800 border-cyan-200'; }
                         else if (a === 'SPEED_BUMPS') { label = 'Dossi / Dissuasori'; icon = '⚠️'; colorCls = 'bg-orange-50 text-orange-800 border-orange-200'; }
                         else if (a === 'COBBLESTONE') { label = 'Ciottolato / Sanpietrini'; icon = '🏛️'; colorCls = 'bg-stone-100 text-stone-800 border-stone-300'; }
-                        else if (a === 'DRINKING_FOUNTAIN') { label = 'Fontanella'; icon = '💧'; colorCls = 'bg-sky-50 text-sky-800 border-sky-200'; }
+                        else if (a === 'DRINKING_FOUNTAIN') { label = 'Fontanella'; icon = '🚰'; colorCls = 'bg-sky-50 text-sky-800 border-sky-200'; }
+                        else if (a === 'DOG_AREA' || a === 'Area Cani') { label = 'Area Cani'; icon = '🐕'; colorCls = 'bg-lime-100 text-lime-900 border-lime-300 font-extrabold shadow-sm'; }
+                        else if (a === 'DOG_WASTE_BINS') { label = 'Cestini Deiezioni Canine'; icon = '🐾'; colorCls = 'bg-amber-50 text-amber-900 border-amber-200'; }
                         else if (a === 'BENCHES') { label = 'Panchine'; icon = '🪑'; colorCls = 'bg-amber-50 text-amber-800 border-amber-200'; }
                         else if (a === 'TRASH_BINS') { label = 'Cestini'; icon = '🗑️'; colorCls = 'bg-slate-100 text-slate-800 border-slate-200'; }
 
@@ -5524,16 +5545,18 @@
                 </div>
               </div>
 
-              {/* Tag Dotazioni e Arredo Urbano */}
+              {/* Tag Dotazioni Urbane / Servizi */}
               <div className="space-y-1.5 pt-1">
-                <p className="font-semibold text-slate-700">Dotazioni e Arredo Urbano (Tag rapidi):</p>
+                <p className="font-semibold text-slate-700">Dotazioni Urbane / Servizi (Tag rapidi):</p>
                 <div className="flex flex-wrap gap-2">
                   {[
                     ['EV_CHARGING', '⚡ Colonnine EV'],
                     ['BIKE_RACKS', '🚲 Rastrelliere Bici'],
                     ['SPEED_BUMPS', '⚠️ Dossi / Dissuasori'],
                     ['COBBLESTONE', '🏛️ Pavimentazione Speciale'],
-                    ['DRINKING_FOUNTAIN', '💧 Fontanella'],
+                    ['DRINKING_FOUNTAIN', '🚰 Fontanella'],
+                    ['DOG_AREA', '🐕 Area Cani'],
+                    ['DOG_WASTE_BINS', '🐾 Cestini per Deiezioni Canine'],
                     ['BENCHES', '🪑 Panchine'],
                     ['TRASH_BINS', '🗑️ Cestini'],
                   ].map(([val, name]) => {
@@ -5545,7 +5568,7 @@
                         onClick={() => toggleAmenity(val)}
                         className={`px-3 py-1.5 rounded-xl font-bold border transition-all cursor-pointer ${
                           isSelected
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                             : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                         }`}
                       >
