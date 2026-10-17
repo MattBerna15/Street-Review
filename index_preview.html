@@ -1023,6 +1023,17 @@
       });
     };
 
+    // --- RICONOSCIMENTO PROFILO ADMIN ---
+    const ADMIN_EMAILS = ['m.bernardini15@gmail.com', 'streetreview.app@gmail.com'];
+
+    const isCurrentUserAdmin = (user) => {
+      return Boolean(
+        user &&
+        user.email &&
+        ADMIN_EMAILS.includes(String(user.email).trim().toLowerCase())
+      );
+    };
+
     // --- CONFIGURAZIONE EMAILJS & PERSISTENZA ANTI-DUPLICATI TRAGUARDI ---
     const EMAILJS_CONFIG = {
       serviceId: 'service_streetreview',
@@ -1672,6 +1683,7 @@
       }
 
       const leaderboard = [...hydratedLeaderboardUsers]
+        .filter(u => (u.xp || 0) > 0 && (u.reviewsCount || 0) > 0)
         .sort((a, b) => {
           if (b.xp !== a.xp) return b.xp - a.xp;
           if (b.pioneerCount !== a.pioneerCount) return b.pioneerCount - a.pioneerCount;
@@ -1758,6 +1770,7 @@
           return null;
         }
       });
+      const isAdmin = isCurrentUserAdmin(currentUser);
       const [isAuthOpen, setIsAuthOpen] = useState(false);
       const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
       const [editingReview, setEditingReview] = useState(null);
@@ -1767,8 +1780,10 @@
       const [reportingReview, setReportingReview] = useState(null);
       const [rewardToast, setRewardToast] = useState(null);
       const [milestoneEmailToast, setMilestoneEmailToast] = useState(null);
+      const [deleteToast, setDeleteToast] = useState(null);
       const toastTimerRef = useRef(null);
       const milestoneToastTimerRef = useRef(null);
+      const deleteToastTimerRef = useRef(null);
       const userMenuRef = useRef(null);
       const cachedUsersRef = useRef({});
       cachedUsersRef.current = cachedUsersById;
@@ -1793,6 +1808,14 @@
         milestoneToastTimerRef.current = setTimeout(() => {
           setMilestoneEmailToast(null);
         }, 8000);
+      };
+
+      const triggerDeleteToast = (message = '🗑️ Recensione eliminata e statistiche ricalcolate.') => {
+        if (deleteToastTimerRef.current) clearTimeout(deleteToastTimerRef.current);
+        setDeleteToast(message);
+        deleteToastTimerRef.current = setTimeout(() => {
+          setDeleteToast(null);
+        }, 5500);
       };
 
       // Ascolto automatico dello stato di autenticazione Firebase
@@ -1833,6 +1856,10 @@
               const hydrated = hydrateUserProfileFromDoc({ id: docSnap.id, ...docSnap.data() });
               setCurrentUserProfileDoc(hydrated);
               setCachedUsersById(prev => ({ ...prev, [String(currentUser.id)]: hydrated }));
+            } else {
+              const resetProf = createDefaultProfile(currentUser);
+              setCurrentUserProfileDoc(resetProf);
+              setCachedUsersById(prev => ({ ...prev, [String(currentUser.id)]: resetProf }));
             }
           },
           (err) => {
@@ -2051,6 +2078,11 @@
         const unsubscribeStreets = firestore.collection('streets').onSnapshot(
           snapshot => {
             if (snapshot.empty) {
+              setStreets(prevStreets => {
+                const onlyZero = prevStreets.filter(s => s.reviewsCount === 0);
+                streetsRef.current = onlyZero;
+                return onlyZero;
+              });
               ensureDataMigration(firestore, handleMigratedCallback);
               return;
             }
@@ -2094,10 +2126,13 @@
           .onSnapshot(
             snapshot => {
               if (snapshot.empty) {
+                setLeaderboardUsers([]);
                 ensureDataMigration(firestore, handleMigratedCallback);
                 return;
               }
-              const topUsers = snapshot.docs.map(doc => hydrateUserProfileFromDoc({ id: doc.id, ...doc.data() }));
+              const topUsers = snapshot.docs
+                .map(doc => hydrateUserProfileFromDoc({ id: doc.id, ...doc.data() }))
+                .filter(u => (u.xp || 0) > 0 && (u.reviewsCount || 0) > 0);
               setLeaderboardUsers(topUsers);
               setCachedUsersById(prev => {
                 const next = { ...prev };
@@ -3501,6 +3536,355 @@
         })();
       };
 
+      // 5. ELIMINAZIONE RECENSIONE (AUTORE PROPRIETARIO O PROFILO ADMIN) CON RICALCOLO A CASCATA (reviews -> streets -> users)
+      const handleDeleteReview = (review) => {
+        if (!review) return false;
+
+        const firebaseAuthUser = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser) || null;
+        const activeUid = firebaseAuthUser ? firebaseAuthUser.uid : (currentUser ? currentUser.id : null);
+        const activeEmail = ((firebaseAuthUser && firebaseAuthUser.email) || (currentUser ? currentUser.email : '') || '').trim();
+        const userIsAdmin = isCurrentUserAdmin({ email: activeEmail }) || isAdmin;
+        const reviewAuthorId = String(review.authorId || review.userId || '').trim();
+        const isOwner = Boolean(
+          activeUid && (
+            reviewAuthorId === String(activeUid) ||
+            (currentUser && review.user && review.user === currentUser.name)
+          )
+        );
+
+        if (!isOwner && !userIsAdmin) {
+          alert("Non hai i permessi per eliminare questa recensione.");
+          return false;
+        }
+
+        const confirmed = window.confirm(
+          "Sei sicuro di voler eliminare definitivamente questa recensione? Verranno ricalcolate le medie della via e i punti XP."
+        );
+        if (!confirmed) return false;
+
+        const firestore = window.db;
+        if (!firestore) {
+          alert("Impossibile connettersi a Firestore ('street-review-database').");
+          return false;
+        }
+
+        const reviewDocId = String(review.id || '').trim();
+        const targetStreet = selectedStreet || (streetsRef.current || []).find(s =>
+          (review.streetKey && s.streetKey === review.streetKey) ||
+          isSameStreet(s, {
+            name: review.streetName,
+            city: review.streetCity,
+            province: review.streetProvince,
+            lat: review.latitude,
+            lng: review.longitude,
+          })
+        );
+
+        const canonicalAnchor = getCanonicalStreetAnchor(
+          targetStreet?.name || review.streetName || '',
+          targetStreet?.city || review.streetCity || '',
+          targetStreet?.latitude || review.latitude || GEOFENCE.center.lat,
+          targetStreet?.longitude || review.longitude || GEOFENCE.center.lng,
+          targetStreet?.province || review.streetProvince || ''
+        );
+        const finalLat = canonicalAnchor.lat || targetStreet?.latitude || review.latitude || GEOFENCE.center.lat;
+        const finalLng = canonicalAnchor.lng || targetStreet?.longitude || review.longitude || GEOFENCE.center.lng;
+        const finalCity = canonicalAnchor.city || resolveCanonicalCityName(targetStreet?.city || review.streetCity, finalLat, finalLng);
+        const finalProvince = canonicalAnchor.province || normalizeProvinceCode(targetStreet?.province || review.streetProvince || '');
+        const finalPostal = canonicalAnchor.postalCode || targetStreet?.postalCode || resolveDefaultPostalCode(normalizeCityKey(finalCity, finalLat, finalLng));
+        const canonicalStreetName = canonicalAnchor.canonicalName || targetStreet?.name || review.streetName || '';
+        const streetCompKey = review.streetKey || targetStreet?.streetKey || createStreetCompositeKey(canonicalStreetName, finalCity, finalLat, finalLng, finalProvince);
+        const previousPioneerAuthorId = targetStreet?.pioneerAuthorId ? String(targetStreet.pioneerAuthorId) : null;
+
+        // Se il modulo di modifica era aperto per questa recensione, chiudilo subito
+        if (isReviewOpen) {
+          setIsReviewOpen(false);
+          setEditingReview(null);
+        }
+
+        // Oggetto "Strada Vuota / Nuova" pronto per il Caso 2 (0 recensioni rimaste)
+        const emptyResetStreet = {
+          id: targetStreet?.id || ('street-' + streetCompKey.replace(/[^a-z0-9]/g, '-')),
+          streetKey: streetCompKey,
+          name: canonicalStreetName,
+          city: finalCity,
+          province: finalProvince,
+          postalCode: finalPostal,
+          latitude: finalLat,
+          longitude: finalLng,
+          placeId: targetStreet?.placeId || null,
+          avgOverallRating: 0,
+          reviewsCount: 0,
+          hasCyclePath: false,
+          commonParkingTypes: [],
+          amenities: [],
+          pioneerAuthorId: null,
+          pioneerReviewId: null,
+          pioneerAuthorName: '',
+          categoryAverages: {
+            roadSurface: 0, groundSignage: 0, verticalSignage: 0,
+            parkingQuantity: 0, sidewalkQuality: 0, lighting: 0,
+            cleanliness: 0, accessibility: 0, rainDrainage: 0,
+            greeneryShade: 0, quietness: 0, intersectionVisibility: 0,
+            laneWidth: 0,
+          },
+          reviews: [],
+          reviewsLoaded: true,
+        };
+
+        // Aggiornamento ottimistico immediato della scheda strada e dei PIN mappa
+        const optimisticStreets = [];
+        (streetsRef.current || []).forEach(s => {
+          const isTarget = (targetStreet && s.id === targetStreet.id) || s.streetKey === streetCompKey || isSameStreet(s, emptyResetStreet);
+          if (!isTarget) {
+            optimisticStreets.push(s);
+            return;
+          }
+
+          const remainingRevs = (s.reviews || []).filter(r => String(r.id) !== reviewDocId);
+          if (remainingRevs.length === 0) {
+            // Caso 2: 0 recensioni rimaste -> riporta il PIN e la scheda aperta allo stato neutro "Strada Vuota / Nuova"
+            optimisticStreets.push(emptyResetStreet);
+          } else {
+            // Caso 1: Rimangono altre recensioni -> ricalcola medie e tag
+            const updatedCat = {};
+            CATEGORY_KEYS.forEach(k => {
+              const sum = remainingRevs.reduce((acc, r) => acc + Number(r.ratings?.[k] || 0), 0);
+              updatedCat[k] = Number((sum / remainingRevs.length).toFixed(1));
+            });
+            const newAvg = Number((Object.values(updatedCat).reduce((a, b) => a + b, 0) / CATEGORY_KEYS.length).toFixed(1));
+            const mergedParking = Array.from(new Set(remainingRevs.flatMap(r => r.parkingTypes || [])));
+            const mergedCycle = remainingRevs.some(r => Boolean(r.hasCyclePath));
+            const mergedAmenities = Array.from(new Set(remainingRevs.flatMap(r => r.amenities || [])));
+
+            let oldestRev = remainingRevs[remainingRevs.length - 1] || null;
+            let minTime = oldestRev ? parseReviewTimestampMs(oldestRev) : Number.MAX_SAFE_INTEGER;
+            for (let i = remainingRevs.length - 1; i >= 0; i--) {
+              const cand = remainingRevs[i];
+              const t = parseReviewTimestampMs(cand);
+              if (t < minTime) {
+                minTime = t;
+                oldestRev = cand;
+              }
+            }
+            const nextPioneerId = oldestRev ? String(oldestRev.userId || oldestRev.authorId || '') : null;
+
+            optimisticStreets.push({
+              ...s,
+              streetKey: streetCompKey,
+              reviewsCount: remainingRevs.length,
+              avgOverallRating: newAvg,
+              categoryAverages: updatedCat,
+              commonParkingTypes: mergedParking,
+              hasCyclePath: mergedCycle,
+              amenities: mergedAmenities,
+              pioneerAuthorId: nextPioneerId,
+              pioneerReviewId: oldestRev?.id || null,
+              pioneerAuthorName: oldestRev?.user || oldestRev?.authorName || '',
+              reviews: remainingRevs,
+              reviewsLoaded: true,
+            });
+          }
+        });
+
+        streetsRef.current = optimisticStreets;
+        setStreets(optimisticStreets);
+        const updatedSel = optimisticStreets.find(s => s.streetKey === streetCompKey || isSameStreet(s, emptyResetStreet));
+        if (updatedSel && selectedStreet && (selectedStreet.streetKey === streetCompKey || isSameStreet(selectedStreet, emptyResetStreet))) {
+          setSelectedStreet(updatedSel);
+        }
+
+        // Esecuzione asincrona a cascata su Firestore (A: delete review -> B: update/delete street -> C: recalculate/delete user)
+        (async () => {
+          try {
+            // STEP A: Elimina il documento corrispondente dalla collezione 'reviews'
+            if (reviewDocId) {
+              await firestore.collection('reviews').doc(reviewDocId).delete();
+              console.log('[Delete Step A/C] Documento recensione eliminato da reviews/' + reviewDocId);
+            }
+            if (reviewAuthorId && streetCompKey) {
+              const compositeDocId = `${reviewAuthorId}_${streetCompKey}`;
+              if (compositeDocId !== reviewDocId) {
+                await firestore.collection('reviews').doc(compositeDocId).delete().catch(() => {});
+              }
+            }
+
+            // STEP B: Interroga le recensioni superstiti per quella streetKey nella collezione 'reviews'
+            const streetRevsMap = new Map();
+            const byKeySnap = await firestore.collection('reviews')
+              .where('streetKey', '==', streetCompKey)
+              .get();
+            byKeySnap.docs.forEach(d => {
+              if (d.id !== reviewDocId) {
+                streetRevsMap.set(d.id, { id: d.id, ...d.data() });
+              }
+            });
+
+            if (canonicalStreetName) {
+              const byNameSnap = await firestore.collection('reviews')
+                .where('streetName', '==', canonicalStreetName)
+                .get();
+              byNameSnap.docs.forEach(d => {
+                if (d.id !== reviewDocId && !streetRevsMap.has(d.id)) {
+                  const rData = d.data();
+                  if (isSameStreet(
+                    { name: canonicalStreetName, city: finalCity, province: finalProvince, lat: finalLat, lng: finalLng },
+                    { name: rData.streetName, city: rData.streetCity, province: rData.streetProvince || rData.province, lat: rData.latitude, lng: rData.longitude }
+                  )) {
+                    streetRevsMap.set(d.id, { id: d.id, ...rData });
+                  }
+                }
+              });
+            }
+
+            const remainingStreetReviews = Array.from(streetRevsMap.values());
+            let newStreetPioneerAuthorId = null;
+
+            if (remainingStreetReviews.length >= 1) {
+              // CASO 1: Rimangono altre recensioni (>= 1) -> Ricalcola da zero ratingOverall, reviewCount, 13 categorie, tag e pioneerAuthorId
+              const streetSummaryDoc = buildStreetSummaryDocFromReviews(remainingStreetReviews, {
+                streetKey: streetCompKey,
+                streetName: canonicalStreetName,
+                streetCity: finalCity,
+                province: finalProvince,
+                postalCode: finalPostal,
+                latitude: finalLat,
+                longitude: finalLng,
+              });
+              newStreetPioneerAuthorId = streetSummaryDoc.pioneerAuthorId ? String(streetSummaryDoc.pioneerAuthorId) : null;
+
+              await firestore.collection('streets').doc(streetCompKey).set(streetSummaryDoc);
+              console.log('[Delete Step B/C - Caso 1] Documento streets/' + streetCompKey + ' ricalcolato con ' + remainingStreetReviews.length + ' recensioni superstiti:', streetSummaryDoc);
+
+              const formattedRemaining = remainingStreetReviews.map(r => formatCloudReviewToUI(r, streetSummaryDoc));
+              const syncedStreetUI = mapStreetDocToUIStreet(streetSummaryDoc, {
+                id: targetStreet?.id || emptyResetStreet.id,
+                reviews: formattedRemaining,
+                reviewsLoaded: true,
+              });
+
+              setStreets(prev => {
+                const next = prev.map(s =>
+                  (s.streetKey === streetCompKey || isSameStreet(s, syncedStreetUI)) ? syncedStreetUI : s
+                );
+                streetsRef.current = next;
+                return next;
+              });
+              setSelectedStreet(prevSel => {
+                if (!prevSel) return prevSel;
+                if (prevSel.streetKey === streetCompKey || isSameStreet(prevSel, syncedStreetUI)) {
+                  return syncedStreetUI;
+                }
+                return prevSel;
+              });
+            } else {
+              // CASO 2: Era l'UNICA recensione della strada (0 recensioni rimaste) -> Elimina completamente streets/{streetKey}
+              await firestore.collection('streets').doc(streetCompKey).delete();
+              console.log('[Delete Step B/C - Caso 2] Zero recensioni rimaste: documento streets/' + streetCompKey + ' eliminato da Firestore.');
+
+              setStreets(prev => {
+                // Se la scheda di questa strada è attualmente aperta, mantieni il segnaposto '— Nuova' (0 recensioni)
+                const isSheetOpenForThisStreet = selectedStreet && sheetSnap !== 'hidden' && (
+                  selectedStreet.streetKey === streetCompKey || isSameStreet(selectedStreet, emptyResetStreet)
+                );
+                const filtered = prev.filter(s => s.streetKey !== streetCompKey && !isSameStreet(s, emptyResetStreet));
+                const next = isSheetOpenForThisStreet ? [emptyResetStreet, ...filtered] : filtered;
+                streetsRef.current = next;
+                return next;
+              });
+              setSelectedStreet(prevSel => {
+                if (!prevSel) return prevSel;
+                if (prevSel.streetKey === streetCompKey || isSameStreet(prevSel, emptyResetStreet)) {
+                  return emptyResetStreet;
+                }
+                return prevSel;
+              });
+            }
+
+            // STEP C: Ricalcolo Statistiche, XP, Livelli e Badge dell'Autore della recensione eliminata ('users/{authorId}')
+            const recalculateAuthorProfileOnFirestore = async (targetUid, fallbackName = '', fallbackAvatar = '') => {
+              if (!targetUid || targetUid.startsWith('name:')) return;
+              const authorRevsSnap = await firestore.collection('reviews')
+                .where('authorId', '==', targetUid)
+                .get();
+              const remainingAuthorReviews = authorRevsSnap.docs
+                .filter(d => d.id !== reviewDocId)
+                .map(d => ({ id: d.id, ...d.data() }));
+
+              if (remainingAuthorReviews.length > 0) {
+                // L'autore ha ancora altre recensioni: ricalcola XP, livello, conteggi e badge e aggiorna users/{authorId}
+                let existingUserSnap = null;
+                try {
+                  existingUserSnap = await firestore.collection('users').doc(targetUid).get();
+                } catch (e) {}
+                const existingUserData = existingUserSnap && existingUserSnap.exists ? existingUserSnap.data() : {};
+                const preservedMilestones = Array.isArray(existingUserData.awardedMilestones) ? existingUserData.awardedMilestones : [];
+
+                const { userDoc, fullProfile } = buildUserSummaryDocFromReviews(
+                  targetUid,
+                  remainingAuthorReviews,
+                  streetsRef.current,
+                  preservedMilestones,
+                  {
+                    authorName: existingUserData.authorName || existingUserData.name || fallbackName || 'Cittadino Esploratore',
+                    authorAvatar: existingUserData.authorAvatar || existingUserData.avatarUrl || fallbackAvatar || '',
+                    email: existingUserData.email || '',
+                  }
+                );
+
+                await firestore.collection('users').doc(targetUid).set(userDoc);
+                console.log('[Delete Step C/C] Profilo autore users/' + targetUid + ' ricalcolato:', userDoc);
+
+                setCachedUsersById(prev => ({ ...prev, [String(targetUid)]: fullProfile }));
+                if (currentUser && String(currentUser.id) === String(targetUid)) {
+                  setCurrentUserProfileDoc(fullProfile);
+                }
+              } else {
+                // L'autore è rimasto con 0 recensioni totali: elimina il documento users/{authorId} per rimuoverlo dalla classifica
+                await firestore.collection('users').doc(targetUid).delete();
+                console.log('[Delete Step C/C] Autore rimasto con 0 recensioni: documento users/' + targetUid + ' eliminato dalla classifica.');
+
+                const zeroProfile = createDefaultProfile({
+                  id: targetUid,
+                  name: fallbackName || 'Cittadino Esploratore',
+                  avatarUrl: fallbackAvatar || '',
+                });
+                setLeaderboardUsers(prev => prev.filter(u => String(u.authorId) !== String(targetUid)));
+                setCachedUsersById(prev => ({ ...prev, [String(targetUid)]: zeroProfile }));
+                if (currentUser && String(currentUser.id) === String(targetUid)) {
+                  setCurrentUserProfileDoc(zeroProfile);
+                }
+              }
+            };
+
+            if (reviewAuthorId) {
+              await recalculateAuthorProfileOnFirestore(
+                reviewAuthorId,
+                review.authorName || review.user || '',
+                review.authorAvatar || review.avatarUrl || ''
+              );
+            }
+
+            // Se l'eliminazione del Pioniere ha promosso un altro utente a nuovo Pioniere della via, ricalcola anche il suo profilo
+            if (
+              newStreetPioneerAuthorId &&
+              newStreetPioneerAuthorId !== previousPioneerAuthorId &&
+              newStreetPioneerAuthorId !== reviewAuthorId
+            ) {
+              await recalculateAuthorProfileOnFirestore(newStreetPioneerAuthorId);
+            }
+
+            // Notifica Toast di conferma
+            triggerDeleteToast('🗑️ Recensione eliminata e statistiche ricalcolate.');
+          } catch (err) {
+            console.error('Errore durante l\'eliminazione a cascata della recensione:', err);
+            alert('Errore durante l\'eliminazione della recensione su Firestore: ' + (err.message || err));
+          }
+        })();
+
+        return true;
+      };
+
       const isSelectedStreetNew = selectedStreet && selectedStreet.reviewsCount === 0;
 
       return (
@@ -3638,7 +4022,7 @@
                   <span>Liv. {gamification.currentUserProfile.levelInfo.level} • {gamification.currentUserProfile.xp} XP</span>
                 </button>
 
-                {/* Avatar utente con cornice colorata in base al grado */}
+                {/* Avatar utente con cornice colorata in base al grado + eventuale Badge ADMIN */}
                 <button
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                   className="flex items-center gap-1.5 pl-1 py-0.5 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
@@ -3653,6 +4037,14 @@
                   <span className="text-xs font-bold text-slate-800 hidden xl:inline max-w-[95px] truncate">
                     {currentUser.name}
                   </span>
+                  {isAdmin && (
+                    <span
+                      title="Profilo Amministratore Street Review attivo"
+                      className="px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black tracking-wide shadow-2xs border border-rose-400 whitespace-nowrap"
+                    >
+                      🛡️ ADMIN
+                    </span>
+                  )}
                   <span className="text-[10px] text-slate-400">▼</span>
                 </button>
 
@@ -3661,8 +4053,15 @@
                   <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 animate-fade-in z-50">
                     <div className="px-3 py-2.5 border-b border-slate-100 bg-slate-50 rounded-xl mb-1.5 space-y-1">
                       <div className="flex items-center justify-between gap-1">
-                        <p className="text-xs font-bold text-slate-900 truncate">{currentUser.name}</p>
-                        <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-md border ${gamification.currentUserProfile.levelInfo.badgeClass}`}>
+                        <div className="flex items-center gap-1 min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate">{currentUser.name}</p>
+                          {isAdmin && (
+                            <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9px] font-black shrink-0">
+                              🛡️ ADMIN
+                            </span>
+                          )}
+                        </div>
+                        <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-md border shrink-0 ${gamification.currentUserProfile.levelInfo.badgeClass}`}>
                           Liv. {gamification.currentUserProfile.levelInfo.level}
                         </span>
                       </div>
@@ -3730,9 +4129,28 @@
           </div>
         </div>
 
-          {/* NOTIFICHE TOAST CELEBRATIVE (XP GUADAGNATI, LIVELLI, BADGE & EMAIL DI CONGRATULAZIONI TRAGUARDI) */}
-          {(rewardToast || milestoneEmailToast) && (
+          {/* NOTIFICHE TOAST CELEBRATIVE (XP GUADAGNATI, LIVELLI, BADGE, EMAIL TRAGUARDI & ELIMINAZIONE RECENSIONE) */}
+          {(rewardToast || milestoneEmailToast || deleteToast) && (
             <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[90] w-[calc(100vw-32px)] max-w-md pointer-events-auto space-y-2">
+              {deleteToast && (
+                <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-rose-400/60 flex items-center justify-between gap-3 animate-slide-up">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-400/40 flex items-center justify-center text-lg shrink-0">
+                      🗑️
+                    </div>
+                    <p className="text-xs sm:text-sm font-extrabold text-white leading-snug">
+                      {deleteToast}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setDeleteToast(null)}
+                    className="p-1 text-slate-400 hover:text-white shrink-0 cursor-pointer"
+                  >
+                    <IconClose size={16} />
+                  </button>
+                </div>
+              )}
+
               {rewardToast && (
                 <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-amber-400/50 flex items-center justify-between gap-3 animate-slide-up">
                   <div className="flex items-center gap-3 min-w-0">
@@ -4128,22 +4546,33 @@
                       </div>
                     </div>
 
-                    {/* CTA: Se l'utente ha già recensito, mostra 'Modifica la tua recensione' */}
+                    {/* CTA: Se l'utente ha già recensito, mostra 'Modifica la tua recensione' + '🗑️ Elimina' */}
                     {(() => {
                       const userExistingReview = currentUser && selectedStreet?.reviews
                         ? selectedStreet.reviews.find(r => r.userId === currentUser.id || r.user === currentUser.name)
                         : null;
 
                       return userExistingReview ? (
-                        <button
-                          onClick={() => {
-                            setEditingReview(userExistingReview);
-                            setIsReviewOpen(true);
-                          }}
-                          className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold rounded-2xl shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 text-sm cursor-pointer transition-all"
-                        >
-                          ✏️ Modifica la tua recensione
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setEditingReview(userExistingReview);
+                              setIsReviewOpen(true);
+                            }}
+                            className="flex-1 py-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold rounded-2xl shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 text-sm cursor-pointer transition-all"
+                          >
+                            ✏️ Modifica la tua recensione
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteReview(userExistingReview)}
+                            className="px-4 py-3.5 bg-rose-50 hover:bg-rose-100 active:scale-[0.99] text-rose-700 border border-rose-200 font-bold rounded-2xl flex items-center justify-center gap-1.5 text-sm cursor-pointer transition-all shrink-0"
+                            title="Elimina la tua recensione"
+                          >
+                            <span>🗑️</span>
+                            <span>Elimina</span>
+                          </button>
+                        </div>
                       ) : (
                         <button
                           onClick={() => {
@@ -4287,6 +4716,26 @@
                                       <span>✏️</span> Modifica
                                     </button>
                                   )}
+                                  {isMyReview && !isAdmin && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteReview(r)}
+                                      className="p-1 px-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                      title="Elimina la tua recensione"
+                                    >
+                                      <span>🗑️</span> Elimina
+                                    </button>
+                                  )}
+                                  {isAdmin && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteReview(r)}
+                                      className="p-1 px-2 bg-rose-600 hover:bg-rose-700 text-white border border-rose-700 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                                      title="Elimina recensione come Amministratore e ricalcola medie e XP"
+                                    >
+                                      <span>🗑️</span> Elimina (Admin)
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={() => setReportingReview({
@@ -4341,6 +4790,7 @@
                 setEditingReview(null);
               }}
               onSubmit={(data) => handleAddReview(data)}
+              onDelete={editingReview ? () => handleDeleteReview(editingReview) : null}
               onOpenPrivacy={() => setIsPrivacyOpen(true)}
             />
           )}
@@ -4764,7 +5214,7 @@
     }
 
     // --- SOTTORAPPRESENTAZIONE MODALE RECENSIONE INTERATTIVA ---
-    function ReviewModal({ streetName, currentUser, initialData, defaultStreetSegment = '', isPioneerCandidate, onClose, onSubmit, onOpenPrivacy }) {
+    function ReviewModal({ streetName, currentUser, initialData, defaultStreetSegment = '', isPioneerCandidate, onClose, onSubmit, onDelete, onOpenPrivacy }) {
       const isEditing = Boolean(initialData);
       const defaultRatings = {
         roadSurface: 4, groundSignage: 4, verticalSignage: 4,
@@ -5081,16 +5531,29 @@
               </div>
 
               <div className="space-y-2">
-                <button
-                  type="submit"
-                  className={`w-full py-3.5 text-white font-bold rounded-2xl shadow-lg active:scale-[0.99] text-sm cursor-pointer transition-all ${
-                    isEditing
-                      ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/25'
-                      : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25'
-                  }`}
-                >
-                  {isEditing ? `💾 Aggiorna recensione (+${liveXP.totalXP} XP)` : `Pubblica Recensione (+${liveXP.totalXP} XP)`}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    className={`flex-1 py-3.5 text-white font-bold rounded-2xl shadow-lg active:scale-[0.99] text-sm cursor-pointer transition-all ${
+                      isEditing
+                        ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/25'
+                        : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25'
+                    }`}
+                  >
+                    {isEditing ? `💾 Aggiorna recensione (+${liveXP.totalXP} XP)` : `Pubblica Recensione (+${liveXP.totalXP} XP)`}
+                  </button>
+                  {isEditing && onDelete && (
+                    <button
+                      type="button"
+                      onClick={onDelete}
+                      className="px-4 py-3.5 bg-rose-50 hover:bg-rose-100 active:scale-[0.99] text-rose-700 border border-rose-200 font-bold rounded-2xl flex items-center justify-center gap-1.5 text-sm cursor-pointer transition-all shrink-0"
+                      title="Elimina definitivamente questa recensione"
+                    >
+                      <span>🗑️</span>
+                      <span>Elimina</span>
+                    </button>
+                  )}
+                </div>
                 <p className="text-[10px] text-center text-slate-400 leading-relaxed">
                   Continuando accetti i{' '}
                   <button
