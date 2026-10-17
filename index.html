@@ -482,12 +482,13 @@
       return { lat: fallbackLat, lng: fallbackLng, city: resolvedCity, province: resolvedProvince, postalCode: defaultPostal, canonicalName: streetName };
     };
 
-    // Helper per estrarre comune, provincia (sigla), cap e via da address_components di Google Places o Geocoder con City Aliasing e fallback geografico
+    // Helper per estrarre comune, provincia (sigla), cap, via e numero civico (street_number) da address_components di Google Places o Geocoder
     const extractAddressDetails = (addressComponents, formattedAddress = '', lat = null, lng = null) => {
       let rawCity = '';
       let rawProvince = '';
       let postalCode = '';
       let route = '';
+      let streetNumber = '';
       if (Array.isArray(addressComponents)) {
         const admin3Comp = addressComponents.find(c => c.types && c.types.includes('administrative_area_level_3'));
         const localityComp = addressComponents.find(c => c.types && c.types.includes('locality'));
@@ -495,12 +496,14 @@
         const admin2Comp = addressComponents.find(c => c.types && c.types.includes('administrative_area_level_2'));
         const postalComp = addressComponents.find(c => c.types && c.types.includes('postal_code'));
         const routeComp = addressComponents.find(c => c.types && c.types.includes('route'));
+        const streetNumComp = addressComponents.find(c => c.types && c.types.includes('street_number'));
 
         // Preferisci administrative_area_level_3 (Comune ufficiale in Italia) o locality, normalizzando eventuali frazioni
         rawCity = (admin3Comp && admin3Comp.long_name) || (localityComp && localityComp.long_name) || (sublocalityComp && sublocalityComp.long_name) || '';
         rawProvince = (admin2Comp && (admin2Comp.short_name || admin2Comp.long_name)) || '';
         postalCode = (postalComp && postalComp.long_name) || '';
         route = (routeComp && routeComp.long_name) || '';
+        streetNumber = (streetNumComp && streetNumComp.long_name) ? String(streetNumComp.long_name).trim() : '';
       }
 
       if (!rawCity && postalCode) {
@@ -524,7 +527,7 @@
       if (!postalCode) {
         postalCode = resolveDefaultPostalCode(cityKey);
       }
-      return { city, province, postalCode, route };
+      return { city, province, postalCode, route, streetNumber };
     };
 
     // Funzione rapida per aggiornare le coordinate di qualsiasi recensione/strada su Firestore
@@ -1148,6 +1151,7 @@
         id: r.id,
         streetKey,
         streetName,
+        streetSegment: (r.streetSegment || '').trim(),
         userId: r.authorId || r.userId,
         user: r.authorName || r.user || 'Cittadino Esploratore',
         avatarUrl: r.authorAvatar || r.avatarUrl || '',
@@ -1735,12 +1739,15 @@
       const [cachedUsersById, setCachedUsersById] = useState({});
       const [isLoadingComments, setIsLoadingComments] = useState(false);
       const [selectedStreet, setSelectedStreet] = useState(null);
+      const [prefilledStreetSegment, setPrefilledStreetSegment] = useState('');
       const [sheetSnap, setSheetSnap] = useState('hidden');
       const [isReviewOpen, setIsReviewOpen] = useState(false);
       const [isLocatingGps, setIsLocatingGps] = useState(false);
       const [searchQuery, setSearchQuery] = useState('');
       const [isSearchFocused, setIsSearchFocused] = useState(false);
       const [mapEngine, setMapEngine] = useState('loading'); // 'google' | 'leaflet'
+      const [mapZoom, setMapZoom] = useState(GEOFENCE.defaultZoom);
+      const [mapBounds, setMapBounds] = useState(null);
 
       // Stato Autenticazione (Modalità Ospite di default o ripristino sessione)
       const [currentUser, setCurrentUser] = useState(() => {
@@ -1920,6 +1927,78 @@
           leafletMapRef.current.setView([GEOFENCE.center.lat, GEOFENCE.center.lng], GEOFENCE.defaultZoom, { animate: true });
         }
       };
+
+      // Navigazione rapida verso una delle "Città Attive" (Anti-Cold Start)
+      const handleFlyToCity = (cityItem) => {
+        if (!cityItem) return;
+        setSheetSnap('hidden');
+        const targetZoom = 15;
+        if (googleMapRef.current) {
+          googleMapRef.current.panTo({ lat: cityItem.lat, lng: cityItem.lng });
+          googleMapRef.current.setZoom(targetZoom);
+        } else if (leafletMapRef.current) {
+          leafletMapRef.current.setView([cityItem.lat, cityItem.lng], targetZoom, { animate: true });
+        }
+      };
+
+      // Selettore Rapido "Città Attive" (Anti-Cold Start): le prime 4 città italiane con più vie recensite (partendo sempre da San Benedetto del Tronto)
+      const activeCities = useMemo(() => {
+        const cityMap = new Map();
+        // Pre-inizializza sempre San Benedetto del Tronto come Hub primario
+        cityMap.set('san-benedetto-del-tronto', {
+          cityKey: 'san-benedetto-del-tronto',
+          name: 'San Benedetto del Tronto',
+          shortName: 'San Benedetto',
+          isHub: true,
+          streetsCount: 0,
+          totalReviews: 0,
+          latSum: 0,
+          lngSum: 0,
+          lat: GEOFENCE.center.lat,
+          lng: GEOFENCE.center.lng,
+        });
+
+        (streets || []).forEach(s => {
+          if ((s.reviewsCount || 0) <= 0) return;
+          const cKey = normalizeCityKey(s.city, s.latitude, s.longitude);
+          if (!cKey || cKey === 'italia') return;
+          const canonicalCity = resolveCanonicalCityName(s.city, s.latitude, s.longitude) || s.city || 'Città';
+          const shortName = cKey === 'san-benedetto-del-tronto'
+            ? 'San Benedetto'
+            : canonicalCity;
+
+          if (!cityMap.has(cKey)) {
+            cityMap.set(cKey, {
+              cityKey: cKey,
+              name: canonicalCity,
+              shortName,
+              isHub: cKey === 'san-benedetto-del-tronto',
+              streetsCount: 0,
+              totalReviews: 0,
+              latSum: 0,
+              lngSum: 0,
+              lat: Number(s.latitude) || GEOFENCE.center.lat,
+              lng: Number(s.longitude) || GEOFENCE.center.lng,
+            });
+          }
+          const entry = cityMap.get(cKey);
+          entry.streetsCount += 1;
+          entry.totalReviews += Number(s.reviewsCount || 1);
+          if (s.latitude && s.longitude) {
+            entry.latSum += Number(s.latitude);
+            entry.lngSum += Number(s.longitude);
+            entry.lat = Number((entry.latSum / entry.streetsCount).toFixed(5));
+            entry.lng = Number((entry.lngSum / entry.streetsCount).toFixed(5));
+          }
+        });
+
+        const hubEntry = cityMap.get('san-benedetto-del-tronto');
+        const otherCities = Array.from(cityMap.values())
+          .filter(c => c.cityKey !== 'san-benedetto-del-tronto' && c.streetsCount > 0)
+          .sort((a, b) => (b.streetsCount - a.streetsCount) || (b.totalReviews - a.totalReviews));
+
+        return [hubEntry, ...otherCities].slice(0, 4);
+      }, [streets]);
 
       // Chiudi tendina e menù profilo quando l'utente tocca altrove sullo schermo o sulla mappa
       useEffect(() => {
@@ -2178,10 +2257,26 @@
         }
       }, [streets]);
 
+      // Helper per estrarre un eventuale numero civico digitato nella ricerca (es. "Viale De Gasperi 120" -> streetNumber: "120")
+      const extractCivicNumberFromQuery = (rawText) => {
+        if (!rawText) return { cleanQuery: '', streetNumber: '' };
+        const trimmed = String(rawText).trim();
+        const match = trimmed.match(/^(.*?)[,\s]+(?:n\.?\s*|civ\.?\s*|civico\s*)?(\d{1,4}[a-zA-Z]?(?:\/\d{1,3}[a-zA-Z]?)?)\s*$/i);
+        if (match && match[1] && match[1].trim().length >= 3) {
+          return {
+            cleanQuery: match[1].trim(),
+            streetNumber: match[2].trim(),
+          };
+        }
+        return { cleanQuery: trimmed, streetNumber: '' };
+      };
+
       // Suggerimenti calcolati dinamicamente SOLO quando l'utente digita >= 2 caratteri
       const filteredSuggestions = useMemo(() => {
-        const q = searchQuery.trim().toLowerCase();
-        if (q.length < 2) return [];
+        const rawTrimmed = searchQuery.trim();
+        if (rawTrimmed.length < 2) return [];
+        const { cleanQuery, streetNumber } = extractCivicNumberFromQuery(rawTrimmed);
+        const q = (cleanQuery || rawTrimmed).toLowerCase();
 
         const results = [];
 
@@ -2198,6 +2293,7 @@
               lng: existing ? existing.longitude : item.lng,
               rating: existing && existing.reviewsCount > 0 ? existing.avgOverallRating : null,
               reviewsCount: existing ? existing.reviewsCount : 0,
+              streetNumber: streetNumber || '',
             });
           }
         });
@@ -2216,6 +2312,7 @@
                 lng: s.longitude,
                 rating: s.reviewsCount > 0 ? s.avgOverallRating : null,
                 reviewsCount: s.reviewsCount || 0,
+                streetNumber: streetNumber || '',
               });
             }
           }
@@ -2254,11 +2351,31 @@
               googleMapRef.current = gmap;
               setMapEngine('google');
 
-              // Collegamento Places Autocomplete API su scala nazionale italiana
+              // Listener zoom_changed e idle per Marker Clustering dinamico e Viewport Rendering
+              const syncGoogleViewport = () => {
+                if (!isMounted || !gmap) return;
+                const z = gmap.getZoom();
+                if (typeof z === 'number') setMapZoom(z);
+                const b = gmap.getBounds();
+                if (b) {
+                  const ne = b.getNorthEast();
+                  const sw = b.getSouthWest();
+                  setMapBounds({
+                    north: ne.lat(),
+                    south: sw.lat(),
+                    east: ne.lng(),
+                    west: sw.lng(),
+                  });
+                }
+              };
+              gmap.addListener('zoom_changed', syncGoogleViewport);
+              gmap.addListener('idle', syncGoogleViewport);
+
+              // Collegamento Places Autocomplete API su scala nazionale italiana (supporta sia vie che indirizzi con civico)
               if (searchInputRef.current && window.google.maps.places) {
                 const autocomplete = new window.google.maps.places.Autocomplete(searchInputRef.current, {
                   componentRestrictions: { country: 'it' },
-                  types: ['route'],
+                  types: ['address'],
                   fields: ['geometry', 'name', 'formatted_address', 'address_components', 'place_id'],
                 });
 
@@ -2267,9 +2384,13 @@
                   if (place.geometry && place.geometry.location) {
                     const lat = place.geometry.location.lat();
                     const lng = place.geometry.location.lng();
-                    // Estrai via, comune normalizzato, provincia e cap da address_components + contesto geografico
+                    // Estrai via, civico, comune normalizzato, provincia e cap da address_components + contesto geografico
                     const addrDetails = extractAddressDetails(place.address_components, place.formatted_address || '', lat, lng);
-                    const resolvedName = addrDetails.route || place.name || (place.formatted_address ? place.formatted_address.split(',')[0] : 'Via Sconosciuta');
+                    const queryCivic = extractCivicNumberFromQuery(searchInputRef.current?.value || place.name || '');
+                    const detectedStreetNumber = addrDetails.streetNumber || queryCivic.streetNumber || '';
+                    const rawFallbackName = place.name || (place.formatted_address ? place.formatted_address.split(',')[0] : 'Via Sconosciuta');
+                    const cleanedFallbackName = extractCivicNumberFromQuery(rawFallbackName).cleanQuery || rawFallbackName;
+                    const resolvedName = addrDetails.route || cleanedFallbackName;
                     const resolvedCity = addrDetails.city;
                     const resolvedProvince = addrDetails.province;
 
@@ -2286,7 +2407,10 @@
                       // La via esiste già nel database: NON creare un badge 'Nuova', centra la mappa sul marker esistente e apri la sua scheda
                       setSearchQuery(existingStreet.name);
                       if (handleSelectStreetRef.current) {
-                        handleSelectStreetRef.current(existingStreet);
+                        handleSelectStreetRef.current({
+                          ...existingStreet,
+                          streetNumber: detectedStreetNumber,
+                        });
                       }
                       return;
                     }
@@ -2301,6 +2425,7 @@
                       lat: anchor.lat,
                       lng: anchor.lng,
                       placeId: place.place_id || null,
+                      streetNumber: detectedStreetNumber,
                     };
                     setSearchQuery(newStreetTarget.name);
                     if (handleSelectStreetRef.current) {
@@ -2338,6 +2463,7 @@
                     if (!streetName) {
                       streetName = bestResult.formatted_address.split(',')[0];
                     }
+                    streetName = extractCivicNumberFromQuery(streetName).cleanQuery || streetName;
                     const streetCity = addrDetails.city;
                     const streetProvince = addrDetails.province;
 
@@ -2353,7 +2479,10 @@
                     if (existingStreet && existingStreet.reviewsCount > 0) {
                       setSearchQuery(existingStreet.name);
                       if (handleSelectStreetRef.current) {
-                        handleSelectStreetRef.current(existingStreet);
+                        handleSelectStreetRef.current({
+                          ...existingStreet,
+                          streetNumber: addrDetails.streetNumber || '',
+                        });
                       }
                       return;
                     }
@@ -2375,6 +2504,7 @@
                       lat: anchor.lat,
                       lng: anchor.lng,
                       placeId: bestResult.place_id || null,
+                      streetNumber: addrDetails.streetNumber || '',
                     };
                     setSearchQuery(clickTarget.name);
                     if (handleSelectStreetRef.current) {
@@ -2415,6 +2545,24 @@
           leafletMapRef.current = lmap;
           setMapEngine('leaflet');
 
+          // Listener zoomend e moveend per Marker Clustering dinamico e Viewport Rendering su Leaflet
+          const syncLeafletViewport = () => {
+            if (!isMounted || !lmap) return;
+            setMapZoom(lmap.getZoom());
+            const b = lmap.getBounds();
+            if (b) {
+              setMapBounds({
+                north: b.getNorth(),
+                south: b.getSouth(),
+                east: b.getEast(),
+                west: b.getWest(),
+              });
+            }
+          };
+          lmap.on('zoomend', syncLeafletViewport);
+          lmap.on('moveend', syncLeafletViewport);
+          syncLeafletViewport();
+
           // Click listener per Leaflet (fallback con reverse geocoding OSM Nominatim in tutta Italia)
           lmap.on('click', (e) => {
             const { lat, lng } = e.latlng;
@@ -2427,6 +2575,7 @@
                 const streetCity = addr.city || addr.town || addr.village || addr.municipality || 'Italia';
                 const rawIsoProv = (addr['ISO3166-2-lvl6'] || '').replace('IT-', '');
                 const streetProvince = normalizeProvinceCode(rawIsoProv, normalizeCityKey(streetCity, lat, lng), lat, lng);
+                const detectedCivic = addr.house_number ? String(addr.house_number).trim() : '';
                 const existingStreet = findExistingStreetInList(streetsRef.current, {
                   name: streetName,
                   city: streetCity,
@@ -2437,7 +2586,10 @@
                 if (existingStreet && existingStreet.reviewsCount > 0) {
                   setSearchQuery(existingStreet.name);
                   if (handleSelectStreetRef.current) {
-                    handleSelectStreetRef.current(existingStreet);
+                    handleSelectStreetRef.current({
+                      ...existingStreet,
+                      streetNumber: detectedCivic,
+                    });
                   }
                   return;
                 }
@@ -2449,6 +2601,7 @@
                   postalCode: anchor.postalCode || addr.postcode || '',
                   lat: anchor.lat,
                   lng: anchor.lng,
+                  streetNumber: detectedCivic,
                 };
                 setSearchQuery(lTarget.name);
                 if (handleSelectStreetRef.current) {
@@ -2496,88 +2649,229 @@
         });
       }, [streets, filterFreeParking, filterDisabledParking, filterPinkParking, filterParkingDisc, filterLoadingZone, filterCyclePath, filterRoadOver3, filterTopRated]);
 
-      // RENDER DEI MARKER DINAMICI (Stato Neutro "Nuova" o Rating Colorato)
+      // OTTIMIZZAZIONE VIEWPORT RENDERING (Zoom >= 14): renderizza nel DOM solo i marker nell'area visibile (+ margine di buffer)
+      const viewportStreets = useMemo(() => {
+        if (mapZoom < 14) return [];
+        if (!mapBounds) return visibleStreets;
+
+        const latBuffer = Math.max(0.008, (mapBounds.north - mapBounds.south) * 0.25);
+        const lngBuffer = Math.max(0.008, (mapBounds.east - mapBounds.west) * 0.25);
+        const minLat = mapBounds.south - latBuffer;
+        const maxLat = mapBounds.north + latBuffer;
+        const minLng = mapBounds.west - lngBuffer;
+        const maxLng = mapBounds.east + lngBuffer;
+
+        return visibleStreets.filter(s => {
+          if (selectedStreet && (s.id === selectedStreet.id || isSameStreet(s, selectedStreet))) {
+            return true;
+          }
+          const lat = Number(s.latitude);
+          const lng = Number(s.longitude);
+          if (!lat || !lng) return false;
+          return lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng;
+        });
+      }, [visibleStreets, mapZoom, mapBounds, selectedStreet]);
+
+      // MARKER CLUSTERING DINAMICO (Zoom < 14): raggruppa le strade per Comune / zona geografica
+      const cityClusters = useMemo(() => {
+        if (mapZoom >= 14) return [];
+        const groups = new Map();
+
+        visibleStreets.forEach(s => {
+          const lat = Number(s.latitude);
+          const lng = Number(s.longitude);
+          if (!lat || !lng) return;
+
+          const cityKey = normalizeCityKey(s.city, lat, lng) || `grid_${lat.toFixed(1)}_${lng.toFixed(1)}`;
+          const canonicalCity = resolveCanonicalCityName(s.city, lat, lng) || s.city || 'Zona';
+          const shortCity = cityKey === 'san-benedetto-del-tronto'
+            ? 'San Benedetto'
+            : canonicalCity;
+
+          if (!groups.has(cityKey)) {
+            groups.set(cityKey, {
+              id: `cluster-${cityKey}`,
+              cityKey,
+              cityName: canonicalCity,
+              shortCity,
+              province: s.province || '',
+              streetsCount: 0,
+              reviewedStreetsCount: 0,
+              ratingSum: 0,
+              latSum: 0,
+              lngSum: 0,
+              latitude: lat,
+              longitude: lng,
+            });
+          }
+
+          const g = groups.get(cityKey);
+          g.streetsCount += 1;
+          g.latSum += lat;
+          g.lngSum += lng;
+          g.latitude = Number((g.latSum / g.streetsCount).toFixed(5));
+          g.longitude = Number((g.lngSum / g.streetsCount).toFixed(5));
+
+          if ((s.reviewsCount || 0) > 0 && (s.avgOverallRating || 0) > 0) {
+            g.reviewedStreetsCount += 1;
+            g.ratingSum += Number(s.avgOverallRating);
+          }
+        });
+
+        return Array.from(groups.values()).map(g => ({
+          ...g,
+          avgOverallRating: g.reviewedStreetsCount > 0
+            ? Number((g.ratingSum / g.reviewedStreetsCount).toFixed(1))
+            : 0,
+        }));
+      }, [visibleStreets, mapZoom]);
+
+      // RENDER DEI MARKER DINAMICI (Cluster Cittadini a Zoom < 14 oppure Singoli PIN in Viewport a Zoom >= 14)
       useEffect(() => {
+        const isClusterMode = mapZoom < 14;
+
         // 1. Render su Google Maps Platform
         if (mapEngine === 'google' && googleMapRef.current && window.google) {
           googleOverlaysRef.current.forEach(ov => ov.setMap(null));
           googleOverlaysRef.current = [];
 
-          visibleStreets.forEach(street => {
-            const isNew = street.reviewsCount === 0;
-            const isSelected = selectedStreet ? (selectedStreet.id === street.id || isSameStreet(selectedStreet, street)) : false;
+          if (isClusterMode) {
+            // MODALITÀ CLUSTER (Zoom < 14)
+            cityClusters.forEach(cluster => {
+              const Overlay = new window.google.maps.OverlayView();
+              let div = null;
 
-            const getScoreColor = (r) => {
-              if (isNew) return '#475569';    // Slate 600 Neutro per via senza recensioni
-              if (r >= 4.0) return '#10b981'; // Emerald
-              if (r >= 2.8) return '#f59e0b'; // Amber
-              return '#f43f5e';               // Rose
-            };
+              Overlay.onAdd = function () {
+                div = document.createElement('div');
+                div.style.position = 'absolute';
+                div.style.cursor = 'pointer';
+                div.style.transform = 'translate(-50%, -50%)';
+                div.style.zIndex = '500';
 
-            const Overlay = new window.google.maps.OverlayView();
-            let div = null;
+                const ratingLabel = cluster.avgOverallRating > 0 ? `★ ${cluster.avgOverallRating.toFixed(1)}` : 'Nuova';
+                const countLabel = `${cluster.streetsCount} ${cluster.streetsCount === 1 ? 'via' : 'vie'}`;
 
-            Overlay.onAdd = function () {
-              div = document.createElement('div');
-              div.style.position = 'absolute';
-              div.style.cursor = 'pointer';
-              div.style.transform = 'translate(-50%, -100%)';
-              div.style.zIndex = isSelected ? '9999' : '100';
-
-              div.innerHTML = `
-                <div style="display:flex;flex-direction:column;align-items:center;">
+                div.innerHTML = `
                   <div style="
-                    display:flex;align-items:center;gap:4px;
-                    background:${getScoreColor(street.avgOverallRating)};
-                    color:white;padding:4px 10px;border-radius:9999px;
-                    font-weight:800;font-size:11px;
-                    box-shadow:0 8px 16px rgba(0,0,0,0.25);
-                    border:2px solid white;
-                    transition:transform 0.2s;
-                    ${isSelected ? 'transform:scale(1.25);box-shadow:0 0 0 4px rgba(59,130,246,0.5);' : ''}
+                    display:flex;align-items:center;gap:6px;
+                    background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                    color:white;padding:6px 13px;border-radius:9999px;
+                    font-weight:800;font-size:11px;white-space:nowrap;
+                    box-shadow:0 10px 24px rgba(15,23,42,0.45), 0 0 0 2px rgba(34,211,238,0.85);
+                    border:2px solid #fbbf24;
+                    transition:transform 0.2s ease;
                   ">
-                    ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${street.avgOverallRating.toFixed(1)}</span>`}
+                    <span style="color:#38bdf8;font-weight:900;">${cluster.shortCity}</span>
+                    <span style="color:#94a3b8;">•</span>
+                    <span style="color:#f8fafc;font-weight:700;">${countLabel}</span>
+                    <span style="color:#94a3b8;">•</span>
+                    <span style="color:#fbbf24;font-weight:900;">${ratingLabel}</span>
                   </div>
-                  <div style="
-                    background:rgba(255,255,255,0.95);
-                    backdrop-filter:blur(4px);
-                    padding:2px 8px;border-radius:6px;
-                    font-size:10px;font-weight:700;color:#0f172a;
-                    white-space:nowrap;margin-top:3px;
-                    box-shadow:0 2px 4px rgba(0,0,0,0.1);
-                    border:1px solid #e2e8f0;
-                  ">
-                    ${street.name}
-                  </div>
-                </div>
-              `;
+                `;
 
-              div.onclick = (e) => {
-                e.stopPropagation();
-                setSelectedStreet(street);
-                setSheetSnap('half');
-                googleMapRef.current.panTo({ lat: street.latitude, lng: street.longitude });
+                div.onclick = (e) => {
+                  e.stopPropagation();
+                  googleMapRef.current.panTo({ lat: cluster.latitude, lng: cluster.longitude });
+                  googleMapRef.current.setZoom(15);
+                };
+
+                this.getPanes().overlayMouseTarget.appendChild(div);
               };
 
-              this.getPanes().overlayMouseTarget.appendChild(div);
-            };
+              Overlay.draw = function () {
+                if (!div) return;
+                const pos = this.getProjection().fromLatLngToDivPixel(new window.google.maps.LatLng(cluster.latitude, cluster.longitude));
+                if (pos) {
+                  div.style.left = pos.x + 'px';
+                  div.style.top = pos.y + 'px';
+                }
+              };
 
-            Overlay.draw = function () {
-              if (!div) return;
-              const pos = this.getProjection().fromLatLngToDivPixel(new window.google.maps.LatLng(street.latitude, street.longitude));
-              if (pos) {
-                div.style.left = pos.x + 'px';
-                div.style.top = pos.y + 'px';
-              }
-            };
+              Overlay.onRemove = function () {
+                if (div && div.parentNode) div.parentNode.removeChild(div);
+              };
 
-            Overlay.onRemove = function () {
-              if (div && div.parentNode) div.parentNode.removeChild(div);
-            };
+              Overlay.setMap(googleMapRef.current);
+              googleOverlaysRef.current.push(Overlay);
+            });
+          } else {
+            // MODALITÀ SINGOLI PIN IN VIEWPORT (Zoom >= 14)
+            viewportStreets.forEach(street => {
+              const isNew = street.reviewsCount === 0;
+              const isSelected = selectedStreet ? (selectedStreet.id === street.id || isSameStreet(selectedStreet, street)) : false;
 
-            Overlay.setMap(googleMapRef.current);
-            googleOverlaysRef.current.push(Overlay);
-          });
+              const getScoreColor = (r) => {
+                if (isNew) return '#475569';    // Slate 600 Neutro per via senza recensioni
+                if (r >= 4.0) return '#10b981'; // Emerald
+                if (r >= 2.8) return '#f59e0b'; // Amber
+                return '#f43f5e';               // Rose
+              };
+
+              const Overlay = new window.google.maps.OverlayView();
+              let div = null;
+
+              Overlay.onAdd = function () {
+                div = document.createElement('div');
+                div.style.position = 'absolute';
+                div.style.cursor = 'pointer';
+                div.style.transform = 'translate(-50%, -100%)';
+                div.style.zIndex = isSelected ? '9999' : '100';
+
+                div.innerHTML = `
+                  <div style="display:flex;flex-direction:column;align-items:center;">
+                    <div style="
+                      display:flex;align-items:center;gap:4px;
+                      background:${getScoreColor(street.avgOverallRating)};
+                      color:white;padding:4px 10px;border-radius:9999px;
+                      font-weight:800;font-size:11px;
+                      box-shadow:0 8px 16px rgba(0,0,0,0.25);
+                      border:2px solid white;
+                      transition:transform 0.2s;
+                      ${isSelected ? 'transform:scale(1.25);box-shadow:0 0 0 4px rgba(59,130,246,0.5);' : ''}
+                    ">
+                      ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${street.avgOverallRating.toFixed(1)}</span>`}
+                    </div>
+                    <div style="
+                      background:rgba(255,255,255,0.95);
+                      backdrop-filter:blur(4px);
+                      padding:2px 8px;border-radius:6px;
+                      font-size:10px;font-weight:700;color:#0f172a;
+                      white-space:nowrap;margin-top:3px;
+                      box-shadow:0 2px 4px rgba(0,0,0,0.1);
+                      border:1px solid #e2e8f0;
+                    ">
+                      ${street.name}
+                    </div>
+                  </div>
+                `;
+
+                div.onclick = (e) => {
+                  e.stopPropagation();
+                  setSelectedStreet(street);
+                  setSheetSnap('half');
+                  googleMapRef.current.panTo({ lat: street.latitude, lng: street.longitude });
+                };
+
+                this.getPanes().overlayMouseTarget.appendChild(div);
+              };
+
+              Overlay.draw = function () {
+                if (!div) return;
+                const pos = this.getProjection().fromLatLngToDivPixel(new window.google.maps.LatLng(street.latitude, street.longitude));
+                if (pos) {
+                  div.style.left = pos.x + 'px';
+                  div.style.top = pos.y + 'px';
+                }
+              };
+
+              Overlay.onRemove = function () {
+                if (div && div.parentNode) div.parentNode.removeChild(div);
+              };
+
+              Overlay.setMap(googleMapRef.current);
+              googleOverlaysRef.current.push(Overlay);
+            });
+          }
         }
 
         // 2. Render su Leaflet
@@ -2585,54 +2879,95 @@
           const layer = leafletMarkersRef.current;
           layer.clearLayers();
 
-          visibleStreets.forEach(street => {
-            const isNew = street.reviewsCount === 0;
-            const isSelected = selectedStreet ? (selectedStreet.id === street.id || isSameStreet(selectedStreet, street)) : false;
+          if (isClusterMode) {
+            cityClusters.forEach(cluster => {
+              const ratingLabel = cluster.avgOverallRating > 0 ? `★ ${cluster.avgOverallRating.toFixed(1)}` : 'Nuova';
+              const countLabel = `${cluster.streetsCount} ${cluster.streetsCount === 1 ? 'via' : 'vie'}`;
 
-            const markerHtml = `
-              <div class="flex flex-col items-center cursor-pointer transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
-                <div class="flex items-center gap-1 px-2.5 py-1 rounded-full text-white font-extrabold text-xs shadow-lg border-2 border-white ${
-                  isNew ? 'bg-slate-700 shadow-slate-700/30' :
-                  street.avgOverallRating >= 4.0 ? 'bg-emerald-500 shadow-emerald-500/40' :
-                  street.avgOverallRating >= 2.8 ? 'bg-amber-500 shadow-amber-500/40' : 'bg-rose-500 shadow-rose-500/40'
-                }">
-                  ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${street.avgOverallRating.toFixed(1)}</span>`}
+              const clusterHtml = `
+                <div class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900 text-white font-extrabold text-[11px] whitespace-nowrap shadow-xl border-2 border-amber-400 ring-2 ring-cyan-400/70 cursor-pointer hover:scale-105 transition-transform">
+                  <span class="text-sky-400 font-black">${cluster.shortCity}</span>
+                  <span class="text-slate-400">•</span>
+                  <span class="text-white font-bold">${countLabel}</span>
+                  <span class="text-slate-400">•</span>
+                  <span class="text-amber-400 font-black">${ratingLabel}</span>
                 </div>
-                <div class="mt-1 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-md shadow-sm border border-slate-200 text-[10px] font-bold text-slate-800 text-center whitespace-nowrap">
-                  ${street.name}
+              `;
+
+              const clusterIcon = L.divIcon({
+                html: clusterHtml,
+                className: 'custom-street-cluster',
+                iconSize: [200, 36],
+                iconAnchor: [100, 18],
+              });
+
+              const marker = L.marker([cluster.latitude, cluster.longitude], { icon: clusterIcon });
+              marker.on('click', () => {
+                leafletMapRef.current.setView([cluster.latitude, cluster.longitude], 15, { animate: true });
+              });
+
+              layer.addLayer(marker);
+            });
+          } else {
+            viewportStreets.forEach(street => {
+              const isNew = street.reviewsCount === 0;
+              const isSelected = selectedStreet ? (selectedStreet.id === street.id || isSameStreet(selectedStreet, street)) : false;
+
+              const markerHtml = `
+                <div class="flex flex-col items-center cursor-pointer transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
+                  <div class="flex items-center gap-1 px-2.5 py-1 rounded-full text-white font-extrabold text-xs shadow-lg border-2 border-white ${
+                    isNew ? 'bg-slate-700 shadow-slate-700/30' :
+                    street.avgOverallRating >= 4.0 ? 'bg-emerald-500 shadow-emerald-500/40' :
+                    street.avgOverallRating >= 2.8 ? 'bg-amber-500 shadow-amber-500/40' : 'bg-rose-500 shadow-rose-500/40'
+                  }">
+                    ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${street.avgOverallRating.toFixed(1)}</span>`}
+                  </div>
+                  <div class="mt-1 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-md shadow-sm border border-slate-200 text-[10px] font-bold text-slate-800 text-center whitespace-nowrap">
+                    ${street.name}
+                  </div>
                 </div>
-              </div>
-            `;
+              `;
 
-            const customIcon = L.divIcon({
-              html: markerHtml,
-              className: 'custom-street-marker',
-              iconSize: [120, 50],
-              iconAnchor: [60, 25],
+              const customIcon = L.divIcon({
+                html: markerHtml,
+                className: 'custom-street-marker',
+                iconSize: [120, 50],
+                iconAnchor: [60, 25],
+              });
+
+              const marker = L.marker([street.latitude, street.longitude], { icon: customIcon });
+              marker.on('click', () => {
+                setSelectedStreet(street);
+                setSheetSnap('half');
+                leafletMapRef.current.setView([street.latitude, street.longitude], 16, { animate: true });
+              });
+
+              layer.addLayer(marker);
             });
-
-            const marker = L.marker([street.latitude, street.longitude], { icon: customIcon });
-            marker.on('click', () => {
-              setSelectedStreet(street);
-              setSheetSnap('half');
-              leafletMapRef.current.setView([street.latitude, street.longitude], 16, { animate: true });
-            });
-
-            layer.addLayer(marker);
-          });
+          }
         }
-      }, [visibleStreets, selectedStreet, mapEngine]);
+      }, [viewportStreets, cityClusters, mapZoom, selectedStreet, mapEngine]);
 
       // COMPORTAMENTO ALLA RICERCA DELLA VIA:
       // Lookup preventivo sui dati esistenti (streetsRef.current): se la via esiste già, apre la sua scheda e centra il marker;
       // solo se NON esiste ancora genera il segnaposto temporaneo ('— Nuova').
+      // Inoltre, se l'utente ha cercato un civico (es. "Viale Secondo Moretti 120"), precompila il campo Tratto con "Altezza civico 120".
       const handleSelectStreet = (target) => {
         const rawLat = target.lat ?? target.latitude;
         const rawLng = target.lng ?? target.longitude;
+        const civicParsed = extractCivicNumberFromQuery(target.name || '');
+        const cleanTargetName = civicParsed.cleanQuery || target.name;
+        const detectedStreetNumber = (target.streetNumber || civicParsed.streetNumber || '').trim();
+        setPrefilledStreetSegment(
+          detectedStreetNumber
+            ? `Altezza civico ${detectedStreetNumber}`
+            : (target.streetSegment || '')
+        );
+
         const targetCity = resolveCanonicalCityName(target.city, rawLat, rawLng);
         const targetProvince = normalizeProvinceCode(target.province || target.streetProvince || '');
         const targetCandidate = {
-          name: target.name,
+          name: cleanTargetName,
           city: targetCity,
           province: targetProvince,
           lat: rawLat,
@@ -2664,10 +2999,10 @@
         }
 
         // La via NON esiste ancora: risolvi il punto di ancoraggio canonico e mostra il segnaposto temporaneo ('— Nuova')
-        const anchor = getCanonicalStreetAnchor(target.name, targetCity, rawLat, rawLng, targetProvince);
+        const anchor = getCanonicalStreetAnchor(cleanTargetName, targetCity, rawLat, rawLng, targetProvince);
         const resolvedLat = street ? street.latitude : anchor.lat;
         const resolvedLng = street ? street.longitude : anchor.lng;
-        const resolvedName = street ? street.name : (anchor.canonicalName || target.name);
+        const resolvedName = street ? street.name : (anchor.canonicalName || cleanTargetName);
         const resolvedCity = street ? street.city : (anchor.city || targetCity);
         const resolvedProvince = street ? (street.province || targetProvince) : (anchor.province || targetProvince);
         const resolvedPostalCode = street ? street.postalCode : (anchor.postalCode || target.postalCode || resolveDefaultPostalCode(normalizeCityKey(resolvedCity, resolvedLat, resolvedLng)));
@@ -2846,6 +3181,7 @@
               ratings: reviewPayload.ratings,
               overallRating: reviewPayload.overallRating,
               comment: reviewPayload.comment,
+              streetSegment: (reviewPayload.streetSegment || '').trim().slice(0, 60),
               parkingTypes: reviewPayload.parkingTypes,
               hasCyclePath: reviewPayload.hasCyclePath,
               amenities: reviewPayload.amenities || [],
@@ -2873,6 +3209,7 @@
               updatedAt: nowIso,
               overallRating: reviewPayload.overallRating,
               comment: reviewPayload.comment,
+              streetSegment: (reviewPayload.streetSegment || '').trim().slice(0, 60),
               ratings: reviewPayload.ratings,
               parkingTypes: reviewPayload.parkingTypes,
               hasCyclePath: reviewPayload.hasCyclePath,
@@ -2946,6 +3283,7 @@
           hasCyclePath: reviewPayload.hasCyclePath,
           amenities: reviewPayload.amenities || [],
           comment: reviewPayload.comment,
+          streetSegment: (reviewPayload.streetSegment || '').trim().slice(0, 60),
           awardedMilestones: Array.from(awardedMilestonesSet),
           updatedAt: nowIso,
           createdAt: (!editingReview && !existingCreatedAt) ? nowIso : (existingCreatedAt || nowIso),
@@ -3481,16 +3819,33 @@
             </div>
           )}
 
-          {/* 3. FILTRI RAPIDI + PULSANTE RITORNO HUB SAN BENEDETTO */}
+          {/* 3. SELETTORE RAPIDO "CITTÀ ATTIVE" (ANTI-COLD START) + FILTRI RAPIDI */}
           <div className="absolute top-18 left-4 right-4 z-20 flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-            <button
-              onClick={handleReturnToHub}
-              title="Torna all'Hub storico di San Benedetto del Tronto"
-              className="px-3.5 py-1.5 rounded-full text-xs font-extrabold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border-cyan-500/80 shadow-blue-500/20 active:scale-95"
-            >
-              <span>🌴</span>
-              <span>Torna a San Benedetto (Hub)</span>
-            </button>
+            {activeCities.map((cityItem) => (
+              <button
+                key={cityItem.cityKey}
+                onClick={() => cityItem.isHub ? handleReturnToHub() : handleFlyToCity(cityItem)}
+                title={cityItem.isHub
+                  ? `Torna all'Hub storico di San Benedetto del Tronto (${cityItem.streetsCount} vie recensite)`
+                  : `Salta a ${cityItem.name} (${cityItem.streetsCount} ${cityItem.streetsCount === 1 ? 'via recensita' : 'vie recensite'})`
+                }
+                className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap cursor-pointer active:scale-95 ${
+                  cityItem.isHub
+                    ? 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border-cyan-500/80 shadow-blue-500/20'
+                    : 'bg-slate-900/95 hover:bg-slate-800 text-amber-300 border-amber-400/70 shadow-slate-900/20'
+                }`}
+              >
+                <span>{cityItem.isHub ? '🌴' : '🏙️'}</span>
+                <span>{cityItem.isHub ? 'San Benedetto (Hub)' : cityItem.shortName}</span>
+                {cityItem.streetsCount > 0 && (
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                    cityItem.isHub ? 'bg-white/20 text-white' : 'bg-amber-400/20 text-amber-200'
+                  }`}>
+                    {cityItem.streetsCount} {cityItem.streetsCount === 1 ? 'via' : 'vie'}
+                  </span>
+                )}
+              </button>
+            ))}
 
             <button
               onClick={() => setFilterFreeParking(!filterFreeParking)}
@@ -3919,7 +4274,7 @@
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                                <div className="flex flex-wrap items-center gap-1.5 shrink-0 ml-auto">
                                   {isMyReview && (
                                     <button
                                       onClick={() => {
@@ -3946,6 +4301,14 @@
                                     <span>🚩</span>
                                     <span>Segnala</span>
                                   </button>
+                                  {r.streetSegment && (
+                                    <span
+                                      className="text-[10px] font-extrabold bg-cyan-50 text-cyan-800 border border-cyan-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                                      title={`Tratto o punto di riferimento indicato: ${r.streetSegment}`}
+                                    >
+                                      <span>📍 Tratto: {r.streetSegment}</span>
+                                    </span>
+                                  )}
                                   <span className="text-slate-400 text-[11px]">{r.date}</span>
                                 </div>
                               </div>
@@ -3967,6 +4330,7 @@
               streetName={selectedStreet.name}
               currentUser={currentUser}
               initialData={editingReview}
+              defaultStreetSegment={prefilledStreetSegment}
               isPioneerCandidate={
                 isSelectedStreetNew ||
                 Boolean(editingReview && gamification.reviewMetaMap[editingReview.id]?.isPioneer) ||
@@ -4400,7 +4764,7 @@
     }
 
     // --- SOTTORAPPRESENTAZIONE MODALE RECENSIONE INTERATTIVA ---
-    function ReviewModal({ streetName, currentUser, initialData, isPioneerCandidate, onClose, onSubmit, onOpenPrivacy }) {
+    function ReviewModal({ streetName, currentUser, initialData, defaultStreetSegment = '', isPioneerCandidate, onClose, onSubmit, onOpenPrivacy }) {
       const isEditing = Boolean(initialData);
       const defaultRatings = {
         roadSurface: 4, groundSignage: 4, verticalSignage: 4,
@@ -4415,6 +4779,11 @@
       const [parkingTypes, setParkingTypes] = useState(initialData?.parkingTypes || ['FREE']);
       const [hasCyclePath, setHasCyclePath] = useState(initialData?.hasCyclePath || false);
       const [amenities, setAmenities] = useState(initialData?.amenities || []);
+      const [streetSegment, setStreetSegment] = useState(
+        initialData?.streetSegment !== undefined
+          ? (initialData.streetSegment || '')
+          : (defaultStreetSegment || '')
+      );
       const [comment, setComment] = useState(initialData?.comment || '');
       const [moderationError, setModerationError] = useState('');
 
@@ -4428,15 +4797,17 @@
           setParkingTypes(initialData.parkingTypes || []);
           setHasCyclePath(initialData.hasCyclePath || false);
           setAmenities(initialData.amenities || []);
+          setStreetSegment(initialData.streetSegment || defaultStreetSegment || '');
           setComment(initialData.comment || '');
         } else {
           setRatings(defaultRatings);
           setParkingTypes(['FREE']);
           setHasCyclePath(false);
           setAmenities([]);
+          setStreetSegment(defaultStreetSegment || '');
           setComment('');
         }
-      }, [initialData]);
+      }, [initialData, defaultStreetSegment]);
 
       const overall = Number(
         (Object.values(ratings).reduce((a, b) => a + b, 0) / 13).toFixed(1)
@@ -4518,7 +4889,8 @@
               onSubmit={(e) => {
                 e.preventDefault();
                 const finalComment = comment.trim() || 'Recensione pubblicata con successo.';
-                const check = validateReviewComment(finalComment);
+                const finalSegment = streetSegment.trim().slice(0, 60);
+                const check = validateReviewComment(`${finalSegment} ${finalComment}`.trim());
                 if (!check.valid) {
                   setModerationError(check.message);
                   return;
@@ -4529,6 +4901,7 @@
                   ratings,
                   overallRating: overall,
                   comment: finalComment,
+                  streetSegment: finalSegment,
                   parkingTypes,
                   hasCyclePath,
                   amenities,
@@ -4536,6 +4909,29 @@
               }}
               className="flex-1 overflow-y-auto px-6 py-4 space-y-4 text-xs"
             >
+              {/* Campo Tratto o Punto di Riferimento per Strade Lunghe (opzionale, max 60 caratteri) */}
+              <div className="space-y-1.5 bg-cyan-50/50 p-3 rounded-2xl border border-cyan-200/70">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="font-extrabold text-slate-800 flex items-center gap-1">
+                    <span>📍 Tratto o punto di riferimento (opzionale)</span>
+                  </label>
+                  <span className="text-[10px] font-semibold text-slate-400">
+                    {streetSegment.length}/60
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  maxLength={60}
+                  value={streetSegment}
+                  onChange={(e) => {
+                    setStreetSegment(e.target.value.slice(0, 60));
+                    if (moderationError) setModerationError('');
+                  }}
+                  placeholder="Es. Altezza civico 120, Tratto Sud, vicino Piazza..."
+                  className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-slate-800 font-medium placeholder-slate-400"
+                />
+              </div>
+
               <p className="text-slate-500 font-semibold uppercase text-[10px]">Valuta le 13 categorie obbligatorie:</p>
 
               {[
