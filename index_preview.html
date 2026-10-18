@@ -1908,7 +1908,6 @@
       };
 
       // Filtri Servizi & Mobilità
-      const [filterFreeParking, setFilterFreeParking] = useState(false);
       const [filterEvCharging, setFilterEvCharging] = useState(false);
       const [filterDisabledParking, setFilterDisabledParking] = useState(false);
       const [filterPinkParking, setFilterPinkParking] = useState(false);
@@ -1916,20 +1915,20 @@
       const [filterCyclePath, setFilterCyclePath] = useState(false);
       const [filterDrinkingFountain, setFilterDrinkingFountain] = useState(false);
       const [filterDogArea, setFilterDogArea] = useState(false);
+      const [filterPlayground, setFilterPlayground] = useState(false);
 
       const hasAnyActiveFilter = Boolean(
-        filterFreeParking ||
         filterEvCharging ||
         filterDisabledParking ||
         filterPinkParking ||
         filterLoadingZone ||
         filterCyclePath ||
         filterDrinkingFountain ||
-        filterDogArea
+        filterDogArea ||
+        filterPlayground
       );
 
       const resetAllFilters = () => {
-        setFilterFreeParking(false);
         setFilterEvCharging(false);
         setFilterDisabledParking(false);
         setFilterPinkParking(false);
@@ -1937,6 +1936,7 @@
         setFilterCyclePath(false);
         setFilterDrinkingFountain(false);
         setFilterDogArea(false);
+        setFilterPlayground(false);
       };
 
       const mapContainerRef = useRef(null);
@@ -2711,7 +2711,6 @@
 
         return deduped.filter(s => {
           const streetAmenities = Array.isArray(s.amenities) ? s.amenities : [];
-          if (filterFreeParking && !s.commonParkingTypes?.includes('FREE')) return false;
           if (filterEvCharging && !streetAmenities.includes('EV_CHARGING')) return false;
           if (filterDisabledParking && !s.commonParkingTypes?.includes('DISABLED')) return false;
           if (filterPinkParking && !s.commonParkingTypes?.includes('PINK')) return false;
@@ -2719,9 +2718,10 @@
           if (filterCyclePath && !(s.hasCyclePath || streetAmenities.includes('CYCLE_PATH'))) return false;
           if (filterDrinkingFountain && !streetAmenities.includes('DRINKING_FOUNTAIN')) return false;
           if (filterDogArea && !(streetAmenities.includes('DOG_AREA') || streetAmenities.includes('Area Cani'))) return false;
+          if (filterPlayground && !(streetAmenities.includes('PLAYGROUND') || streetAmenities.includes('Area Giochi'))) return false;
           return true;
         });
-      }, [streets, filterFreeParking, filterEvCharging, filterDisabledParking, filterPinkParking, filterLoadingZone, filterCyclePath, filterDrinkingFountain, filterDogArea]);
+      }, [streets, filterEvCharging, filterDisabledParking, filterPinkParking, filterLoadingZone, filterCyclePath, filterDrinkingFountain, filterDogArea, filterPlayground]);
 
       // OTTIMIZZAZIONE VIEWPORT RENDERING (Zoom >= 14): renderizza nel DOM solo i marker nell'area visibile (+ margine di buffer)
       const viewportStreets = useMemo(() => {
@@ -4369,17 +4369,6 @@
 
             <button
               type="button"
-              onClick={() => setFilterFreeParking(!filterFreeParking)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
-                filterFreeParking ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <span>🚗</span>
-              <span>Parcheggio Gratuito</span>
-            </button>
-
-            <button
-              type="button"
               onClick={() => setFilterEvCharging(!filterEvCharging)}
               className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
                 filterEvCharging ? 'bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/20' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -4453,6 +4442,17 @@
             >
               <span>🐕</span>
               <span>Area Cani</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterPlayground(!filterPlayground)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                filterPlayground ? 'bg-fuchsia-600 text-white border-fuchsia-700 shadow-fuchsia-500/25' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <span>🎠</span>
+              <span>Area Giochi</span>
             </button>
           </div>
 
@@ -4595,7 +4595,7 @@
                         <IconBike size={13} /> {selectedStreet.hasCyclePath ? 'Pista Ciclabile Presente' : 'Nessuna Ciclabile'}
                       </span>
 
-                      {selectedStreet.amenities?.map(a => {
+                      {selectedStreet.amenities?.filter(a => a !== 'DOG_WASTE_BINS').map(a => {
                         let label = 'Dotazione';
                         let icon = '✨';
                         let colorCls = 'bg-slate-100 text-slate-700 border-slate-200';
@@ -4606,7 +4606,7 @@
                         else if (a === 'COBBLESTONE') { label = 'Ciottolato / Sanpietrini'; icon = '🏛️'; colorCls = 'bg-stone-100 text-stone-800 border-stone-300'; }
                         else if (a === 'DRINKING_FOUNTAIN') { label = 'Fontanella'; icon = '🚰'; colorCls = 'bg-sky-50 text-sky-800 border-sky-200'; }
                         else if (a === 'DOG_AREA' || a === 'Area Cani') { label = 'Area Cani'; icon = '🐕'; colorCls = 'bg-lime-100 text-lime-900 border-lime-300 font-extrabold shadow-sm'; }
-                        else if (a === 'DOG_WASTE_BINS') { label = 'Cestini Deiezioni Canine'; icon = '🐾'; colorCls = 'bg-amber-50 text-amber-900 border-amber-200'; }
+                        else if (a === 'PLAYGROUND' || a === 'Area Giochi') { label = 'Area Giochi'; icon = '🎠'; colorCls = 'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300 font-extrabold shadow-sm'; }
                         else if (a === 'BENCHES') { label = 'Panchine'; icon = '🪑'; colorCls = 'bg-amber-50 text-amber-800 border-amber-200'; }
                         else if (a === 'TRASH_BINS') { label = 'Cestini'; icon = '🗑️'; colorCls = 'bg-slate-100 text-slate-800 border-slate-200'; }
 
@@ -5556,11 +5556,11 @@
                     ['COBBLESTONE', '🏛️ Pavimentazione Speciale'],
                     ['DRINKING_FOUNTAIN', '🚰 Fontanella'],
                     ['DOG_AREA', '🐕 Area Cani'],
-                    ['DOG_WASTE_BINS', '🐾 Cestini per Deiezioni Canine'],
+                    ['PLAYGROUND', '🎠 Area Giochi'],
                     ['BENCHES', '🪑 Panchine'],
                     ['TRASH_BINS', '🗑️ Cestini'],
                   ].map(([val, name]) => {
-                    const isSelected = amenities.includes(val);
+                    const isSelected = amenities.includes(val) || (val === 'PLAYGROUND' && amenities.includes('Area Giochi')) || (val === 'DOG_AREA' && amenities.includes('Area Cani'));
                     return (
                       <button
                         key={val}
