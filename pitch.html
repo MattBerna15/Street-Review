@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="it" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Street Review · Investor Pitch Deck | Matteo Bernardini</title>
+  <meta name="description" content="Pitch Deck ufficiale del progetto Street Review — La prima piattaforma partecipata per recensire e mappare la vivibilità delle strade d'Italia. Ideato da Matteo Bernardini." />
+  <meta name="author" content="Matteo Bernardini - Street Review" />
+  <meta name="theme-color" content="#0f172a" />
+
+  <!-- Favicon Logo Ufficiale -->
+  <link rel="icon" type="image/jpeg" href="assets/logo.jpg" />
+  <link rel="apple-touch-icon" href="assets/logo.jpg" />
+
+  <!-- Google Fonts: Plus Jakarta Sans & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              bg: '#0f172a',
+              card: '#1e293b',
+              gold: '#f59e0b',
+              goldLight: '#fbbf24',
+              cyan: '#0284c7',
+              cyanLight: '#38bdf8',
+            }
+          },
+          boxShadow: {
+            'glow-gold': '0 0 35px -5px rgba(245, 158, 11, 0.35)',
+            'glow-cyan': '0 0 35px -5px rgba(56, 189, 248, 0.35)',
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+
+    body {
+      background-color: #0f172a;
+      color: #f8fafc;
+      font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Gradients & Mesh */
+    .text-gradient-gold-cyan {
+      background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 45%, #38bdf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .text-gradient-cyan-gold {
+      background: linear-gradient(135deg, #38bdf8 0%, #0284c7 45%, #fbbf24 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .bg-grid-pattern {
+      background-size: 40px 40px;
+      background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    }
+
+    .slide-surface {
+      background:
+        radial-gradient(circle at 12% 18%, rgba(56, 189, 248, 0.12) 0%, transparent 42%),
+        radial-gradient(circle at 88% 22%, rgba(245, 158, 11, 0.12) 0%, transparent 42%),
+        radial-gradient(circle at 50% 90%, rgba(2, 132, 199, 0.10) 0%, transparent 50%),
+        #0f172a;
+    }
+
+    /* Modalità Presentazione Singola vs Vista Scorrimento */
+    body.mode-single {
+      overflow: hidden;
+      height: 100vh;
+    }
+
+    body.mode-single #slides-wrapper {
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4.5rem 1.5rem 1.25rem 1.5rem;
+    }
+
+    body.mode-single .slide {
+      display: none;
+      width: 100%;
+      max-width: 1360px;
+      height: calc(100vh - 5.75rem);
+      max-height: 820px;
+      border-radius: 1.5rem;
+      border: 1px solid rgba(56, 189, 248, 0.22);
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.85);
+      overflow-y: auto;
+    }
+
+    body.mode-single .slide.active-slide {
+      display: flex;
+    }
+
+    body.mode-scroll {
+      overflow-y: auto;
+      height: auto;
+    }
+
+    body.mode-scroll #slides-wrapper {
+      padding: 5.5rem 1.5rem 3rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2.5rem;
+    }
+
+    body.mode-scroll .slide {
+      display: flex !important;
+      width: 100%;
+      max-width: 1320px;
+      min-height: 740px;
+      border-radius: 1.5rem;
+      border: 1px solid rgba(56, 189, 248, 0.22);
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8);
+    }
+
+    /* Scrollbar sottile */
+    .slide::-webkit-scrollbar {
+      width: 6px;
+    }
+    .slide::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.25);
+      border-radius: 9999px;
+    }
+
+    /* ==========================================================
+       REGOLE RIGOROSE DI STAMPA / ESPORTAZIONE PDF A4 LANDSCAPE
+       ========================================================== */
+    @page {
+      size: landscape;
+      margin: 0;
+    }
+
+    @media print {
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100vw !important;
+        height: auto !important;
+        overflow: visible !important;
+        background-color: #0f172a !important;
+        color: #f8fafc !important;
+      }
+
+      .no-print {
+        display: none !important;
+      }
+
+      #slides-wrapper {
+        padding: 0 !important;
+        margin: 0 !important;
+        display: block !important;
+        width: 100vw !important;
+        height: auto !important;
+      }
+
+      .slide {
+        display: flex !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: none !important;
+        max-height: none !important;
+        min-height: 100vh !important;
+        margin: 0 !important;
+        padding: 2.2rem 3rem !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        page-break-after: always !important;
+        break-after: page !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        overflow: hidden !important;
+        background-color: #0f172a !important;
+      }
+
+      .slide:last-of-type {
+        page-break-after: auto !important;
+        break-after: auto !important;
+      }
+    }
+  </style>
+</head>
+<body class="mode-single bg-[#0f172a] text-slate-100 select-none sm:select-auto">
+
+  <!-- ===================================================================== -->
+  <!-- BARRA DI CONTROLLO FLOTTANTE (SOLO SCHERMO - NASCOSTA IN STAMPA PDF)  -->
+  <!-- ===================================================================== -->
+  <nav class="no-print fixed top-0 left-0 right-0 z-50 bg-[#0f172a]/90 backdrop-blur-xl border-b border-slate-800/90 px-3 sm:px-6 h-16 flex items-center justify-between gap-2 shadow-xl">
+    
+    <!-- Sinistra: Logo compatto + Link ritorno -->
+    <div class="flex items-center gap-3">
+      <a href="landing.html" class="flex items-center gap-2.5 group focus:outline-none" title="Torna alla Landing Page">
+        <div class="w-9 h-9 rounded-xl overflow-hidden p-0.5 bg-gradient-to-tr from-[#0284c7] via-[#fbbf24] to-[#f59e0b] shadow-md shrink-0">
+          <img src="assets/logo.jpg" alt="Street Review" class="w-full h-full object-cover rounded-[9px]" />
+        </div>
+        <div class="hidden sm:flex flex-col">
+          <div class="flex items-center gap-1.5">
+            <span class="text-sm font-black tracking-tight text-white group-hover:text-[#38bdf8] transition-colors">STREET REVIEW</span>
+            <span class="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-[#fbbf24] border border-amber-400/30">Pitch Deck</span>
+          </div>
+          <span class="text-[10px] text-slate-400">Investor &amp; Incubator Presentation</span>
+        </div>
+      </a>
+    </div>
+
+    <!-- Centro: Controlli Slide Precedente / Indicatore / Successiva -->
+    <div id="single-nav-controls" class="flex items-center gap-1.5 sm:gap-3 bg-[#1e293b]/90 border border-slate-700/80 px-2.5 py-1.5 rounded-2xl shadow-inner">
+      <button
+        type="button"
+        onclick="prevSlide()"
+        class="px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white bg-slate-900/80 hover:bg-[#0284c7]/30 border border-slate-700/70 hover:border-[#38bdf8]/50 transition-all cursor-pointer flex items-center gap-1"
+        title="Slide Precedente (Freccia Sinistra)"
+      >
+        <span>◀</span>
+        <span class="hidden md:inline">Precedente</span>
+      </button>
+
+      <div class="px-2 sm:px-3 text-center min-w-[68px]">
+        <span id="slide-counter" class="text-xs sm:text-sm font-black text-[#fbbf24] tracking-wider">1 / 10</span>
+      </div>
+
+      <button
+        type="button"
+        onclick="nextSlide()"
+        class="px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white bg-slate-900/80 hover:bg-[#0284c7]/30 border border-slate-700/70 hover:border-[#38bdf8]/50 transition-all cursor-pointer flex items-center gap-1"
+        title="Slide Successiva (Freccia Destra)"
+      >
+        <span class="hidden md:inline">Successiva</span>
+        <span>▶</span>
+      </button>
+    </div>
+
+    <!-- Destra: Toggle Vista Scorrimento & Stampa/Salva PDF -->
+    <div class="flex items-center gap-2 sm:gap-3">
+      <button
+        type="button"
+        id="toggle-view-btn"
+        onclick="toggleViewMode()"
+        class="px-3 sm:px-4 py-2 rounded-xl text-xs font-bold text-slate-200 hover:text-white bg-[#1e293b] hover:bg-slate-800 border border-slate-700 hover:border-[#38bdf8]/60 transition-all cursor-pointer flex items-center gap-1.5"
+      >
+        <span id="toggle-view-icon">📑</span>
+        <span id="toggle-view-label" class="hidden lg:inline">Mostra Tutte / Vista Scorrimento</span>
+      </button>
+
+      <button
+        type="button"
+        onclick="window.print()"
+        class="px-3.5 sm:px-5 py-2 rounded-xl text-xs sm:text-sm font-black text-slate-950 bg-gradient-to-r from-[#fbbf24] via-[#f59e0b] to-amber-500 hover:from-amber-300 hover:to-amber-400 shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition-all cursor-pointer flex items-center gap-1.5"
+      >
+        <span>🖨️</span>
+        <span>Stampa / Salva in PDF</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ===================================================================== -->
+  <!-- CONTENITORE DELLE 10 SLIDE (FORMATO 16:9 / A4 ORIZZONTALE)            -->
+  <!-- ===================================================================== -->
+  <main id="slides-wrapper">
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 1 — COPERTINA (TITLE SLIDE)                                   -->
+    <!-- =================================================================== -->
+    <section class="slide active-slide slide-surface bg-grid-pattern relative flex-col justify-between p-6 sm:p-12 overflow-hidden" data-slide="1">
+      <!-- Top Bar Slide -->
+      <div class="flex items-center justify-between border-b border-slate-800/80 pb-4">
+        <div class="flex items-center gap-2">
+          <span class="px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-widest bg-amber-500/15 text-[#fbbf24] border border-amber-400/40">
+            Investor &amp; Incubator Pitch Deck · 2026
+          </span>
+          <span class="px-3 py-1 rounded-full text-[11px] font-bold bg-sky-500/15 text-[#38bdf8] border border-sky-400/30">
+            Civic Tech · Smart Mobility · Urban Data
+          </span>
+        </div>
+        <span class="text-xs font-bold text-slate-400">SLIDE 01 / 10</span>
+      </div>
+
+      <!-- Center Hero Content -->
+      <div class="my-auto py-4 flex flex-col items-center text-center max-w-4xl mx-auto space-y-6">
+        <!-- Logo con effetto glow dorato/ciano -->
+        <div class="relative group">
+          <div class="absolute -inset-3 rounded-3xl bg-gradient-to-r from-[#38bdf8] via-[#fbbf24] to-[#f59e0b] opacity-55 blur-xl"></div>
+          <div class="relative w-28 h-28 sm:w-32 sm:h-32 rounded-3xl p-1 bg-gradient-to-tr from-[#0284c7] via-[#fbbf24] to-[#f59e0b] shadow-2xl">
+            <img src="assets/logo.jpg" alt="Street Review Logo Ufficiale" class="w-full h-full object-cover rounded-[20px]" />
+          </div>
+        </div>
+
+        <!-- Titolo & Payoff -->
+        <div class="space-y-3">
+          <h1 class="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-white">
+            STREET <span class="text-gradient-gold-cyan">REVIEW</span>
+          </h1>
+          <p class="text-lg sm:text-2xl lg:text-3xl font-bold text-slate-200 max-w-3xl leading-snug italic">
+            "La prima piattaforma partecipata per recensire e mappare la vivibilità delle strade d'Italia"
+          </p>
+        </div>
+
+        <!-- Key Highlights Pills -->
+        <div class="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+          <span class="px-3.5 py-1.5 rounded-xl bg-[#1e293b] border border-slate-700 text-xs font-bold text-slate-200 flex items-center gap-1.5">
+            <span class="text-[#fbbf24]">★</span> 13 Parametri Strutturali a Stelle
+          </span>
+          <span class="px-3.5 py-1.5 rounded-xl bg-[#1e293b] border border-slate-700 text-xs font-bold text-slate-200 flex items-center gap-1.5">
+            <span class="text-[#38bdf8]">🅿️</span> Mappatura Parcheggi &amp; Accessibilità
+          </span>
+          <span class="px-3.5 py-1.5 rounded-xl bg-[#1e293b] border border-slate-700 text-xs font-bold text-slate-200 flex items-center gap-1.5">
+            <span class="text-emerald-400">🎖️</span> Gamification Civica a 10 Livelli
+          </span>
+        </div>
+
+        <!-- Presentatore Card -->
+        <div class="mt-2 inline-flex items-center gap-4 bg-[#1e293b]/95 border border-amber-400/40 px-6 py-3.5 rounded-2xl shadow-glow-gold">
+          <img src="Avatar Berna.jpg" alt="Matteo Bernardini" class="w-12 h-12 rounded-full object-cover border-2 border-[#fbbf24]" />
+          <div class="text-left">
+            <p class="text-base sm:text-lg font-black text-white">Matteo Bernardini</p>
+            <p class="text-xs sm:text-sm font-bold text-[#fbbf24]">Ideatore &amp; Founder · Street Review</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Riferimenti -->
+      <div class="border-t border-slate-800/80 pt-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-300">
+        <div class="flex items-center gap-2">
+          <span class="text-[#fbbf24] font-bold">✉️ Contatto Ufficiale:</span>
+          <a href="mailto:streetreview.app@gmail.com" class="font-bold text-white hover:text-[#38bdf8] transition-colors">streetreview.app@gmail.com</a>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-[#38bdf8] font-bold">🌐 Piattaforma Online:</span>
+          <a href="https://mattberna15.github.io/Street-Review/landing.html" target="_blank" rel="noopener" class="font-bold text-white hover:text-[#fbbf24] transition-colors">mattberna15.github.io/Street-Review/landing.html</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 2 — IL PROBLEMA (THE PROBLEM)                                 -->
+    <!-- =================================================================== -->
+    <section class="slide slide-surface bg-grid-pattern relative flex-col justify-between p-6 sm:p-12 overflow-hidden" data-slide="2">
+      <!-- Header Slide -->
+      <div class="flex items-center justify-between border-b border-slate-800/80 pb-4">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/30">
+            02 · Il Problema (The Problem)
+          </span>
+          <span class="text-xs text-slate-400 font-semibold hidden sm:inline">Asimmetria informativa sulla qualità reale delle nostre città</span>
+        </div>
+        <span class="text-xs font-bold text-slate-400">SLIDE 02 / 10</span>
+      </div>
+
+      <!-- Main Body -->
+      <div class="my-auto py-4 space-y-8">
+        <div class="max-w-4xl space-y-2">
+          <h2 class="text-2xl sm:text-4xl lg:text-5xl font-black text-white leading-tight">
+            "Recensiamo qualsiasi cosa... <span class="text-gradient-gold-cyan">tranne le strade dove viviamo.</span>"
+          </h2>
+          <p class="text-sm sm:text-base text-slate-300">
+            Ogni giorno scegliamo un ristorante o un hotel leggendo decine di recensioni, ma quando ci spostiamo, cerchiamo casa o attraversiamo un quartiere ci muoviamo completamente alla cieca.
+          </p>
+        </div>
+
+        <!-- 3 Card Visive -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <!-- Card 1 -->
+          <div class="bg-[#1e293b]/90 border border-amber-400/30 rounded-3xl p-6 sm:p-7 flex flex-col justify-between shadow-lg relative overflow-hidden">
+            <div class="space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-400/40 flex items-center justify-center text-2xl">
+                  🏙️
+                </div>
+                <span class="text-xs font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-slate-900 text-[#fbbf24] border border-amber-500/30">Gap Informativo</span>
+              </div>
+              <h3 class="text-lg sm:text-xl font-black text-white">
+                1. Zero informazioni sulla vivibilità reale
+              </h3>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Esistono milioni di recensioni per ristoranti, hotel e negozi, ma <strong class="text-white">nessun portale dedicato dove valutare la qualità quotidiana delle nostre vie</strong> e delle infrastrutture che percorriamo ogni giorno.
+              </p>
+            </div>
+            <div class="mt-6 pt-3 border-t border-slate-700/70 flex items-center justify-between text-[11px] font-bold text-amber-300">
+              <span>Valutazione infrastrutture</span>
+              <span>0 Portali dedicati</span>
+            </div>
+          </div>
+
+          <!-- Card 2 -->
+          <div class="bg-[#1e293b]/90 border border-sky-400/30 rounded-3xl p-6 sm:p-7 flex flex-col justify-between shadow-lg relative overflow-hidden">
+            <div class="space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="w-12 h-12 rounded-2xl bg-sky-500/15 border border-sky-400/40 flex items-center justify-center text-2xl">
+                  🌧️
+                </div>
+                <span class="text-xs font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-slate-900 text-[#38bdf8] border border-sky-500/30">Mobilità &amp; Casa</span>
+              </div>
+              <h3 class="text-lg sm:text-xl font-black text-white">
+                2. Dati frammentati o assenti
+              </h3>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Chi cerca casa, si sposta o ha esigenze di mobilità ridotta <strong class="text-white">non sa in anticipo se una strada è silenziosa, se si allaga quando piove, se è sicura di notte</strong> o se dispone di parcheggi e marciapiedi agibili.
+              </p>
+            </div>
+            <div class="mt-6 pt-3 border-t border-slate-700/70 flex items-center justify-between text-[11px] font-bold text-sky-300">
+              <span>Rischio scelte al buio</span>
+              <span>Residenti, Turisti, Disabili</span>
+            </div>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="bg-[#1e293b]/90 border border-rose-400/30 rounded-3xl p-6 sm:p-7 flex flex-col justify-between shadow-lg relative overflow-hidden">
+            <div class="space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-400/40 flex items-center justify-center text-2xl">
+                  🏛️
+                </div>
+                <span class="text-xs font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-slate-900 text-rose-300 border border-rose-500/30">Burocrazia</span>
+              </div>
+              <h3 class="text-lg sm:text-xl font-black text-white">
+                3. Distacco Cittadini-Territorio
+              </h3>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                I portali comunali di segnalazione guasti sono <strong class="text-white">burocratici, freddi e unidirezionali</strong>: non incentivano la partecipazione e non creano una guida storica trasparente e consultabile dalla comunità.
+              </p>
+            </div>
+            <div class="mt-6 pt-3 border-t border-slate-700/70 flex items-center justify-between text-[11px] font-bold text-rose-300">
+              <span>Coinvolgimento civico</span>
+              <span>Bassa retention</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer Slide -->
+      <div class="border-t border-slate-800/80 pt-3 flex items-center justify-between text-xs text-slate-400">
+        <span>Street Review · Pitch Deck Ufficiale</span>
+        <span class="text-[#fbbf24] font-bold">Dal reclamo isolato all'intelligenza collettiva urbana →</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 3 — LA SOLUZIONE (THE SOLUTION)                               -->
+    <!-- =================================================================== -->
+    <section class="slide slide-surface bg-grid-pattern relative flex-col justify-between p-6 sm:p-12 overflow-hidden" data-slide="3">
+      <!-- Header Slide -->
+      <div class="flex items-center justify-between border-b border-slate-800/80 pb-4">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-sky-500/15 text-[#38bdf8] border border-sky-400/30">
+            03 · La Soluzione (The Solution)
+          </span>
+          <span class="text-xs text-slate-400 font-semibold hidden sm:inline">Piattaforma Civica Partecipata di Urban Intelligence</span>
+        </div>
+        <span class="text-xs font-bold text-slate-400">SLIDE 03 / 10</span>
+      </div>
+
+      <!-- Main Body -->
+      <div class="my-auto py-4 space-y-6">
+        <div class="max-w-4xl space-y-1.5">
+          <h2 class="text-2xl sm:text-4xl lg:text-5xl font-black text-white leading-tight">
+            "Street Review: <span class="text-gradient-cyan-gold">Il TripAdvisor delle infrastrutture urbane</span>"
+          </h2>
+          <p class="text-sm sm:text-base text-slate-300">
+            Una piattaforma semplice, immediata e 100% gratuita che trasforma ogni cittadino in un recensore certificato della qualità urbana.
+          </p>
+        </div>
+
+        <!-- 3 Pilastri -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <!-- Pilastro 1 -->
+          <div class="bg-[#1e293b] border border-sky-400/40 rounded-3xl p-6 flex flex-col justify-between shadow-glow-cyan">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="w-11 h-11 rounded-2xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-xl">🗺️</span>
+                <span class="text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-sky-950 text-[#38bdf8] border border-sky-400/30">Pilastro 1</span>
+              </div>
+              <h3 class="text-lg font-black text-white">Mappa Interattiva &amp; Gratuita</h3>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Web App immediata basata su <strong class="text-white">Google Maps</strong>, accessibile da smartphone e PC <strong class="text-[#38bdf8]">senza barriere all'ingresso</strong> né installazioni obbligatorie.
+              </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-700/80 flex flex-wrap gap-1.5">
+              <span class="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-slate-900 text-sky-300 border border-slate-700">📍 Geolocalizzazione GPS</span>
+              <span class="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-slate-900 text-emerald-300 border border-slate-700">✓ Google Sign-In Verificato</span>
+            </div>
+          </div>
+
+          <!-- Pilastro 2 -->
+          <div class="bg-[#1e293b] border border-amber-400/50 rounded-3xl p-6 flex flex-col justify-between shadow-glow-gold">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-xl">⭐</span>
+                <span class="text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-amber-950 text-[#fbbf24] border border-amber-400/30">Pilastro 2</span>
+              </div>
+              <h3 class="text-lg font-black text-white">Valutazione Multifattoriale (13 Parametri a Stelle)</h3>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Analisi oggettiva su <strong class="text-[#fbbf24]">13 parametri strutturali</strong>: manto stradale, marciapiedi, illuminazione notturna, drenaggio pioggia/allagamenti, silenziosità, visibilità incroci, ombreggiatura, pulizia e sicurezza.
+              </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-700/80 flex flex-wrap gap-1.5">
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-300">🛣️ Asfalto</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-300">🌧️ Allagamenti</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-300">💡 Luce</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-300">🔇 Silenzio</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-300">🚶 Marciapiedi</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-300">+8 altri</span>
+            </div>
+          </div>
+
+          <!-- Pilastro 3 -->
+          <div class="bg-[#1e293b] border border-sky-400/40 rounded-3xl p-6 flex flex-col justify-between shadow-glow-cyan">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-xl">🅿️</span>
+                <span class="text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-400/30">Pilastro 3</span>
+              </div>
+              <h3 class="text-lg font-black text-white">Mappatura Parcheggi &amp; Servizi</h3>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Indicazione granulare di <strong class="text-white">stalli gratuiti, blu a pagamento, disco orario, parcheggi disabili, stalli rosa, carico/scarico</strong>, oltre a piste ciclabili e colonnine di ricarica EV.
+              </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-700/80 flex flex-wrap gap-1.5">
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-white">⚪ Liberi</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-950 text-blue-300">🔵 Blu</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-950 text-yellow-300">♿ Disabili</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-pink-950 text-pink-300">🌸 Rosa</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-300">⚡ Colonnine EV</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer Slide -->
+      <div class="border-t border-slate-800/80 pt-3 flex items-center justify-between text-xs text-slate-400">
+        <span>Street Review · Pitch Deck Ufficiale</span>
+        <span class="text-[#38bdf8] font-bold">Una scheda permanente e oggettiva per ogni via italiana</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 4 — IL MOTORE DI COINVOLGIMENTO (GAMIFICATION)                -->
+    <!-- =================================================================== -->
+    <section class="slide slide-surface bg-grid-pattern relative flex-col justify-between p-6 sm:p-12 overflow-hidden" data-slide="4">
+      <!-- Header Slide -->
+      <div class="flex items-center justify-between border-b border-slate-800/80 pb-4">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-500/15 text-[#fbbf24] border border-amber-400/40">
+            04 · Il Motore di Coinvolgimento (Gamification)
+          </span>
+          <span class="text-xs text-slate-400 font-semibold hidden sm:inline">Meccaniche di Retention &amp; Viralità Civica</span>
+        </div>
+        <span class="text-xs font-bold text-slate-400">SLIDE 04 / 10</span>
+      </div>
+
+      <!-- Main Body -->
+      <div class="my-auto py-3 space-y-5">
+        <div class="max-w-4xl space-y-1">
+          <h2 class="text-2xl sm:text-4xl lg:text-5xl font-black text-white leading-tight">
+            "Trasformare il senso civico in <span class="text-gradient-gold-cyan">un'esperienza di gioco</span>"
+          </h2>
+          <p class="text-xs sm:text-sm text-slate-300">
+            Un ecosistema di ricompense studiato per premiare la qualità dei dati inseriti e l'esplorazione capillare di nuove vie.
+          </p>
+        </div>
+
+        <!-- Grid 2x2 dei 4 Meccanismi di Retention -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          
+          <!-- Box 1: Sistema XP -->
+          <div class="bg-[#1e293b]/95 border border-amber-400/40 rounded-3xl p-5 space-y-3 shadow-lg">
+            <div class="flex items-center justify-between">
+              <h3 class="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                <span class="text-xl">⚡</span> Sistema Punti Esperienza (XP)
+              </h3>
+              <span class="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/20 text-[#fbbf24] border border-amber-400/40">Fino a +100 XP / Via</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2.5 pt-1">
+              <div class="bg-slate-900/90 border border-slate-700/80 rounded-2xl p-3 text-center">
+                <p class="text-lg sm:text-xl font-black text-[#fbbf24]">+50 XP</p>
+                <p class="text-[11px] font-bold text-white">Per Recensione</p>
+                <p class="text-[10px] text-slate-400">Voto stelle sulla via</p>
+              </div>
+              <div class="bg-amber-950/40 border border-amber-400/50 rounded-2xl p-3 text-center">
+                <p class="text-lg sm:text-xl font-black text-[#fbbf24]">+30 XP</p>
+                <p class="text-[11px] font-bold text-amber-200">Bonus Pioniere</p>
+                <p class="text-[10px] text-amber-300/80">1° a inaugurare la via</p>
+              </div>
+              <div class="bg-sky-950/40 border border-sky-400/50 rounded-2xl p-3 text-center">
+                <p class="text-lg sm:text-xl font-black text-[#38bdf8]">+20 XP</p>
+                <p class="text-[11px] font-bold text-sky-200">Bonus Dettaglio</p>
+                <p class="text-[10px] text-sky-300/80">Commento + tag sosta</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Box 2: 10 Livelli di Progressione -->
+          <div class="bg-[#1e293b]/95 border border-sky-400/40 rounded-3xl p-5 space-y-3 shadow-lg">
+            <div class="flex items-center justify-between">
+              <h3 class="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                <span class="text-xl">👑</span> 10 Livelli di Progressione
+              </h3>
+              <span class="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-sky-500/20 text-[#38bdf8] border border-sky-400/40">Cornici Avatar Evolutive</span>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Scalata meritocratica da <strong class="text-amber-300">🌱 Pedone Curioso (Liv. 1)</strong> fino a <strong class="text-purple-300">👑 Sindaco delle Strade (Liv. 9)</strong> e <strong class="text-[#fbbf24]">🌟 Leggenda della Riviera (Liv. 10)</strong>.
+            </p>
+            <div class="flex flex-wrap items-center gap-2 pt-1">
+              <span class="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-amber-950/80 text-amber-300 border border-amber-700">🥉 Grado Bronzo</span>
+              <span class="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-sky-950/80 text-[#38bdf8] border border-sky-500">💎 Grado Ciano</span>
+              <span class="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-yellow-950/80 text-[#fbbf24] border border-amber-400">🥇 Grado Oro</span>
+              <span class="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-fuchsia-950/80 text-fuchsia-300 border border-fuchsia-400">✨ Grado Diamante</span>
+            </div>
+          </div>
+
+          <!-- Box 3: 8 Badge & Notifiche Automatiche -->
+          <div class="bg-[#1e293b]/95 border border-emerald-400/40 rounded-3xl p-5 space-y-3 shadow-lg">
+            <div class="flex items-center justify-between">
+              <h3 class="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                <span class="text-xl">🏅</span> 8 Badge &amp; Notifiche Automatiche
+              </h3>
+              <span class="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">EmailJS Integrato</span>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Medaglie sbloccabili (<strong class="text-white">🚀 Battesimo dell'Asfalto, 🧭 Pioniere, 🅿️ Segugio del Parcheggio, ♿ Paladino dell'Accessibilità, ✍️ Critico Stradale, 🏆 Maestro dell'Asfalto</strong>) con <strong class="text-emerald-300">email celebrative automatiche via EmailJS</strong> ad ogni traguardo.
+            </p>
+          </div>
+
+          <!-- Box 4: Classifica Live -->
+          <div class="bg-[#1e293b]/95 border border-amber-400/40 rounded-3xl p-5 space-y-3 shadow-lg">
+            <div class="flex items-center justify-between">
+              <h3 class="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                <span class="text-xl">🏆</span> Classifica Live in Tempo Reale
+              </h3>
+              <span class="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/20 text-[#fbbf24] border border-amber-400/40">Podio + Top 10</span>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              <strong class="text-white">Top 10 Esploratori d'Italia</strong> aggiornata in tempo reale sia nell'App che sulla Landing Page pubblica, con conteggio strade recensite, vie inaugurate da Pioniere e medagliere personale.
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Footer Slide -->
+      <div class="border-t border-slate-800/80 pt-3 flex items-center justify-between text-xs text-slate-400">
+        <span>Street Review · Pitch Deck Ufficiale</span>
+        <span class="text-[#fbbf24] font-bold">Gamification civica = acquisizione e retention organica a costo zero</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 5 — IL PRODOTTO OGGI (TECNOLOGIA & EARLY TRACTION)            -->
+    <!-- =================================================================== -->
+    <section class="slide slide-surface bg-grid-pattern relative flex-col justify-between p-6 sm:p-12 overflow-hidden" data-slide="5">
+      <!-- Header Slide -->
+      <div class="flex items-center justify-between border-b border-slate-800/80 pb-4">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-400/40">
+            05 · Il Prodotto Oggi (Tecnologia &amp; Early Traction)
+          </span>
+          <span class="text-xs text-slate-400 font-semibold hidden sm:inline">Validazione sul campo e architettura cloud scalabile</span>
+        </div>
+        <span class="text-xs font-bold text-slate-400">SLIDE 05 / 10</span>
+      </div>
+
+      <!-- Main Body -->
+      <div class="my-auto py-3 space-y-6">
+        <div class="max-w-4xl space-y-1">
+          <h2 class="text-2xl sm:text-4xl lg:text-5xl font-black text-white leading-tight">
+            "Non è solo un'idea su carta: <span class="text-gradient-cyan-gold">il prodotto è già online e funzionante</span>"
+          </h2>
+          <p class="text-xs sm:text-sm text-slate-300">
+            Ecosistema completo sviluppato, testato con utenti reali e ingegnerizzato per scalare a livello nazionale mantenendo costi server minimi.
+          </p>
+        </div>
+
+        <!-- 4 Box Metriche / Tecnologia -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          
+          <!-- Box 1 -->
+          <div class="bg-[#1e293b] border border-emerald-400/40 rounded-3xl p-6 flex items-start gap-4 shadow-lg">
+            <div class="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 flex items-center justify-center text-2xl shrink-0">
+              💻
+            </div>
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-2">
+                <h3 class="text-base sm:text-lg font-black text-white">1. MVP Operativo</h3>
+                <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">Live 24/7</span>
+              </div>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                <strong class="text-white">Web App interattiva e Landing Page con classifica live</strong> già pubblicate, responsive e funzionanti su qualsiasi smartphone, tablet o PC.
+              </p>
+            </div>
+          </div>
+
+          <!-- Box 2 -->
+          <div class="bg-[#1e293b] border border-amber-400/40 rounded-3xl p-6 flex items-start gap-4 shadow-lg">
+            <div class="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-400/40 flex items-center justify-center text-2xl shrink-0">
+              🌴
+            </div>
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-2">
+                <h3 class="text-base sm:text-lg font-black text-white">2. Early Traction Organica in Crescita</h3>
+                <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-[#fbbf24]">€0 Adv</span>
+              </div>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Pilota avviato con successo nella <strong class="text-[#fbbf24]">Riviera delle Palme</strong> (San Benedetto del Tronto e comuni limitrofi) con recensioni e utenti in crescita organica a <strong class="text-white">budget marketing zero</strong>.
+              </p>
+            </div>
+          </div>
+
+          <!-- Box 3 -->
+          <div class="bg-[#1e293b] border border-sky-400/40 rounded-3xl p-6 flex items-start gap-4 shadow-lg">
+            <div class="w-12 h-12 rounded-2xl bg-sky-500/15 border border-sky-400/40 flex items-center justify-center text-2xl shrink-0">
+              🇮🇹
+            </div>
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-2">
+                <h3 class="text-base sm:text-lg font-black text-white">3. Pronta per la Scala Nazionale</h3>
+                <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-sky-500/20 text-[#38bdf8]">Tutta Italia</span>
+              </div>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Architettura già sbloccata su tutta Italia con geolocalizzazione GPS (<em class="text-[#38bdf8]">"Vicino a me"</em>), <strong class="text-white">Marker Clustering dinamico</strong> e gestione intelligente dei segmenti stradali.
+              </p>
+            </div>
+          </div>
+
+          <!-- Box 4 -->
+          <div class="bg-[#1e293b] border border-amber-400/50 rounded-3xl p-6 flex items-start gap-4 shadow-glow-gold">
+            <div class="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-2xl shrink-0">
+              ☁️
+            </div>
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-2">
+                <h3 class="text-base sm:text-lg font-black text-white">4. Cloud "Salva-Costi"</h3>
+                <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-400 text-slate-950">-95% Letture</span>
+              </div>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Database <strong class="text-white">Google Firebase Firestore</strong> ottimizzato con pre-aggregazione dati su collezioni dedicate e caricamento <em class="text-[#fbbf24]">on-demand</em> (<strong class="text-amber-300">abbattimento del 95% delle letture server</strong>).
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Footer Slide -->
+      <div class="border-t border-slate-800/80 pt-3 flex items-center justify-between text-xs text-slate-400">
+        <span>Street Review · Pitch Deck Ufficiale</span>
+        <span class="text-emerald-400 font-bold">Zero debito tecnico · Architettura serverless pronta per decine di migliaia di utenti</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 6 — POSIZIONAMENTO & COMPETITOR                               -->
+    <!-- =================================================================== -->
+    <section class="slide slide-surface bg-grid-pattern relative flex-col justify-between p-6 sm:p-12 overflow-hidden" data-slide="6">
+      <!-- Header Slide -->
+      <div class="flex items-center justify-between border-b border-slate-800/80 pb-4">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-sky-500/15 text-[#38bdf8] border border-sky-400/40">
+            06 · Posizionamento &amp; Competitor
+          </span>
+          <span class="text-xs text-slate-400 font-semibold hidden sm:inline">Analisi comparativa del mercato</span>
+        </div>
+        <span class="text-xs font-bold text-slate-400">SLIDE 06 / 10</span>
+      </div>
+
+      <!-- Main Body -->
+      <div class="my-auto py-2 space-y-5">
+        <div class="max-w-4xl space-y-1">
+          <h2 class="text-2xl sm:text-4xl font-black text-white leading-tight">
+            "Un <span class="text-gradient-gold-cyan">posizionamento unico</span> sul mercato"
+          </h2>
+          <p class="text-xs sm:text-sm text-slate-300">
+            Mentre i giganti della navigazione guardano al traffico o ai negozi, Street Review presidia lo spazio scoperto della qualità strutturale e della vivibilità di ogni singola via.
+          </p>
+        </div>
+
+        <!-- Matrice di Confronto -->
+        <div class="overflow-hidden rounded-3xl border border-slate-700/90 bg-[#1e293b]/90 shadow-xl">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-900/95 border-b border-slate-700 text-[11px] sm:text-xs font-black uppercase tracking-wider text-slate-300">
+                <th class="py-3.5 px-4 sm:px-6">Piattaforma / Soluzione</th>
+                <th class="py-3.5 px-4">Focus Attuale &amp; Limite Principale</th>
+                <th class="py-3.5 px-3 text-center hidden sm:table-cell">13 Parametri Strada</th>
+                <th class="py-3.5 px-3 text-center hidden sm:table-cell">Mappa Parcheggi</th>
+                <th class="py-3.5 px-3 text-center hidden sm:table-cell">Community Gamificata</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800 text-xs sm:text-sm">
+              <tr class="hover:bg-slate-800/40">
+                <td class="py-3 px-4 sm:px-6 font-bold text-white">📍 Google / Apple Maps</td>
+                <td class="py-3 px-4 text-slate-300">Recensiscono <strong class="text-white">solo attività commerciali</strong> (bar, hotel, negozi), non le strade.</td>
+                <td class="py-3 px-3 text-center hidden sm:table-cell text-rose-400 font-bold">✕</td>
+                <td class="py-3 px-3 text-center hidden sm:table-cell text-rose-400 font-bold">✕</td>
+                <td class="py-3 px-3 text-center hidden sm:table-cell text-amber-300 text-xs">Parziale (POI)</td>
+              </tr>
+              <tr class="hover:bg-slate-800/40">
+                <td class="py-3 px-4 sm:px-6 font-bold text-white">🚗 Waze</td>
+                <td class="py-3 px-4 text-slate-300">Segnala solo <strong class="text-white">traffico ed eventi temporanei</strong> in guida, nessuna scheda storica sulla vivibilità.</td>
+                <td class="py-3 px-3 text-center hidden sm:table-cell text-rose-400 font-bold">✕</td>
+                <td class="py-3 px-3 text-center hidden sm:table-cell text-rose-400 font-bold">✕</td>
+                <td class="py-3 px-3 text-center hidden sm:table-cell text-emerald-400 font-bold">✓</td>
+              </tr>
+              <tr class="hover:bg-slate-800/40">
+                <td class="py-3 px-4 sm:px-6 font-bold text-white">🏛️ App Comunali <span class="block text-[11px] text-slate-400 font-normal">(FixMyStreet, Comuni-Chiamo)</span></td>
+                <td class="py-3 px-4 text-slate-300"><strong class="text-white">Reclami burocratici</strong> verso la PA, nessuna community o guida pubblica per i cittadini.</td>
+                <td class="py-3 px-3 text-center hidden sm:table-cell text-rose-400 font-bold">✕</td>
+                <td class="py-3 px-3 text-center hidden sm:table-cell text-rose-400 font-bold">✕</td>
+                <td class="py-3 px-3 text-center hidden sm:table-cell text-rose-400 font-bold">✕</td>
+              </tr>
+              <tr class="hover:bg-slate-800/40">
+                <td class="py-3 px-4 sm:px-6 font-bold text-white">♿ App di Nicchia <span class="block text-[11px] text-slate-400 font-normal">(Wheelmap, Strava)</span></td>
+                <td class="py-3 px-4 text-slate-300">Mappano <strong class="text-white">un singolo aspetto isolato</strong> (solo barriere o solo percorsi sportivi).</td>
+                <td class="py-3 px-3 text-center hidden sm:table-cell text-amber-300 text-xs">1 Parametro</td>
+                <td class="py-3 px-3 text-center hidden sm:table-cell text-rose-400 font-bold">✕</td>
+                <td class="py-3 px-3 text-center hidden sm:table-cell text-amber-300 text-xs">Settoriale</td>
+              </tr>
+              <!-- Riga Street Review Evidenziata -->
+              <tr class="bg-gradient-to-r from-amber-500/20 via-sky-500/15 to-amber-500/20 border-t-2 border-[#fbbf24]">
+                <td class="py-4 px-4 sm:px-6 font-black text-[#fbbf24] text-sm sm:text-base flex items-center gap-2">
+                  <span>⭐</span>
+                  <span>STREET REVIEW</span>
+                </td>
+                <td class="py-4 px-4 text-white font-bold">
+                  Scheda permanente della via + <span class="text-[#fbbf24]">13 parametri strutturali</span> + <span class="text-[#38bdf8]">mappa parcheggi</span> + community gamificata.
+                </td>
+                <td class="py-4 px-3 text-center hidden sm:table-cell text-emerald-400 font-black text-base">✅ 13/13</td>
+                <td class="py-4 px-3 text-center hidden sm:table-cell text-emerald-400 font-black text-base">✅ 6 Tipi</td>
+                <td class="py-4 px-3 text-center hidden sm:table-cell text-emerald-400 font-black text-base">✅ 10 Liv.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Footer Slide -->
+      <div class="border-t border-slate-800/80 pt-3 flex items-center justify-between text-xs text-slate-400">
+        <span>Street Review · Pitch Deck Ufficiale</span>
+        <span class="text-[#fbbf24] font-bold">Vantaggio competitivo: Database proprietario crowdsourced sulla qualità micro-urbana</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 7 — MODELLO DI BUSINESS (B2B & B2G)                           -->
+    <!-- =================================================================== -->
+    <section class="slide slide-surface bg-grid-pattern relative flex-col justify-between p-6 sm:p-12 overflow-hidden" data-slide="7">
+      <!-- Header Slide -->
+      <div class="flex items-center justify-between border-b border-slate-800/80 pb-4">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-500/15 text-[#fbbf24] border border-amber-400/40">
+            07 · Modello di Business (B2B &amp; B2G)
+          </span>
+          <span class="text-xs text-slate-400 font-semibold hidden sm:inline">Data Monetization &amp; Smart City Analytics</span>
+        </div>
+        <span class="text-xs font-bold text-slate-400">SLIDE 07 / 10</span>
+      </div>
+
+      <!-- Main Body -->
+      <div class="my-auto py-4 space-y-6">
+        <div class="max-w-4xl space-y-2">
+          <h2 class="text-2xl sm:text-4xl lg:text-5xl font-black text-white leading-tight">
+            "Dal valore civico alla <span class="text-gradient-gold-cyan">sostenibilità economica</span>"
+          </h2>
+          <p class="text-sm sm:text-lg font-bold text-[#38bdf8]">
+            Sempre 100% gratuita per i cittadini. Monetizzazione basata sul valore dei dati aggregati:
+          </p>
+        </div>
+
+        <!-- 3 Card di Ricavo -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          
+          <!-- Card 1: Real Estate B2B -->
+          <div class="bg-[#1e293b] border border-amber-400/45 rounded-3xl p-6 flex flex-col justify-between shadow-glow-gold">
+            <div class="space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-2xl">
+                  🏠
+                </div>
+                <span class="text-xs font-black uppercase tracking-wider px-3 py-1 rounded-full bg-amber-500/20 text-[#fbbf24] border border-amber-400/40">Stream 1 · B2B</span>
+              </div>
+              <h3 class="text-lg sm:text-xl font-black text-white">
+                Real Estate &amp; Portali Immobiliari (B2B)
+              </h3>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Integrazione <strong class="text-white">API / Widget e report</strong> per agenzie e portali immobiliari:
+              </p>
+              <div class="bg-slate-900/90 border border-amber-400/30 rounded-2xl p-3 text-xs text-amber-200 italic">
+                "Indice di vivibilità, silenziosità, sicurezza e facilità parcheggio della via certificato dai residenti"
+              </div>
+            </div>
+            <div class="mt-5 pt-3 border-t border-slate-700/80 flex items-center justify-between text-xs font-bold text-[#fbbf24]">
+              <span>Modello: SaaS / Licenza API</span>
+              <span>Alto Valore Aggiunto</span>
+            </div>
+          </div>
+
+          <!-- Card 2: PA & Smart Cities B2G -->
+          <div class="bg-[#1e293b] border border-sky-400/45 rounded-3xl p-6 flex flex-col justify-between shadow-glow-cyan">
+            <div class="space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="w-12 h-12 rounded-2xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-2xl">
+                  🏛️
+                </div>
+                <span class="text-xs font-black uppercase tracking-wider px-3 py-1 rounded-full bg-sky-500/20 text-[#38bdf8] border border-sky-400/40">Stream 2 · B2G</span>
+              </div>
+              <h3 class="text-lg sm:text-xl font-black text-white">
+                Pubblica Amministrazione &amp; Smart Cities (B2G)
+              </h3>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                <strong class="text-white">Dashboard analitiche per i Comuni</strong> per monitorare in modo oggettivo le priorità di manutenzione urbana: stato dell'asfalto, illuminazione, rischio allagamenti e barriere architettoniche.
+              </p>
+            </div>
+            <div class="mt-5 pt-3 border-t border-slate-700/80 flex items-center justify-between text-xs font-bold text-[#38bdf8]">
+              <span>Modello: Abbonamento Annuale PA</span>
+              <span>Data-Driven Governance</span>
+            </div>
+          </div>
+
+          <!-- Card 3: Sponsorship & Mobilità -->
+          <div class="bg-[#1e293b] border border-emerald-400/45 rounded-3xl p-6 flex flex-col justify-between shadow-lg">
+            <div class="space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-2xl">
+                  ⚡
+                </div>
+                <span class="text-xs font-black uppercase tracking-wider px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">Stream 3 · Partner</span>
+              </div>
+              <h3 class="text-lg sm:text-xl font-black text-white">
+                Sponsorship Locali &amp; Mobilità
+              </h3>
+              <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Partnership strategiche con <strong class="text-white">operatori di ricarica elettrica (EV), micromobilità, assicurazioni</strong> e servizi di quartiere interessati alla mappatura e visibilità territoriale.
+              </p>
+            </div>
+            <div class="mt-5 pt-3 border-t border-slate-700/80 flex items-center justify-between text-xs font-bold text-emerald-400">
+              <span>Modello: Co-Branding &amp; Lead</span>
+              <span>Impatto ESG</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Footer Slide -->
+      <div class="border-t border-slate-800/80 pt-3 flex items-center justify-between text-xs text-slate-400">
+        <span>Street Review · Pitch Deck Ufficiale</span>
+        <span class="text-[#fbbf24] font-bold">Zero paywall per gli utenti = massima crescita dell'effetto rete</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 8 — ROADMAP (I PROSSIMI 12 MESI)                              -->
+    <!-- =================================================================== -->
+    <section class="slide slide-surface bg-grid-pattern relative flex-col justify-between p-6 sm:p-12 overflow-hidden" data-slide="8">
+      <!-- Header Slide -->
+      <div class="flex items-center justify-between border-b border-slate-800/80 pb-4">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-sky-500/15 text-[#38bdf8] border border-sky-400/40">
+            08 · Roadmap (I Prossimi 12 Mesi)
+          </span>
+          <span class="text-xs text-slate-400 font-semibold hidden sm:inline">Piano strategico di sviluppo ed espansione</span>
+        </div>
+        <span class="text-xs font-bold text-slate-400">SLIDE 08 / 10</span>
+      </div>
+
+      <!-- Main Body -->
+      <div class="my-auto py-4 space-y-7">
+        <div class="max-w-4xl space-y-1">
+          <h2 class="text-2xl sm:text-4xl lg:text-5xl font-black text-white leading-tight">
+            "Dalla validazione locale alla <span class="text-gradient-cyan-gold">scalabilità nazionale</span>"
+          </h2>
+          <p class="text-xs sm:text-sm text-slate-300">
+            Un percorso in 4 fasi concrete con il primo traguardo tecnologico già interamente completato e operativo.
+          </p>
+        </div>
+
+        <!-- Timeline Orizzontale a 4 Step -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-5 relative">
+          
+          <!-- Fase 1 -->
+          <div class="bg-[#1e293b] border-2 border-emerald-400/70 rounded-3xl p-5 flex flex-col justify-between shadow-lg relative">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="px-3 py-1 rounded-full text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+                  Fase 1 · Completata ✅
+                </span>
+                <span class="text-xl">✅</span>
+              </div>
+              <h3 class="text-base sm:text-lg font-black text-white">
+                Fondamenta &amp; MVP Nazionale
+              </h3>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Sviluppo <strong class="text-white">Web App MVP</strong>, sistema <strong class="text-emerald-300">Gamification a 10 livelli</strong>, test sul campo nella Riviera delle Palme e apertura architettura a tutta Italia.
+              </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-700/80 text-[11px] font-extrabold text-emerald-400">
+              Stato: 100% Operativo Online
+            </div>
+          </div>
+
+          <!-- Fase 2 -->
+          <div class="bg-[#1e293b] border-2 border-[#fbbf24] rounded-3xl p-5 flex flex-col justify-between shadow-glow-gold relative">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="px-3 py-1 rounded-full text-xs font-black bg-amber-500/20 text-[#fbbf24] border border-amber-400/50">
+                  Fase 2 · Mesi 1-3 🎯
+                </span>
+                <span class="text-xl">🎯</span>
+              </div>
+              <h3 class="text-base sm:text-lg font-black text-white">
+                Community &amp; Crowdfunding
+              </h3>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Consolidamento community locale, lancio campagna di <strong class="text-[#fbbf24]">Reward Crowdfunding</strong> e attivazione delle prime partnership territoriali e civiche.
+              </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-700/80 text-[11px] font-extrabold text-[#fbbf24]">
+              Focus: Crescita Utenti &amp; Awareness
+            </div>
+          </div>
+
+          <!-- Fase 3 -->
+          <div class="bg-[#1e293b] border border-sky-400/50 rounded-3xl p-5 flex flex-col justify-between shadow-lg relative">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="px-3 py-1 rounded-full text-xs font-black bg-sky-500/20 text-[#38bdf8] border border-sky-400/40">
+                  Fase 3 · Mesi 4-6 📱
+                </span>
+                <span class="text-xl">📱</span>
+              </div>
+              <h3 class="text-base sm:text-lg font-black text-white">
+                App Store iOS &amp; Android
+              </h3>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Sviluppo e pubblicazione delle <strong class="text-white">App Native su Apple App Store (iOS) e Google Play Store (Android)</strong> con notifiche push geolocalizzate.
+              </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-700/80 text-[11px] font-extrabold text-[#38bdf8]">
+              Focus: Mobile Retention &amp; Store
+            </div>
+          </div>
+
+          <!-- Fase 4 -->
+          <div class="bg-[#1e293b] border border-purple-400/50 rounded-3xl p-5 flex flex-col justify-between shadow-lg relative">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="px-3 py-1 rounded-full text-xs font-black bg-purple-500/20 text-purple-300 border border-purple-400/40">
+                  Fase 4 · Mesi 6-12 🚀
+                </span>
+                <span class="text-xl">🚀</span>
+              </div>
+              <h3 class="text-base sm:text-lg font-black text-white">
+                Monetizzazione B2B &amp; B2G
+              </h3>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Rilascio dei primi <strong class="text-white">pacchetti dati e widget B2B (Settore Immobiliare)</strong> e dashboard direzionali <strong class="text-purple-300">B2G (Amministrazioni Comunali)</strong>.
+              </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-700/80 text-[11px] font-extrabold text-purple-300">
+              Focus: Ricavi Ricorrenti (ARR)
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Footer Slide -->
+      <div class="border-t border-slate-800/80 pt-3 flex items-center justify-between text-xs text-slate-400">
+        <span>Street Review · Pitch Deck Ufficiale</span>
+        <span class="text-[#38bdf8] font-bold">Time-to-market immediato grazie all'architettura Web App già in produzione</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 9 — IL FONDATORE (CHI C'È DIETRO)                             -->
+    <!-- =================================================================== -->
+    <section class="slide slide-surface bg-grid-pattern relative flex-col justify-between p-6 sm:p-12 overflow-hidden" data-slide="9">
+      <!-- Header Slide -->
+      <div class="flex items-center justify-between border-b border-slate-800/80 pb-4">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-500/15 text-[#fbbf24] border border-amber-400/40">
+            09 · Il Fondatore (Chi c'è dietro)
+          </span>
+          <span class="text-xs text-slate-400 font-semibold hidden sm:inline">Competenze ingegneristiche, analisi dati e capacità di esecuzione</span>
+        </div>
+        <span class="text-xs font-bold text-slate-400">SLIDE 09 / 10</span>
+      </div>
+
+      <!-- Main Body -->
+      <div class="my-auto py-4">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          
+          <!-- Colonna Sinistra: Card Profilo con Foto Avatar Berna.jpg -->
+          <div class="lg:col-span-4 flex flex-col items-center text-center bg-[#1e293b] border border-amber-400/40 rounded-3xl p-6 sm:p-8 shadow-glow-gold space-y-4">
+            <div class="relative">
+              <div class="absolute -inset-2 rounded-full bg-gradient-to-tr from-[#38bdf8] via-[#fbbf24] to-[#f59e0b] opacity-60 blur-md"></div>
+              <div class="relative w-32 h-32 sm:w-36 sm:h-36 rounded-full p-1 bg-gradient-to-tr from-[#38bdf8] via-[#fbbf24] to-[#f59e0b]">
+                <img src="Avatar Berna.jpg" alt="Matteo Bernardini - Founder Street Review" class="w-full h-full object-cover rounded-full border-2 border-[#0f172a]" />
+              </div>
+            </div>
+
+            <div class="space-y-1">
+              <h2 class="text-2xl sm:text-3xl font-black text-white">Matteo Bernardini</h2>
+              <p class="text-sm font-extrabold text-[#fbbf24] uppercase tracking-wider">Ideatore &amp; Founder</p>
+              <p class="text-xs text-slate-400 flex items-center justify-center gap-1 pt-1">
+                <span>📍</span> San Benedetto del Tronto (AP)
+              </p>
+            </div>
+
+            <div class="w-full pt-3 border-t border-slate-700/80 flex flex-wrap justify-center gap-2">
+              <span class="text-[11px] font-bold px-3 py-1 rounded-full bg-slate-900 text-[#38bdf8] border border-sky-500/30">Ingegneria Meccanica</span>
+              <span class="text-[11px] font-bold px-3 py-1 rounded-full bg-slate-900 text-[#fbbf24] border border-amber-500/30">Production Planner</span>
+              <span class="text-[11px] font-bold px-3 py-1 rounded-full bg-slate-900 text-emerald-300 border border-emerald-500/30">Full-Stack Execution</span>
+            </div>
+          </div>
+
+          <!-- Colonna Destra: 3 Pilastri del Profilo -->
+          <div class="lg:col-span-8 space-y-4">
+            
+            <!-- Background Accademico -->
+            <div class="bg-[#1e293b]/95 border border-sky-400/40 rounded-3xl p-5 sm:p-6 flex items-start gap-4 shadow-lg">
+              <div class="w-12 h-12 rounded-2xl bg-sky-500/15 border border-sky-400/40 flex items-center justify-center text-2xl shrink-0">
+                🎓
+              </div>
+              <div class="space-y-1">
+                <span class="text-[11px] font-black uppercase tracking-wider text-[#38bdf8]">Formazione Scientifica &amp; Metodo</span>
+                <h3 class="text-base sm:text-lg font-black text-white">Background Accademico</h3>
+                <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Laurea Magistrale in <strong class="text-white">Ingegneria Meccanica</strong> presso l'Università Politecnica delle Marche (<strong class="text-[#38bdf8]">UNIVPM</strong>). Approccio rigoroso orientato al problem-solving, alla modellazione di sistemi e all'ottimizzazione strutturale.
+                </p>
+              </div>
+            </div>
+
+            <!-- Esperienza Professionale -->
+            <div class="bg-[#1e293b]/95 border border-amber-400/40 rounded-3xl p-5 sm:p-6 flex items-start gap-4 shadow-lg">
+              <div class="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-400/40 flex items-center justify-center text-2xl shrink-0">
+                📊
+              </div>
+              <div class="space-y-1">
+                <span class="text-[11px] font-black uppercase tracking-wider text-[#fbbf24]">Gestione Processi Complessi &amp; Dati</span>
+                <h3 class="text-base sm:text-lg font-black text-white">Esperienza Professionale</h3>
+                <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  <strong class="text-white">Production Planner</strong> presso un'azienda farmaceutica leader di settore ad Ascoli Piceno, con solida esperienza nella <strong class="text-[#fbbf24]">pianificazione industriale, gestione di processi complessi e analisi dati</strong> ad alta affidabilità.
+                </p>
+              </div>
+            </div>
+
+            <!-- Capacità di Esecuzione -->
+            <div class="bg-[#1e293b]/95 border border-emerald-400/40 rounded-3xl p-5 sm:p-6 flex items-start gap-4 shadow-lg">
+              <div class="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 flex items-center justify-center text-2xl shrink-0">
+                🚀
+              </div>
+              <div class="space-y-1">
+                <span class="text-[11px] font-black uppercase tracking-wider text-emerald-400">Dall'Idea al Prodotto Reale</span>
+                <h3 class="text-base sm:text-lg font-black text-white">Capacità di Esecuzione</h3>
+                <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Cittadino di San Benedetto del Tronto; <strong class="text-white">ha progettato, sviluppato e portato online l'intero ecosistema di Street Review</strong> trasformando un'esigenza civica in una piattaforma funzionante e scalabile.
+                </p>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Footer Slide -->
+      <div class="border-t border-slate-800/80 pt-3 flex items-center justify-between text-xs text-slate-400">
+        <span>Street Review · Pitch Deck Ufficiale</span>
+        <span class="text-[#fbbf24] font-bold">Ingegneria + Pianificazione + Esecuzione diretta sul prodotto</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 10 — LA RICHIESTA (USO DEI FONDI & CONTATTI)                  -->
+    <!-- =================================================================== -->
+    <section class="slide slide-surface bg-grid-pattern relative flex-col justify-between p-6 sm:p-12 overflow-hidden" data-slide="10">
+      <!-- Header Slide -->
+      <div class="flex items-center justify-between border-b border-slate-800/80 pb-4">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-500/15 text-[#fbbf24] border border-amber-400/40">
+            10 · La Richiesta (Uso dei Fondi &amp; Contatti)
+          </span>
+          <span class="text-xs text-slate-400 font-semibold hidden sm:inline">Allocazione strategica delle risorse e Call to Action</span>
+        </div>
+        <span class="text-xs font-bold text-slate-400">SLIDE 10 / 10</span>
+      </div>
+
+      <!-- Main Body -->
+      <div class="my-auto py-3 space-y-6">
+        <div class="max-w-4xl space-y-1">
+          <h2 class="text-2xl sm:text-4xl lg:text-5xl font-black text-white leading-tight">
+            "Costruiamo insieme <span class="text-gradient-gold-cyan">la mappa delle strade italiane</span>"
+          </h2>
+          <p class="text-xs sm:text-sm text-slate-300">
+            Ripartizione dell'investimento per accelerare la diffusione nazionale, il lancio sugli Store Mobile e la costituzione societaria:
+          </p>
+        </div>
+
+        <!-- Ripartizione dell'investimento (3 Card con Barre & Indicatori Circolari) -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          
+          <!-- 40% Sviluppo Tecnico & Store Mobile -->
+          <div class="bg-[#1e293b] border border-sky-400/50 rounded-3xl p-5 space-y-3 shadow-glow-cyan">
+            <div class="flex items-center justify-between">
+              <span class="text-3xl sm:text-4xl font-black text-[#38bdf8]">40%</span>
+              <span class="w-10 h-10 rounded-2xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-xl">📱</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-700">
+              <div class="h-full w-[40%] bg-gradient-to-r from-[#0284c7] to-[#38bdf8] rounded-full"></div>
+            </div>
+            <h3 class="text-base font-black text-white">Sviluppo Tecnico &amp; Store Mobile</h3>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Pubblicazione <strong class="text-white">App iOS/Android</strong> e potenziamento infrastruttura cloud (<strong class="text-[#38bdf8]">Google Maps API &amp; Firebase</strong>) su scala nazionale.
+            </p>
+          </div>
+
+          <!-- 40% Marketing & Community Growth -->
+          <div class="bg-[#1e293b] border border-amber-400/50 rounded-3xl p-5 space-y-3 shadow-glow-gold">
+            <div class="flex items-center justify-between">
+              <span class="text-3xl sm:text-4xl font-black text-[#fbbf24]">40%</span>
+              <span class="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-xl">📣</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-700">
+              <div class="h-full w-[40%] bg-gradient-to-r from-[#f59e0b] to-[#fbbf24] rounded-full"></div>
+            </div>
+            <h3 class="text-base font-black text-white">Marketing &amp; Community Growth</h3>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Campagne social geolocalizzate, PR territoriali e <strong class="text-[#fbbf24]">coinvolgimento attivo delle community cittadine</strong> e associazioni.
+            </p>
+          </div>
+
+          <!-- 20% Avvio Startup & Tutela Legale -->
+          <div class="bg-[#1e293b] border border-emerald-400/50 rounded-3xl p-5 space-y-3 shadow-lg">
+            <div class="flex items-center justify-between">
+              <span class="text-3xl sm:text-4xl font-black text-emerald-400">20%</span>
+              <span class="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-xl">⚖️</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-700">
+              <div class="h-full w-[20%] bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full"></div>
+            </div>
+            <h3 class="text-base font-black text-white">Avvio Startup &amp; Tutela Legale</h3>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Costituzione <strong class="text-white">Startup Innovativa</strong>, registrazione marchio ufficiale e adeguamento normativo/contrattuale B2B/B2G.
+            </p>
+          </div>
+
+        </div>
+
+        <!-- Box Contatti Finale Ben Visibile -->
+        <div class="bg-gradient-to-r from-[#1e293b] via-slate-900 to-[#1e293b] border-2 border-[#fbbf24] rounded-3xl p-5 sm:p-6 shadow-glow-gold flex flex-col lg:flex-row items-center justify-between gap-5">
+          <div class="flex items-center gap-4 text-center sm:text-left">
+            <img src="assets/logo.jpg" alt="Street Review Logo" class="w-14 h-14 rounded-2xl object-cover border-2 border-[#fbbf24] hidden sm:block" />
+            <div>
+              <span class="text-[11px] font-black uppercase tracking-widest text-[#fbbf24]">Pronti per una Demo Live · Contatti Diretti</span>
+              <h3 class="text-lg sm:text-2xl font-black text-white">Matteo Bernardini · Street Review</h3>
+              <p class="text-xs text-slate-300">Disponibile per approfondimenti, demo tecnica, bandi di incubazione e partnership.</p>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-center gap-3">
+            <a
+              href="mailto:streetreview.app@gmail.com"
+              class="px-4 py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-amber-300 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-2 shadow-md transition-all"
+            >
+              <span>✉️</span>
+              <span>streetreview.app@gmail.com</span>
+            </a>
+            <a
+              href="https://mattberna15.github.io/Street-Review/index.html"
+              target="_blank"
+              rel="noopener"
+              class="px-4 py-2.5 rounded-2xl bg-[#0284c7] hover:bg-[#38bdf8] hover:text-slate-950 text-white font-black text-xs sm:text-sm flex items-center gap-2 shadow-md transition-all"
+            >
+              <span>🗺️</span>
+              <span>Prova la Web App</span>
+            </a>
+            <a
+              href="https://mattberna15.github.io/Street-Review/landing.html"
+              target="_blank"
+              rel="noopener"
+              class="px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 font-bold text-xs sm:text-sm flex items-center gap-2 transition-all"
+            >
+              <span>🌐</span>
+              <span>Landing Page</span>
+            </a>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer Slide -->
+      <div class="border-t border-slate-800/80 pt-3 flex items-center justify-between text-xs text-slate-400">
+        <span>Street Review · Pitch Deck Ufficiale · Matteo Bernardini</span>
+        <span class="text-[#fbbf24] font-bold">mattberna15.github.io/Street-Review/landing.html</span>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- LOGICA INTERATTIVA SLIDE, FRECCE TASTIERA E VISTA SCORRIMENTO         -->
+  <!-- ===================================================================== -->
+  <script>
+    (function () {
+      const slides = Array.from(document.querySelectorAll('.slide'));
+      const totalSlides = slides.length;
+      const counterEl = document.getElementById('slide-counter');
+      const toggleLabelEl = document.getElementById('toggle-view-label');
+      const toggleIconEl = document.getElementById('toggle-view-icon');
+      const singleNavControls = document.getElementById('single-nav-controls');
+
+      let currentIndex = 0;
+      let isScrollMode = false;
+
+      function updateSlideDisplay() {
+        slides.forEach((slide, idx) => {
+          if (idx === currentIndex) {
+            slide.classList.add('active-slide');
+          } else {
+            slide.classList.remove('active-slide');
+          }
+        });
+        if (counterEl) {
+          counterEl.textContent = (currentIndex + 1) + ' / ' + totalSlides;
+        }
+      }
+
+      window.nextSlide = function () {
+        if (isScrollMode) {
+          currentIndex = Math.min(totalSlides - 1, currentIndex + 1);
+          slides[currentIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+          if (counterEl) counterEl.textContent = (currentIndex + 1) + ' / ' + totalSlides;
+          return;
+        }
+        currentIndex = (currentIndex + 1) % totalSlides;
+        updateSlideDisplay();
+      };
+
+      window.prevSlide = function () {
+        if (isScrollMode) {
+          currentIndex = Math.max(0, currentIndex - 1);
+          slides[currentIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+          if (counterEl) counterEl.textContent = (currentIndex + 1) + ' / ' + totalSlides;
+          return;
+        }
+        currentIndex = (currentIndex - 1 + totalSlides) % totalSlides;
+        updateSlideDisplay();
+      };
+
+      window.toggleViewMode = function () {
+        isScrollMode = !isScrollMode;
+        if (isScrollMode) {
+          document.body.classList.remove('mode-single');
+          document.body.classList.add('mode-scroll');
+          if (toggleLabelEl) toggleLabelEl.textContent = 'Vista Singola Slide';
+          if (toggleIconEl) toggleIconEl.textContent = '🖥️';
+        } else {
+          document.body.classList.remove('mode-scroll');
+          document.body.classList.add('mode-single');
+          if (toggleLabelEl) toggleLabelEl.textContent = 'Mostra Tutte / Vista Scorrimento';
+          if (toggleIconEl) toggleIconEl.textContent = '📑';
+          updateSlideDisplay();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      };
+
+      // Navigazione da tastiera (Frecce Sinistra/Destra, Spazio, PageUp/PageDown)
+      window.addEventListener('keydown', function (e) {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+
+        if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+          if (!isScrollMode) {
+            e.preventDefault();
+            window.nextSlide();
+          }
+        } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+          if (!isScrollMode) {
+            e.preventDefault();
+            window.prevSlide();
+          }
+        } else if (e.key === 'Home') {
+          if (!isScrollMode) {
+            e.preventDefault();
+            currentIndex = 0;
+            updateSlideDisplay();
+          }
+        } else if (e.key === 'End') {
+          if (!isScrollMode) {
+            e.preventDefault();
+            currentIndex = totalSlides - 1;
+            updateSlideDisplay();
+          }
+        }
+      });
+
+      // Aggiorna contatore in modalità scorrimento
+      window.addEventListener('scroll', function () {
+        if (!isScrollMode) return;
+        const viewportMiddle = window.scrollY + window.innerHeight / 2;
+        for (let i = 0; i < slides.length; i++) {
+          const rect = slides[i].getBoundingClientRect();
+          const top = rect.top + window.scrollY;
+          const bottom = top + rect.height;
+          if (viewportMiddle >= top && viewportMiddle <= bottom) {
+            currentIndex = i;
+            if (counterEl) counterEl.textContent = (currentIndex + 1) + ' / ' + totalSlides;
+            break;
+          }
+        }
+      });
+
+      updateSlideDisplay();
+    })();
+  </script>
+</body>
+</html>
