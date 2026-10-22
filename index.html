@@ -1979,9 +1979,11 @@
       const [rewardToast, setRewardToast] = useState(null);
       const [milestoneEmailToast, setMilestoneEmailToast] = useState(null);
       const [deleteToast, setDeleteToast] = useState(null);
+      const [shareToast, setShareToast] = useState(null);
       const toastTimerRef = useRef(null);
       const milestoneToastTimerRef = useRef(null);
       const deleteToastTimerRef = useRef(null);
+      const shareToastTimerRef = useRef(null);
       const userMenuRef = useRef(null);
       const cachedUsersRef = useRef({});
       cachedUsersRef.current = cachedUsersById;
@@ -2014,6 +2016,69 @@
         deleteToastTimerRef.current = setTimeout(() => {
           setDeleteToast(null);
         }, 5500);
+      };
+
+      const triggerShareToast = (message = '🔗 Link copiato negli appunti!') => {
+        if (shareToastTimerRef.current) clearTimeout(shareToastTimerRef.current);
+        setShareToast(message);
+        shareToastTimerRef.current = setTimeout(() => {
+          setShareToast(null);
+        }, 4000);
+      };
+
+      const fallbackCopyShareText = (text) => {
+        try {
+          const textArea = document.createElement("textarea");
+          textArea.value = text;
+          textArea.style.position = "fixed";
+          textArea.style.left = "-9999px";
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          const successful = document.execCommand('copy');
+          document.body.removeChild(textArea);
+          if (successful) {
+            triggerShareToast('🔗 Link copiato negli appunti!');
+          } else {
+            prompt("Copia il link:", text);
+          }
+        } catch (err) {
+          prompt("Copia il link:", text);
+        }
+      };
+
+      const copyShareUrlToClipboard = (url) => {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(url)
+            .then(() => triggerShareToast('🔗 Link copiato negli appunti!'))
+            .catch(() => fallbackCopyShareText(url));
+        } else {
+          fallbackCopyShareText(url);
+        }
+      };
+
+      const handleShareStreet = async (streetToShare) => {
+        if (!streetToShare) return;
+        const streetId = streetToShare.id || streetToShare.streetKey || '';
+        const streetName = streetToShare.name || streetToShare.streetName || 'Strada';
+        const streetCity = streetToShare.city || streetToShare.streetCity || '';
+        const shareUrl = `${window.location.origin}${window.location.pathname}?street=${encodeURIComponent(streetId)}`;
+
+        if (navigator.share) {
+          try {
+            await navigator.share({
+              title: `Street Review - ${streetName}`,
+              text: `Guarda la scheda e le recensioni di ${streetName}${streetCity ? ` (${streetCity})` : ''} su Street Review! Lascia anche tu il tuo voto:`,
+              url: shareUrl
+            });
+          } catch (err) {
+            if (err && err.name !== 'AbortError') {
+              copyShareUrlToClipboard(shareUrl);
+            }
+          }
+        } else {
+          copyShareUrlToClipboard(shareUrl);
+        }
       };
 
       // Ascolto automatico dello stato di autenticazione Firebase
@@ -2537,6 +2602,106 @@
           setSelectedStreet(matching);
         }
       }, [streets]);
+
+      // Rilevamento automatico del Deep Link all'avvio (?street=...)
+      const deepLinkProcessedRef = useRef(false);
+      useEffect(() => {
+        if (deepLinkProcessedRef.current) return;
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetStreetKey = urlParams.get('street');
+        if (!targetStreetKey) {
+          deepLinkProcessedRef.current = true;
+          return;
+        }
+
+        // Attendiamo che il motore mappa sia inizializzato
+        if (!mapEngine || (!googleMapRef.current && !leafletMapRef.current)) return;
+
+        let isMounted = true;
+
+        const processDeepLink = async () => {
+          const decodedTarget = decodeURIComponent(targetStreetKey).trim();
+          if (!decodedTarget) {
+            deepLinkProcessedRef.current = true;
+            return;
+          }
+
+          // 1. Cerca prima nelle strade già caricate in memoria (streetsRef.current)
+          let target = (streetsRef.current || []).find(s =>
+            (s.id && s.id === decodedTarget) ||
+            (s.streetKey && s.streetKey === decodedTarget) ||
+            (s.id && s.id.replace(/^street-/, '') === decodedTarget.replace(/^street-/, '')) ||
+            (s.streetKey && s.streetKey.toLowerCase() === decodedTarget.toLowerCase()) ||
+            (s.name && s.name.toLowerCase() === decodedTarget.toLowerCase())
+          );
+
+          // 2. Se non ancora in memoria, interroga Firestore on-demand
+          if (!target && window.firebase && window.firebase.firestore) {
+            try {
+              const db = window.firebase.firestore();
+              let docSnap = await db.collection('streets').doc(decodedTarget).get();
+              if (!docSnap.exists) {
+                const cleanKey = decodedTarget.replace(/^street-/, '');
+                docSnap = await db.collection('streets').doc(cleanKey).get();
+              }
+              if (!docSnap.exists) {
+                docSnap = await db.collection('streets').doc(`street-${decodedTarget}`).get();
+              }
+              if (docSnap.exists) {
+                target = mapStreetDocToUIStreet({ id: docSnap.id, streetKey: docSnap.id, ...docSnap.data() });
+              } else {
+                let qSnap = await db.collection('streets').where('streetKey', '==', decodedTarget).limit(1).get();
+                if (qSnap.empty) {
+                  qSnap = await db.collection('streets').where('streetKey', '==', decodedTarget.replace(/^street-/, '')).limit(1).get();
+                }
+                if (!qSnap.empty) {
+                  const d = qSnap.docs[0];
+                  target = mapStreetDocToUIStreet({ id: d.id, streetKey: d.id, ...d.data() });
+                }
+              }
+            } catch (err) {
+              console.warn("Deep link street resolution gestita silenziosamente:", err);
+            }
+          }
+
+          if (!isMounted) return;
+
+          if (target) {
+            deepLinkProcessedRef.current = true;
+
+            // Inserisci la strada nell'elenco streets per attivare il PIN se assente
+            setStreets(prev => {
+              if (prev.some(s => s.streetKey === target.streetKey || s.id === target.id)) return prev;
+              const next = [target, ...prev];
+              streetsRef.current = next;
+              return next;
+            });
+
+            setSelectedStreet(target);
+            setSheetSnap('half');
+
+            const lat = Number(target.latitude);
+            const lng = Number(target.longitude);
+            if (lat && lng) {
+              setTimeout(() => {
+                if (googleMapRef.current) {
+                  googleMapRef.current.panTo({ lat, lng });
+                  googleMapRef.current.setZoom(16);
+                } else if (leafletMapRef.current) {
+                  leafletMapRef.current.setView([lat, lng], 16, { animate: true });
+                }
+              }, 250);
+            }
+          } else if (streets.length > 0) {
+            // Se tutte le strade sono già state scaricate da Firestore e la via cercata non esiste, chiudi la verifica
+            deepLinkProcessedRef.current = true;
+          }
+        };
+
+        processDeepLink();
+
+        return () => { isMounted = false; };
+      }, [streets, mapEngine]);
 
       // Helper per estrarre un eventuale numero civico digitato nella ricerca (es. "Viale De Gasperi 120" -> streetNumber: "120")
       const extractCivicNumberFromQuery = (rawText) => {
@@ -4478,9 +4643,29 @@
           </div>
         </div>
 
-          {/* NOTIFICHE TOAST CELEBRATIVE (XP GUADAGNATI, LIVELLI, BADGE, EMAIL TRAGUARDI & ELIMINAZIONE RECENSIONE) */}
-          {(rewardToast || milestoneEmailToast || deleteToast) && (
+          {/* NOTIFICHE TOAST CELEBRATIVE (XP GUADAGNATI, LIVELLI, BADGE, EMAIL TRAGUARDI, ELIMINAZIONE & CONDIVISIONE) */}
+          {(rewardToast || milestoneEmailToast || deleteToast || shareToast) && (
             <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[90] w-[calc(100vw-32px)] max-w-md pointer-events-auto space-y-2">
+              {shareToast && (
+                <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-cyan-400/60 flex items-center justify-between gap-3 animate-slide-up">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-lg shrink-0">
+                      🔗
+                    </div>
+                    <p className="text-xs sm:text-sm font-extrabold text-white leading-snug">
+                      {shareToast}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShareToast(null)}
+                    className="p-1 text-slate-400 hover:text-white shrink-0 cursor-pointer"
+                  >
+                    <IconClose size={16} />
+                  </button>
+                </div>
+              )}
+
               {deleteToast && (
                 <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-rose-400/60 flex items-center justify-between gap-3 animate-slide-up">
                   <div className="flex items-center gap-3 min-w-0">
@@ -4793,7 +4978,18 @@
                       </>
                     )}
                   </div>
-                  <button onClick={() => setSheetSnap('hidden')} className="p-1 text-slate-400 hover:text-slate-600">
+                  {/* Pulsante 🔗 Condividi */}
+                  <button
+                    type="button"
+                    onClick={() => handleShareStreet(selectedStreet)}
+                    title="Condividi questa strada su WhatsApp e social"
+                    aria-label="Condividi scheda strada"
+                    className="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white border border-slate-700 shadow-sm flex items-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                  >
+                    <span className="text-sm leading-none">🔗</span>
+                    <span className="leading-none">Condividi</span>
+                  </button>
+                  <button onClick={() => setSheetSnap('hidden')} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
                     <IconClose size={20} />
                   </button>
                 </div>
