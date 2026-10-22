@@ -2093,7 +2093,9 @@
         setIsUserMenuOpen(false);
       };
 
-      // Filtri Servizi & Mobilità
+      // Filtri Tipologia Strada, Valutazioni Categorie & Servizi / Mobilità
+      const [filterStreetType, setFilterStreetType] = useState(null);
+      const [filterCategoryThresholds, setFilterCategoryThresholds] = useState({});
       const [filterEvCharging, setFilterEvCharging] = useState(false);
       const [filterDisabledParking, setFilterDisabledParking] = useState(false);
       const [filterPinkParking, setFilterPinkParking] = useState(false);
@@ -2104,6 +2106,8 @@
       const [filterPlayground, setFilterPlayground] = useState(false);
 
       const hasAnyActiveFilter = Boolean(
+        filterStreetType ||
+        Object.keys(filterCategoryThresholds).length > 0 ||
         filterEvCharging ||
         filterDisabledParking ||
         filterPinkParking ||
@@ -2115,6 +2119,8 @@
       );
 
       const resetAllFilters = () => {
+        setFilterStreetType(null);
+        setFilterCategoryThresholds({});
         setFilterEvCharging(false);
         setFilterDisabledParking(false);
         setFilterPinkParking(false);
@@ -2912,6 +2918,33 @@
         });
 
         return deduped.filter(s => {
+          // 1. Filtro per Tipologia Strada prevalente (streets.streetType)
+          if (filterStreetType) {
+            const resolvedType =
+              normalizeStreetTypeLabel(s.streetType) ||
+              computePrevalentStreetType(s.reviews || [], s.name);
+            if (resolvedType !== filterStreetType) return false;
+          }
+
+          // 2. Resilienza dei filtri di valutazione rispetto ai valori N/A / null
+          const categoryAverages = s.categoryAverages || {};
+          for (const [param, soglia] of Object.entries(filterCategoryThresholds)) {
+            if (soglia !== null && soglia !== undefined) {
+              const rawVal = categoryAverages[param];
+              if (
+                rawVal === null ||
+                rawVal === undefined ||
+                rawVal === 'N/A' ||
+                typeof rawVal !== 'number' ||
+                isNaN(rawVal) ||
+                !(categoryAverages[param] !== null && categoryAverages[param] !== undefined && categoryAverages[param] >= soglia)
+              ) {
+                return false;
+              }
+            }
+          }
+
+          // 3. Filtri Servizi & Mobilità
           const streetAmenities = Array.isArray(s.amenities) ? s.amenities : [];
           if (filterEvCharging && !streetAmenities.includes('EV_CHARGING')) return false;
           if (filterDisabledParking && !s.commonParkingTypes?.includes('DISABLED')) return false;
@@ -2923,7 +2956,7 @@
           if (filterPlayground && !(streetAmenities.includes('PLAYGROUND') || streetAmenities.includes('Area Giochi'))) return false;
           return true;
         });
-      }, [streets, filterEvCharging, filterDisabledParking, filterPinkParking, filterLoadingZone, filterCyclePath, filterDrinkingFountain, filterDogArea, filterPlayground]);
+      }, [streets, filterStreetType, filterCategoryThresholds, filterEvCharging, filterDisabledParking, filterPinkParking, filterLoadingZone, filterCyclePath, filterDrinkingFountain, filterDogArea, filterPlayground]);
 
       // OTTIMIZZAZIONE VIEWPORT RENDERING (Zoom >= 14): renderizza nel DOM solo i marker nell'area visibile (+ margine di buffer)
       const viewportStreets = useMemo(() => {
@@ -4559,7 +4592,7 @@
             </div>
           )}
 
-          {/* 3. BARRA FILTRI SERVIZI & MOBILITÀ SULLA MAPPA */}
+          {/* 3. BARRA FILTRI TIPOLOGIA STRADA & SERVIZI SULLA MAPPA */}
           <div className="absolute top-16 sm:top-[72px] left-2.5 right-2.5 sm:left-4 sm:right-4 z-20 flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
             <button
               type="button"
@@ -4572,6 +4605,33 @@
             >
               <span>Tutti</span>
             </button>
+
+            {[
+              { value: '🚶 Pedonale / ZTL', icon: '🚶', label: 'Pedonali / ZTL', activeCls: 'bg-purple-600 text-white border-purple-700 shadow-purple-500/25' },
+              { value: '🏡 Urbana', icon: '🏡', label: 'Urbane', activeCls: 'bg-blue-600 text-white border-blue-700 shadow-blue-500/25' },
+              { value: '🏭 Industriale', icon: '🏭', label: 'Industriali', activeCls: 'bg-amber-600 text-white border-amber-700 shadow-amber-500/25' },
+              { value: '🛣️ Statale / Provinciale (SS / SP)', icon: '🛣️', label: 'SS / SP', activeCls: 'bg-sky-600 text-white border-sky-700 shadow-sky-500/25' },
+              { value: '🟢 Autostrada', icon: '🟢', label: 'Autostrade', activeCls: 'bg-emerald-600 text-white border-emerald-700 shadow-emerald-500/25' },
+            ].map(item => {
+              const isActive = filterStreetType === item.value;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setFilterStreetType(isActive ? null : item.value)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                    isActive
+                      ? item.activeCls
+                      : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>{item.icon}</span>
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+
+            <span className="h-5 w-px bg-slate-300/80 shrink-0 mx-0.5" aria-hidden="true" />
 
             <button
               type="button"
@@ -4849,71 +4909,111 @@
 
                     <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Spaccato Categorie (13 Parametri)</h4>
-                      <div className="space-y-2.5 text-xs">
-                        {[
-                          ['Manto Stradale', selectedStreet.categoryAverages?.roadSurface],
-                          ['Segnaletica a terra', selectedStreet.categoryAverages?.groundSignage],
-                          ['Segnaletica verticale', selectedStreet.categoryAverages?.verticalSignage],
-                          ['Quantità parcheggi', selectedStreet.categoryAverages?.parkingQuantity],
-                          ['Qualità marciapiedi', selectedStreet.categoryAverages?.sidewalkQuality],
-                          ['Illuminazione', selectedStreet.categoryAverages?.lighting],
-                          ['Pulizia e Decoro', selectedStreet.categoryAverages?.cleanliness],
-                          ['Accessibilità', selectedStreet.categoryAverages?.accessibility],
-                          ['Drenaggio Piovano', selectedStreet.categoryAverages?.rainDrainage],
-                          ['Ombreggiatura e Verde', selectedStreet.categoryAverages?.greeneryShade],
-                          ['Tranquillità e Silenzio', selectedStreet.categoryAverages?.quietness],
-                          ['Visibilità Incroci', selectedStreet.categoryAverages?.intersectionVisibility],
-                          ['Larghezza Carreggiata', selectedStreet.categoryAverages?.laneWidth],
-                        ].map(([label, rawScore]) => {
-                          const numScore = (rawScore === null || rawScore === undefined || rawScore === 'N/A' || rawScore === '')
-                            ? NaN
-                            : Number(rawScore);
-                          const isNA = isNaN(numScore) || numScore <= 0;
+                      {(() => {
+                        const allCategoryEntries = [
+                          ['Manto Stradale', 'roadSurface', selectedStreet.categoryAverages?.roadSurface],
+                          ['Segnaletica a terra', 'groundSignage', selectedStreet.categoryAverages?.groundSignage],
+                          ['Segnaletica verticale', 'verticalSignage', selectedStreet.categoryAverages?.verticalSignage],
+                          ['Quantità parcheggi', 'parkingQuantity', selectedStreet.categoryAverages?.parkingQuantity],
+                          ['Qualità marciapiedi', 'sidewalkQuality', selectedStreet.categoryAverages?.sidewalkQuality],
+                          ['Illuminazione', 'lighting', selectedStreet.categoryAverages?.lighting],
+                          ['Pulizia e Decoro', 'cleanliness', selectedStreet.categoryAverages?.cleanliness],
+                          ['Accessibilità', 'accessibility', selectedStreet.categoryAverages?.accessibility],
+                          ['Drenaggio Piovano', 'rainDrainage', selectedStreet.categoryAverages?.rainDrainage],
+                          ['Ombreggiatura e Verde', 'greeneryShade', selectedStreet.categoryAverages?.greeneryShade],
+                          ['Tranquillità e Silenzio', 'quietness', selectedStreet.categoryAverages?.quietness],
+                          ['Visibilità Incroci', 'intersectionVisibility', selectedStreet.categoryAverages?.intersectionVisibility],
+                          ['Larghezza Carreggiata', 'laneWidth', selectedStreet.categoryAverages?.laneWidth],
+                        ];
 
-                          return (
-                            <div key={label} className="flex items-center justify-between gap-2">
-                              <span className={`font-medium w-38 sm:w-44 truncate ${isNA ? 'text-slate-400' : 'text-slate-700'}`}>
-                                {label}
-                              </span>
-                              {isNA ? (
-                                <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 border border-slate-200/80 px-2.5 py-0.5 rounded-full shrink-0">
-                                  Non applicabile (N/A)
-                                </span>
-                              ) : (
-                                <div className="flex items-center gap-2 flex-1 justify-end">
-                                  <div className="hidden sm:block flex-1 max-w-[110px] h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                                    <div
-                                      className="h-full bg-blue-600 rounded-full transition-all"
-                                      style={{ width: `${(numScore / 5) * 100}%` }}
-                                    />
-                                  </div>
-                                  <div className="flex items-center gap-0.5 select-none shrink-0" aria-label={`${numScore.toFixed(1)} su 5`}>
-                                    {[1, 2, 3, 4, 5].map(starIdx => {
-                                      const fillPct = Math.max(0, Math.min(100, Math.round((numScore - (starIdx - 1)) * 100)));
-                                      return (
-                                        <span key={starIdx} className="relative inline-block text-sm leading-none text-slate-200">
-                                          ★
-                                          {fillPct > 0 && (
-                                            <span
-                                              className="absolute inset-y-0 left-0 overflow-hidden text-amber-400"
-                                              style={{ width: `${fillPct}%` }}
-                                            >
+                        const evaluatedCategories = [];
+                        const unratedOrNaCategories = [];
+
+                        allCategoryEntries.forEach(([label, catKey, rawScore]) => {
+                          const hasValidScore =
+                            rawScore !== null &&
+                            rawScore !== undefined &&
+                            rawScore !== 'N/A' &&
+                            rawScore !== '' &&
+                            !isNaN(Number(rawScore)) &&
+                            Number(rawScore) > 0;
+                          if (hasValidScore) {
+                            evaluatedCategories.push({ label, catKey, numScore: Number(rawScore) });
+                          } else {
+                            unratedOrNaCategories.push({ label, catKey });
+                          }
+                        });
+
+                        return (
+                          <div className="space-y-3 text-xs">
+                            {/* IN CIMA: Solo categorie valutate (categoryAverages[cat] !== null) con 5 stelle frazionarie e rating ★ X.X */}
+                            {evaluatedCategories.length > 0 ? (
+                              <div className="space-y-2.5">
+                                {evaluatedCategories.map(({ label, catKey, numScore }) => (
+                                  <div key={catKey} className="flex items-center justify-between gap-2">
+                                    <span className="font-medium text-slate-700 w-38 sm:w-44 truncate">
+                                      {label}
+                                    </span>
+                                    <div className="flex items-center gap-2 flex-1 justify-end">
+                                      <div className="hidden sm:block flex-1 max-w-[110px] h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                        <div
+                                          className="h-full bg-blue-600 rounded-full transition-all"
+                                          style={{ width: `${(numScore / 5) * 100}%` }}
+                                        />
+                                      </div>
+                                      <div className="flex items-center gap-0.5 select-none shrink-0" aria-label={`${numScore.toFixed(1)} su 5`}>
+                                        {[1, 2, 3, 4, 5].map(starIdx => {
+                                          const fillPct = Math.max(0, Math.min(100, Math.round((numScore - (starIdx - 1)) * 100)));
+                                          return (
+                                            <span key={starIdx} className="relative inline-block text-sm leading-none text-slate-200">
                                               ★
+                                              {fillPct > 0 && (
+                                                <span
+                                                  className="absolute inset-y-0 left-0 overflow-hidden text-amber-400"
+                                                  style={{ width: `${fillPct}%` }}
+                                                >
+                                                  ★
+                                                </span>
+                                              )}
                                             </span>
-                                          )}
-                                        </span>
-                                      );
-                                    })}
+                                          );
+                                        })}
+                                      </div>
+                                      <span className="font-extrabold text-slate-800 w-10 text-right shrink-0">
+                                        ★ {numScore.toFixed(1)}
+                                      </span>
+                                    </div>
                                   </div>
-                                  <span className="font-extrabold text-slate-800 w-10 text-right shrink-0">
-                                    ★ {numScore.toFixed(1)}
-                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-[11px] font-medium text-slate-500 italic">
+                                Recensioni Flash pubblicate solo con voto complessivo. Nessun parametro tecnico specifico ancora valutato.
+                              </p>
+                            )}
+
+                            {/* IN FONDO (Compatto / Neutro): Parametri non applicabili o non ancora valutati (categoryAverages[cat] === null) */}
+                            {unratedOrNaCategories.length > 0 && (
+                              <div className={`${evaluatedCategories.length > 0 ? 'pt-2.5 border-t border-slate-200/80' : ''}`}>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                                  Non applicabili o non valutati ({unratedOrNaCategories.length})
+                                </p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {unratedOrNaCategories.map(({ label, catKey }) => (
+                                    <span
+                                      key={catKey}
+                                      className="text-[10px] font-semibold text-slate-400 bg-slate-100 border border-slate-200/80 px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                                    >
+                                      <span>{label}</span>
+                                      <span className="text-[9px] font-bold text-slate-400/80">· N/A</span>
+                                    </span>
+                                  ))}
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* CTA: Se l'utente ha già recensito, mostra 'Modifica la tua recensione' + '🗑️ Elimina' */}
@@ -5126,13 +5226,6 @@
                                       title={`Tratto o punto di riferimento indicato: ${r.streetSegment}`}
                                     >
                                       <span>📍 Tratto: {r.streetSegment}</span>
-                                    </span>
-                                  )}
-                                  {r.streetType && (
-                                    <span
-                                      className="text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1"
-                                    >
-                                      <span>{r.streetType}</span>
                                     </span>
                                   )}
                                   {Boolean(r.overallRating || r.ratingOverall) && (
