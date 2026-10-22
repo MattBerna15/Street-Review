@@ -926,6 +926,38 @@
     const PROFANITY_WORD_REGEX = new RegExp(`\\b(${BLOCKED_PROFANITY_WORDS.join('|')})\\b`, 'i');
     const BLASPHEMY_PHRASE_REGEX = /\b(?:dio\s*(?:cane|porco|boia|fa|bestia|maiale|ladro|infame|schifoso|merda|bastardo)|porco\s*(?:dio|ddio|zii|zio)|madonna\s*(?:puttana|troia|maiala|bastarda|cagna| ladra)|gesu\s*(?:cristo\s*)?(?:cane|porco|ladro)|cristo\s*(?:cane|porco)|porca\s*madonna|pezzo\s+di\s+merda|testa\s+di\s+cazzo|figli[oa]?\s+di\s+puttana)\b/i;
 
+    // 1. Estensione Blacklist Termini Sessuali e Flessioni Verbali
+    const SEXUAL_EXPLICIT_REGEX = /\b(scop(?:a|are|ano|ata|ate|i)|tromba(?:re|no|ta|te)?|troi[ae]|mignott[ae]|prostitut[aeo]|puttan[ae]|marchett[ae])\b/i;
+
+    // 2. Filtro Sostanze Stupefacenti e Attività Illecite (Anti-Diffamazione)
+    const ILLICIT_SUBSTANCES_REGEX = /\b(drog[ae]|spacci(?:a|o|are|ano|atore|atrice|atori|atrici)?|pusher|cocaina|eroina|cannabis|fumo|maria|erba)\b/i;
+
+    // 3. Filtro Anti-Doxxing e Nomi Propri (Tutela Privacy Residenziale)
+    const RESIDENTIAL_LOCALIZATION_REGEX = /\b(qui\s+ci\s+abita|ci\s+abita|qui\s+abita|abita\s+qui|casa\s+di|appartamento\s+di|famiglia)\b/i;
+
+    const COMMON_ITALIAN_NAMES = [
+      'chiara', 'marco', 'andrea', 'luca', 'giulia', 'sara', 'matteo', 'francesco',
+      'alessandro', 'francesca', 'simone', 'anna', 'maria', 'valentina', 'lorenzo',
+      'mattia', 'gabriele', 'leonardo', 'riccardo', 'davide', 'federico', 'antonio',
+      'giuseppe', 'giovanni', 'roberto', 'stefano', 'fabio', 'paolo', 'michele',
+      'massimo', 'daniele', 'alberto', 'giorgio', 'cristian', 'christian', 'nicola',
+      'filippo', 'edoardo', 'tommaso', 'pietro', 'salvatore', 'vincenzo', 'mario',
+      'luigi', 'angelo', 'sofia', 'alice', 'martina', 'aurora', 'giorgia',
+      'beatrice', 'elena', 'emma', 'elisa', 'silvia', 'laura', 'federica',
+      'eleonora', 'claudia', 'marta', 'camilla', 'alessia', 'serena', 'simona',
+      'ilaria', 'gaia', 'noemi', 'greta', 'ludovica', 'caterina', 'daniela',
+      'paola', 'monica', 'cristina', 'giacomo', 'giulio', 'valerio', 'claudio',
+      'gianluca', 'fabrizio', 'enrico', 'giovanna', 'cinzia', 'patrizia', 'barbara',
+      'roberta', 'teresa', 'sabrina', 'rossella'
+    ];
+
+    const RESIDENTIAL_VERBS = '(?:abita(?:no|ti)?|vive(?:te)?|vivono|reside(?:no)?|risiede(?:no)?|resiedono|trovate|trovi)';
+    const NAMES_PATTERN = COMMON_ITALIAN_NAMES.join('|');
+    const RESIDENCE_NAME_REGEX = new RegExp(
+      `\\b(?:${RESIDENTIAL_VERBS}\\s+(?:qui\\s+|ci\\s+|con\\s+|presso\\s+|il\\s+|la\\s+)?(?:${NAMES_PATTERN})|(?:${NAMES_PATTERN})\\s+(?:qui\\s+|ci\\s+)?${RESIDENTIAL_VERBS})\\b`,
+      'i'
+    );
+
     // Regex dati personali e targhe (Tutela Privacy GDPR)
     const ITALIAN_PLATE_REGEX = /\b[A-Za-z]{2}\s?\d{3}\s?[A-Za-z]{2}\b/i;
     const PHONE_NUMBER_REGEX = /(?:\+39[\s.-]?|0039[\s.-]?)?\b(?:0\d{1,3}[\s.-]?\d{5,8}|3\d{2}[\s.-]?\d{3}[\s.-]?\d{3,4}|\d{9,11}|(?:\d[\s.-]?){8,10}\d)\b/;
@@ -941,16 +973,38 @@
       // Normalizza gli accenti per garantire che i word boundaries \b funzionino su tutte le parole italiane
       const normalizedText = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-      // 1. Controllo Linguaggio Offensivo / Bestemmie / Insulti
-      if (PROFANITY_WORD_REGEX.test(normalizedText) || BLASPHEMY_PHRASE_REGEX.test(normalizedText)) {
+      // 1. Controllo Linguaggio Offensivo / Bestemmie / Insulti / Termini Sessuali
+      if (
+        PROFANITY_WORD_REGEX.test(normalizedText) ||
+        BLASPHEMY_PHRASE_REGEX.test(normalizedText) ||
+        SEXUAL_EXPLICIT_REGEX.test(normalizedText)
+      ) {
         return {
           valid: false,
           reason: 'profanity',
-          message: 'Per tutelare la privacy e il rispetto della community, rimuovi linguaggio offensivo, numeri di targa o contatti personali dal commento. (Rilevato linguaggio inappropriato o offensivo)',
+          message: 'Il commento contiene termini inappropriati, riferimenti espliciti o contenuti non ammessi dal regolamento.',
         };
       }
 
-      // 2. Controllo Targhe Automobilistiche Italiane (es. AB123CD o AB 123 CD)
+      // 2. Controllo Sostanze Stupefacenti e Attività Illecite (Anti-Diffamazione)
+      if (ILLICIT_SUBSTANCES_REGEX.test(normalizedText)) {
+        return {
+          valid: false,
+          reason: 'illicit_substances',
+          message: 'Il commento contiene termini inappropriati, riferimenti espliciti o contenuti non ammessi dal regolamento.',
+        };
+      }
+
+      // 3. Controllo Anti-Doxxing e Tutela Privacy Residenziale (Nomi e Localizzazione abitativa)
+      if (RESIDENTIAL_LOCALIZATION_REGEX.test(normalizedText) || RESIDENCE_NAME_REGEX.test(normalizedText)) {
+        return {
+          valid: false,
+          reason: 'residential_privacy',
+          message: 'Per motivi di privacy e GDPR, è vietato indicare nomi di privati cittadini o riferimenti a chi abita nella via.',
+        };
+      }
+
+      // 4. Controllo Targhe Automobilistiche Italiane (es. AB123CD o AB 123 CD)
       if (ITALIAN_PLATE_REGEX.test(raw)) {
         return {
           valid: false,
@@ -959,7 +1013,7 @@
         };
       }
 
-      // 3. Controllo Numeri di Telefono (9-10+ cifre consecutive o separate da spazi/trattini)
+      // 5. Controllo Numeri di Telefono (9-10+ cifre consecutive o separate da spazi/trattini)
       if (PHONE_NUMBER_REGEX.test(raw)) {
         return {
           valid: false,
@@ -968,7 +1022,7 @@
         };
       }
 
-      // 4. Controllo Indirizzi Email nel testo del commento
+      // 6. Controllo Indirizzi Email nel testo del commento
       if (EMAIL_IN_COMMENT_REGEX.test(raw)) {
         return {
           valid: false,
