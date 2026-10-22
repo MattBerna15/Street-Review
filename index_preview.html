@@ -2061,13 +2061,53 @@
       const [milestoneEmailToast, setMilestoneEmailToast] = useState(null);
       const [deleteToast, setDeleteToast] = useState(null);
       const [shareToast, setShareToast] = useState(null);
+      const [reportToast, setReportToast] = useState(null);
+      const [adminReports, setAdminReports] = useState([]);
+      const [isAdminReportsOpen, setIsAdminReportsOpen] = useState(false);
       const toastTimerRef = useRef(null);
       const milestoneToastTimerRef = useRef(null);
       const deleteToastTimerRef = useRef(null);
       const shareToastTimerRef = useRef(null);
+      const reportToastTimerRef = useRef(null);
       const userMenuRef = useRef(null);
       const cachedUsersRef = useRef({});
       cachedUsersRef.current = cachedUsersById;
+
+      // Ascolto in tempo reale delle segnalazioni pendenti per i profili Admin
+      useEffect(() => {
+        if (!isAdmin) {
+          setAdminReports([]);
+          return;
+        }
+        const firestore = window.db;
+        if (!firestore) return;
+
+        try {
+          const unsubscribe = firestore
+            .collection('reports')
+            .where('status', '==', 'pending')
+            .onSnapshot(
+              (snapshot) => {
+                const list = [];
+                snapshot.forEach((doc) => {
+                  list.push({ id: doc.id, ...doc.data() });
+                });
+                list.sort((a, b) => {
+                  const tA = a.createdAt?.seconds || (a.createdAt ? new Date(a.createdAt).getTime() / 1000 : 0);
+                  const tB = b.createdAt?.seconds || (b.createdAt ? new Date(b.createdAt).getTime() / 1000 : 0);
+                  return tB - tA;
+                });
+                setAdminReports(list);
+              },
+              (err) => {
+                console.warn('[Admin Reports] Errore ascolto reports:', err);
+              }
+            );
+          return () => unsubscribe();
+        } catch (e) {
+          console.warn('[Admin Reports] Inizializzazione listener reports fallita:', e);
+        }
+      }, [isAdmin]);
 
       // Calcolo leggero di Livelli, XP, Badge e Classifica Top 10 (da collezione pre-aggregata 'users')
       const gamification = useMemo(
@@ -2105,6 +2145,14 @@
         shareToastTimerRef.current = setTimeout(() => {
           setShareToast(null);
         }, 4000);
+      };
+
+      const triggerReportToast = (message = 'Grazie! La tua segnalazione è stata inviata agli amministratori.') => {
+        if (reportToastTimerRef.current) clearTimeout(reportToastTimerRef.current);
+        setReportToast(message);
+        reportToastTimerRef.current = setTimeout(() => {
+          setReportToast(null);
+        }, 5500);
       };
 
       const fallbackCopyShareText = (text) => {
@@ -4403,6 +4451,86 @@
         return true;
       };
 
+      // 5.1 GESTIONE SEGNALAZIONI ADMIN (Elimina recensione segnalata, archivia o raggiungi la via)
+      const handleDeleteReportedReview = async (report) => {
+        if (!report) return;
+        const foundStreet = (streetsRef.current || []).find(s =>
+          (report.streetKey && s.streetKey === report.streetKey) ||
+          (report.streetName && s.name && s.name.toLowerCase() === String(report.streetName).toLowerCase())
+        );
+        const existingReview = foundStreet?.reviews?.find(r => String(r.id) === String(report.reviewId));
+
+        const reviewObj = existingReview || {
+          id: report.reviewId,
+          streetKey: report.streetKey,
+          streetName: report.streetName,
+          authorId: report.reportedAuthorId,
+          user: report.reportedAuthorName,
+          comment: report.reportedText,
+          latitude: foundStreet?.latitude,
+          longitude: foundStreet?.longitude,
+          city: foundStreet?.city,
+          province: foundStreet?.province,
+        };
+
+        const deleted = handleDeleteReview(reviewObj);
+        if (deleted !== false) {
+          try {
+            const firestore = window.db;
+            if (firestore && report.id) {
+              const serverTimestamp = (window.firebase && window.firebase.firestore && window.firebase.firestore.FieldValue && window.firebase.firestore.FieldValue.serverTimestamp()) || new Date().toISOString();
+              await firestore.collection('reports').doc(report.id).update({
+                status: 'resolved',
+                resolvedAt: serverTimestamp,
+              });
+            }
+          } catch (err) {
+            console.error('Errore aggiornamento segnalazione a resolved:', err);
+          }
+        }
+      };
+
+      const handleDismissReport = async (report) => {
+        if (!report || !report.id) return;
+        const confirmed = window.confirm('Vuoi ignorare e archiviare questa segnalazione senza eliminare la recensione?');
+        if (!confirmed) return;
+
+        try {
+          const firestore = window.db;
+          if (firestore) {
+            const serverTimestamp = (window.firebase && window.firebase.firestore && window.firebase.firestore.FieldValue && window.firebase.firestore.FieldValue.serverTimestamp()) || new Date().toISOString();
+            await firestore.collection('reports').doc(report.id).update({
+              status: 'dismissed',
+              dismissedAt: serverTimestamp,
+            });
+            triggerReportToast('Segnalazione archiviata.');
+          }
+        } catch (err) {
+          console.error('Errore archiviazione segnalazione:', err);
+          alert('Errore archiviazione: ' + (err.message || err));
+        }
+      };
+
+      const handleGoToReportStreet = (report) => {
+        if (!report) return;
+        setIsAdminReportsOpen(false);
+        const foundStreet = (streetsRef.current || []).find(s =>
+          (report.streetKey && s.streetKey === report.streetKey) ||
+          (report.streetName && s.name && s.name.toLowerCase() === String(report.streetName).toLowerCase())
+        );
+        if (foundStreet) {
+          handleSelectStreet(foundStreet);
+        } else if (report.streetName) {
+          handleSelectStreet({
+            name: report.streetName,
+            lat: GEOFENCE.center.lat,
+            lng: GEOFENCE.center.lng,
+            city: report.streetCity || 'Rimini',
+            province: report.streetProvince || 'RN',
+          });
+        }
+      };
+
       const isSelectedStreetNew = selectedStreet && selectedStreet.reviewsCount === 0;
 
       return (
@@ -4543,6 +4671,19 @@
               <span className="hidden sm:inline lg:hidden">Classifica</span>
             </button>
 
+            {/* Badge compatto notifiche segnalazioni pendenti su mobile per Admin */}
+            {isAdmin && adminReports.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsAdminReportsOpen(true)}
+                title={`Bacheca Segnalazioni: ${adminReports.length} in attesa`}
+                className="md:hidden flex items-center gap-1 px-2.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs rounded-2xl shadow-xl border border-red-400 active:scale-95 transition-all cursor-pointer animate-pulse shrink-0"
+              >
+                <span>🚩</span>
+                <span>{adminReports.length}</span>
+              </button>
+            )}
+
             {currentUser ? (
               <div className="flex items-center md:gap-1.5 bg-white/95 backdrop-blur-md rounded-full md:rounded-2xl shadow-xl border border-slate-200 p-0.5 md:p-1 md:pl-1.5 md:pr-2">
                 {/* Pillola cliccabile Livello attuale e XP (visibile in linea solo da Desktop >= 768px) */}
@@ -4602,6 +4743,19 @@
                       🛡️ ADMIN
                     </span>
                   )}
+                  {isAdmin && adminReports.length > 0 && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsAdminReportsOpen(true);
+                      }}
+                      title={`Bacheca Segnalazioni: ${adminReports.length} recensioni in attesa`}
+                      className="px-1.5 py-0.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-[10px] font-black tracking-wide shadow-sm border border-red-400 flex items-center gap-1 animate-pulse cursor-pointer whitespace-nowrap"
+                    >
+                      <span>🚩</span>
+                      <span>{adminReports.length}</span>
+                    </span>
+                  )}
                   <span className="hidden md:inline text-[10px] text-slate-400">
                     {isUserMenuOpen ? '▲' : '▼'}
                   </span>
@@ -4623,9 +4777,16 @@
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <p className="text-xs font-extrabold text-slate-900 truncate">{currentUser.name}</p>
                             {isAdmin && (
-                              <span className="px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[9px] font-black tracking-wide shrink-0 shadow-sm">
-                                🛡️ ADMIN
-                              </span>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <span className="px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[9px] font-black tracking-wide shadow-sm">
+                                  🛡️ ADMIN
+                                </span>
+                                {adminReports.length > 0 && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-red-600 text-white text-[9px] font-black tracking-wide shadow-sm animate-pulse">
+                                    🚩 {adminReports.length}
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
                           <p className="text-[10px] text-slate-500 truncate">{currentUser.email}</p>
@@ -4681,6 +4842,30 @@
                       <span>🏆 Classifica Generale</span>
                     </button>
 
+                    {/* 4.1 Pulsante "🚩 Bacheca Segnalazioni" (solo Admin) */}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          setIsAdminReportsOpen(true);
+                        }}
+                        className="w-full text-left px-3 py-2.5 text-xs font-bold text-rose-700 bg-rose-50/60 hover:bg-rose-100/80 rounded-xl flex items-center justify-between border border-rose-200/80 transition-colors cursor-pointer my-1"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span>🚩</span>
+                          <span>Bacheca Segnalazioni</span>
+                        </span>
+                        {adminReports.length > 0 ? (
+                          <span className="text-[10px] font-black bg-red-600 text-white px-2 py-0.5 rounded-full shadow-2xs animate-pulse">
+                            {adminReports.length}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-slate-400">0</span>
+                        )}
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {
@@ -4724,9 +4909,28 @@
           </div>
         </div>
 
-          {/* NOTIFICHE TOAST CELEBRATIVE (XP GUADAGNATI, LIVELLI, BADGE, EMAIL TRAGUARDI, ELIMINAZIONE & CONDIVISIONE) */}
-          {(rewardToast || milestoneEmailToast || deleteToast || shareToast) && (
+          {/* NOTIFICHE TOAST CELEBRATIVE (XP GUADAGNATI, LIVELLI, BADGE, EMAIL TRAGUARDI, ELIMINAZIONE, CONDIVISIONE & SEGNALAZIONI) */}
+          {(rewardToast || milestoneEmailToast || deleteToast || shareToast || reportToast) && (
             <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[90] w-[calc(100vw-32px)] max-w-md pointer-events-auto space-y-2">
+              {reportToast && (
+                <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-rose-400/60 flex items-center justify-between gap-3 animate-slide-up">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-400/40 flex items-center justify-center text-lg shrink-0">
+                      🚩
+                    </div>
+                    <p className="text-xs sm:text-sm font-extrabold text-white leading-snug">
+                      {reportToast}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReportToast(null)}
+                    className="p-1 text-slate-400 hover:text-white shrink-0 cursor-pointer"
+                  >
+                    <IconClose size={16} />
+                  </button>
+                </div>
+              )}
               {shareToast && (
                 <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-cyan-400/60 flex items-center justify-between gap-3 animate-slide-up">
                   <div className="flex items-center gap-3 min-w-0">
@@ -5477,20 +5681,31 @@
                                       <span>🗑️</span> Elimina (Admin)
                                     </button>
                                   )}
-                                  <button
-                                    type="button"
-                                    onClick={() => setReportingReview({
-                                      review: r,
-                                      streetName: selectedStreet.name,
-                                      streetCity: selectedStreet.city,
-                                      streetProvince: selectedStreet.province,
-                                    })}
-                                    className="p-1 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                                    title="Segnala questo commento per linguaggio inappropriato, dati sensibili o spam"
-                                  >
-                                    <span>🚩</span>
-                                    <span>Segnala</span>
-                                  </button>
+                                  {!isMyReview && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!currentUser) {
+                                          setIsAuthOpen(true);
+                                          return;
+                                        }
+                                        setReportingReview({
+                                          review: r,
+                                          streetKey: selectedStreet.key || selectedStreet.id || selectedStreet.streetKey,
+                                          streetName: selectedStreet.name,
+                                          streetCity: selectedStreet.city,
+                                          streetProvince: selectedStreet.province,
+                                          streetLat: selectedStreet.lat || selectedStreet.latitude,
+                                          streetLng: selectedStreet.lng || selectedStreet.longitude,
+                                        });
+                                      }}
+                                      className="report-btn p-1 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                      title="Segnala questa recensione"
+                                    >
+                                      <span>🚩</span>
+                                      <span>Segnala</span>
+                                    </button>
+                                  )}
                                   {r.streetSegment && (
                                     <span
                                       className="text-[10px] font-extrabold bg-cyan-50 text-cyan-800 border border-cyan-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1"
@@ -5567,11 +5782,27 @@
             }}
           />
 
-          {/* 9. MODALE SEGNALAZIONE COMMENTO ("🚩 SEGNALA" VIA MAILTO) */}
-          <ReportCommentModal
+          {/* 9. MODALE SEGNALAZIONE COMMENTO ("🚩 SEGNALA") */}
+          <ReportModal
             reportData={reportingReview}
             onClose={() => setReportingReview(null)}
+            currentUser={currentUser}
+            onReportSuccess={() => {
+              triggerReportToast("Grazie! La tua segnalazione è stata inviata agli amministratori.");
+            }}
           />
+
+          {/* 9.1 MODALE BACHECA SEGNALAZIONI (PANNELLO ADMIN) */}
+          {isAdmin && (
+            <AdminReportsModal
+              isOpen={isAdminReportsOpen}
+              onClose={() => setIsAdminReportsOpen(false)}
+              reports={adminReports}
+              onGoToStreet={handleGoToReportStreet}
+              onDeleteReview={handleDeleteReportedReview}
+              onDismissReport={handleDismissReport}
+            />
+          )}
 
           {/* 10. MODALE PRIVACY POLICY & REGOLAMENTO COMMUNITY (GDPR) */}
           <PrivacyModal
@@ -6832,116 +7063,331 @@
       );
     }
 
-    // --- MODALE SEGNALAZIONE COMMENTO ("🚩 SEGNALA" VIA MAILTO) ---
-    function ReportCommentModal({ reportData, onClose }) {
-      const [reason, setReason] = useState('Linguaggio inappropriato / offensivo');
+    // --- MODALE SEGNALAZIONE RECENSIONE ("🚩 SEGNALA") ---
+    function ReportModal({ reportData, onClose, currentUser, onReportSuccess }) {
+      const REPORT_REASONS = [
+        '👤 Violazione Privacy / Nomi di residenti',
+        '🤬 Linguaggio volgare o offensivo',
+        '⚠️ Calunnia, diffamazione o accuse illecite',
+        '🚫 Discriminazione, odio o profilazione',
+        '📢 Spam o contenuto non pertinente',
+      ];
+
+      const [reason, setReason] = useState(REPORT_REASONS[0]);
+      const [isSubmitting, setIsSubmitting] = useState(false);
 
       useEffect(() => {
         if (reportData) {
-          setReason('Linguaggio inappropriato / offensivo');
+          setReason(REPORT_REASONS[0]);
+          setIsSubmitting(false);
         }
       }, [reportData]);
 
       if (!reportData || !reportData.review) return null;
 
-      const { review, streetName, streetCity, streetProvince } = reportData;
-      const locationStr = `${streetName}${streetCity ? ` (${streetCity}${streetProvince ? ` - ${streetProvince}` : ''})` : ''}`;
-      const subject = `Segnalazione Recensione - ${streetName}`;
-      const bodyLines = [
-        `Segnalazione commento sulla piattaforma Street Review`,
-        `----------------------------------------------------`,
-        `Motivo segnalazione: ${reason}`,
-        `Strada: ${locationStr}`,
-        `ID Recensione: ${review.id || 'N/D'}`,
-        `Autore: ${review.user || 'Utente'} (ID: ${review.userId || 'N/D'})`,
-        `Data commento: ${review.date || 'N/D'}`,
-        ``,
-        `Testo del commento segnalato:`,
-        `"${review.comment || ''}"`,
-        `----------------------------------------------------`,
-        `Note aggiuntive dell'utente segnalante (opzionale):`,
-        ``
-      ];
-      const mailtoHref = `mailto:streetreview.app@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyLines.join('\n'))}`;
+      const { review, streetKey, streetName, streetCity, streetProvince } = reportData;
+      const locationStr = `${streetName || 'Via'}${streetCity ? ` (${streetCity}${streetProvince ? ` - ${streetProvince}` : ''})` : ''}`;
+      const subject = `Segnalazione Recensione - ${streetName || 'Strada'}`;
+      const mailtoHref = `mailto:streetreview.app@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(
+        `Segnalazione Recensione su Street Review\n` +
+        `-----------------------------------------\n` +
+        `Strada: ${locationStr}\n` +
+        `Motivo: ${reason}\n` +
+        `ID Recensione: ${review.id || 'N/D'}\n` +
+        `Autore Segnalato: ${review.user || review.userName || 'Utente'} (ID: ${review.authorId || review.userId || 'N/D'})\n` +
+        `Testo Segnalato: "${review.comment || ''}"\n` +
+        `-----------------------------------------\n` +
+        `Segnalato da: ${currentUser?.email || 'N/D'} (ID: ${currentUser?.id || 'N/D'})`
+      )}`;
+
+      const handleSubmit = async (e) => {
+        if (e) e.preventDefault();
+        if (isSubmitting) return;
+
+        setIsSubmitting(true);
+        try {
+          const firestore = window.db;
+          if (!firestore) {
+            alert("Database Firestore non disponibile. Verifica la connessione a internet.");
+            setIsSubmitting(false);
+            return;
+          }
+
+          const serverTimestamp = (window.firebase && window.firebase.firestore && window.firebase.firestore.FieldValue && window.firebase.firestore.FieldValue.serverTimestamp()) || new Date().toISOString();
+
+          const payload = {
+            reviewId: String(review.id || '').trim(),
+            streetKey: String(streetKey || review.streetKey || '').trim(),
+            streetName: String(streetName || review.streetName || '').trim(),
+            streetCity: String(streetCity || review.streetCity || '').trim(),
+            streetProvince: String(streetProvince || review.streetProvince || '').trim(),
+            reportedAuthorId: String(review.authorId || review.userId || '').trim(),
+            reportedAuthorName: String(review.user || review.userName || 'Utente').trim(),
+            reportedText: String(review.comment || '').trim(),
+            reason: reason,
+            reporterId: String(currentUser?.id || currentUser?.uid || '').trim(),
+            reporterEmail: String(currentUser?.email || '').trim(),
+            createdAt: serverTimestamp,
+            status: 'pending',
+          };
+
+          await firestore.collection('reports').add(payload);
+          if (onReportSuccess) {
+            onReportSuccess();
+          }
+          onClose();
+        } catch (err) {
+          console.error("Errore salvataggio segnalazione su Firestore:", err);
+          alert("Impossibile inviare la segnalazione: " + (err.message || err));
+          setIsSubmitting(false);
+        }
+      };
 
       return (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-fade-in">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slide-up border border-slate-100">
-            <div className="px-6 py-4 bg-rose-50 border-b border-rose-100 flex items-center justify-between">
+        <div className="fixed inset-0 z-[75] flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-fade-in">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slide-up border border-slate-100 flex flex-col max-h-[92vh]">
+            {/* Header */}
+            <div className="px-5 py-4 bg-rose-50 border-b border-rose-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <span className="text-xl">🚩</span>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">Segnala Commento alla Moderazione</h3>
-                  <p className="text-[11px] text-rose-700 font-semibold truncate">{locationStr}</p>
+                  <h3 className="text-sm font-black text-slate-900">Segnala questa recensione</h3>
+                  <p className="text-[11px] text-rose-700 font-semibold truncate max-w-[240px] sm:max-w-[280px]">
+                    {locationStr}
+                  </p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={onClose}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-white/80 cursor-pointer"
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-white/80 cursor-pointer transition-colors"
               >
                 <IconClose size={18} />
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs">
-              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-                <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold">
-                  <span>Autore: <strong className="text-slate-700">{review.user}</strong></span>
-                  <span>ID: <code>{review.id}</code></span>
+            {/* Form & Content */}
+            <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 text-xs overflow-y-auto flex-1">
+              {/* Anteprima del testo segnalato e nome autore */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500 font-semibold">Autore recensione:</span>
+                  <span className="font-extrabold text-slate-800">{review.user || review.userName || 'Utente'}</span>
                 </div>
-                <p className="text-slate-700 italic leading-relaxed">"{review.comment}"</p>
+                <div className="pt-1 border-t border-slate-200/60">
+                  <p className="text-slate-700 italic leading-relaxed text-[11px]">
+                    "{review.comment || 'Nessun testo registrato.'}"
+                  </p>
+                </div>
               </div>
 
+              {/* Selezione del motivo */}
               <div className="space-y-2">
-                <p className="font-bold text-slate-800">Seleziona il motivo della segnalazione:</p>
-                {[
-                  'Linguaggio inappropriato / offensivo',
-                  'Dati sensibili (Targa, Telefono, Nome privato)',
-                  'Spam o contenuto non pertinente alla viabilità',
-                ].map((opt) => (
-                  <label
-                    key={opt}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
-                      reason === opt
-                        ? 'bg-rose-50/70 border-rose-300 text-rose-950 font-bold'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="reportReason"
-                      value={opt}
-                      checked={reason === opt}
-                      onChange={() => setReason(opt)}
-                      className="accent-rose-600"
-                    />
-                    <span>{opt}</span>
-                  </label>
-                ))}
+                <p className="font-extrabold text-slate-800 text-[11px] uppercase tracking-wider">
+                  Seleziona il motivo:
+                </p>
+                <div className="space-y-1.5">
+                  {REPORT_REASONS.map((opt) => {
+                    const isSelected = reason === opt;
+                    return (
+                      <label
+                        key={opt}
+                        className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-rose-50/80 border-rose-300 text-rose-950 font-bold shadow-2xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="reportReasonOption"
+                          value={opt}
+                          checked={isSelected}
+                          onChange={() => setReason(opt)}
+                          className="accent-rose-600"
+                        />
+                        <span className="text-xs">{opt}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
 
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                Cliccando su <strong>Invia Segnalazione</strong> si aprirà il tuo client email con un messaggio precompilato indirizzato a <code className="font-bold text-slate-700">streetreview.app@gmail.com</code> contenente i riferimenti del commento da verificare.
-              </p>
+              {/* Opzione Notifica Mail Diretta */}
+              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2 text-[11px] text-slate-600">
+                <span>Notifica immediata via mail:</span>
+                <a
+                  href={mailtoHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-rose-600 font-bold hover:underline shrink-0 flex items-center gap-1"
+                >
+                  <span>✉️ Apri client mail</span>
+                </a>
+              </div>
 
+              {/* Bottoni Azione */}
               <div className="flex items-center gap-2.5 pt-1">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 py-2.5 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors"
                 >
                   Annulla
                 </button>
-                <a
-                  href={mailtoHref}
-                  onClick={() => {
-                    setTimeout(() => onClose(), 150);
-                  }}
-                  className="flex-1 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-center shadow-lg shadow-rose-500/25 no-underline transition-all"
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-center shadow-lg shadow-rose-500/25 cursor-pointer transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
-                  🚩 Invia Segnalazione
-                </a>
+                  {isSubmitting ? (
+                    <span>Invio in corso...</span>
+                  ) : (
+                    <>
+                      <span>🚩</span>
+                      <span>Invia segnalazione</span>
+                    </>
+                  )}
+                </button>
               </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // --- MODALE BACHECA SEGNALAZIONI (PANNELLO MODERAZIONE ADMIN) ---
+    function AdminReportsModal({ isOpen, onClose, reports, onGoToStreet, onDeleteReview, onDismissReport }) {
+      if (!isOpen) return null;
+
+      return (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-slide-up border border-slate-100 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-rose-900 via-slate-900 to-slate-900 text-white flex items-center justify-between shrink-0 border-b border-rose-950">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-400/40 flex items-center justify-center text-xl shrink-0">
+                  🛡️
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-sm sm:text-base">Bacheca Segnalazioni</h3>
+                    <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black tracking-wide">
+                      ADMIN
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    {reports && reports.length > 0
+                      ? `${reports.length} recensioni in attesa di moderazione`
+                      : 'Nessuna segnalazione pendente'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 text-slate-400 hover:text-white rounded-full hover:bg-white/10 cursor-pointer transition-colors"
+              >
+                <IconClose size={18} />
+              </button>
+            </div>
+
+            {/* List */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-3.5 flex-1 bg-slate-50/60">
+              {(!reports || reports.length === 0) ? (
+                <div className="p-10 text-center space-y-3 bg-white rounded-2xl border border-slate-200">
+                  <div className="text-4xl">🎉</div>
+                  <h4 className="font-extrabold text-slate-800 text-sm">Nessuna segnalazione pendente</h4>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                    Tutte le recensioni segnalate sono state revisionate. La community di Street Review è in ordine!
+                  </p>
+                </div>
+              ) : (
+                reports.map((rep) => {
+                  return (
+                    <div
+                      key={rep.id}
+                      className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-sm space-y-3 transition-all hover:border-slate-300"
+                    >
+                      {/* Top Bar item */}
+                      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                            <span>📍</span>
+                            <span className="truncate">{rep.streetName || 'Via sconosciuta'}</span>
+                            {rep.streetCity && (
+                              <span className="text-[11px] font-semibold text-slate-500">
+                                ({rep.streetCity}{rep.streetProvince ? ` - ${rep.streetProvince}` : ''})
+                              </span>
+                            )}
+                          </h4>
+                          <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                            Segnalato da: <span className="text-slate-600 font-bold">{rep.reporterEmail || 'Utente'}</span>
+                          </p>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-extrabold shrink-0">
+                          {rep.reason || 'Segnalazione Generica'}
+                        </span>
+                      </div>
+
+                      {/* Recensione incriminata */}
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70 space-y-1">
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold">
+                          <span>Autore commento: <strong className="text-slate-800">{rep.reportedAuthorName || 'Anonimo'}</strong></span>
+                          <span>ID: <code className="text-[9px] bg-slate-200 px-1 py-0.5 rounded">{rep.reviewId}</code></span>
+                        </div>
+                        <p className="text-xs text-slate-800 italic leading-relaxed pt-1">
+                          "{rep.reportedText}"
+                        </p>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => onGoToStreet(rep)}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer"
+                          title="Centra la mappa e visualizza la scheda della via"
+                        >
+                          <span>📍</span>
+                          <span>Vai alla Via</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDismissReport(rep)}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 text-xs font-bold rounded-xl border border-slate-200 hover:border-emerald-200 transition-colors flex items-center gap-1.5 cursor-pointer"
+                          title="Ignora la segnalazione e conservala come archiviata"
+                        >
+                          <span>✅</span>
+                          <span>Ignora / Archivia</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteReview(rep)}
+                          className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl border border-rose-700 shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+                          title="Elimina definitivamente la recensione su Firestore e archivia la segnalazione"
+                        >
+                          <span>🗑️</span>
+                          <span>Elimina Recensione</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
+              <span className="text-[11px]">Le eliminazioni ricalcolano medie, punteggi XP e classifiche.</span>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-1.5 bg-white border border-slate-300 font-bold text-slate-700 rounded-xl hover:bg-slate-50 cursor-pointer"
+              >
+                Chiudi
+              </button>
             </div>
           </div>
         </div>
