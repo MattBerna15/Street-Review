@@ -1173,6 +1173,7 @@
         date: r.date || (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString('it-IT') : 'Recente'),
         createdAt: r.createdAt || r.updatedAt || null,
         updatedAt: r.updatedAt || r.createdAt || null,
+        streetType: r.streetType || '',
         overallRating: Number(r.ratingOverall ?? r.overallRating ?? 0),
         comment: r.comment || '',
         ratings: r.ratings || {},
@@ -1216,21 +1217,33 @@
 
       const categoryAverages = {};
       CATEGORY_KEYS.forEach(k => {
-        if (safeReviews.length === 0) {
-          categoryAverages[k] = 0;
+        const validRev = safeReviews.filter(r => {
+          const val = r.ratings?.[k];
+          return val !== null && val !== undefined && val !== 'N/A' && !isNaN(Number(val)) && Number(val) > 0;
+        });
+        if (validRev.length === 0) {
+          categoryAverages[k] = null;
         } else {
-          const sum = safeReviews.reduce((acc, r) => acc + Number(r.ratings?.[k] || 0), 0);
-          categoryAverages[k] = Number((sum / safeReviews.length).toFixed(1));
+          const sum = validRev.reduce((acc, r) => acc + Number(r.ratings[k]), 0);
+          categoryAverages[k] = Number((sum / validRev.length).toFixed(1));
         }
       });
 
-      const ratingOverall = safeReviews.length === 0
-        ? 0
-        : Number((Object.values(categoryAverages).reduce((a, b) => a + b, 0) / CATEGORY_KEYS.length).toFixed(1));
+      const overallScores = safeReviews
+        .map(r => Number(r.ratingOverall ?? r.overallRating))
+        .filter(val => !isNaN(val) && val > 0);
+
+      const validCatAverages = Object.values(categoryAverages).filter(v => v !== null && v > 0);
+      const ratingOverall = overallScores.length > 0
+        ? Number((overallScores.reduce((a, b) => a + b, 0) / overallScores.length).toFixed(1))
+        : (validCatAverages.length > 0
+          ? Number((validCatAverages.reduce((a, b) => a + b, 0) / validCatAverages.length).toFixed(1))
+          : 0);
 
       const parkingTypes = Array.from(new Set(safeReviews.flatMap(r => r.parkingTypes || [])));
       const hasCyclePath = safeReviews.some(r => Boolean(r.hasCyclePath));
       const amenities = Array.from(new Set(safeReviews.flatMap(r => r.amenities || [])));
+      const detectedStreetType = safeReviews.find(r => r.streetType)?.streetType || fallbackMeta?.streetType || '';
 
       // Determina l'autore Pioniere (prima recensione storica della via per timestamp createdAt)
       let pioneerRev = safeReviews[safeReviews.length - 1] || null;
@@ -1257,6 +1270,7 @@
         postalCode,
         latitude: Number(anchor.lat),
         longitude: Number(anchor.lng),
+        streetType: detectedStreetType,
         ratingOverall,
         reviewCount: safeReviews.length,
         categoryAverages,
@@ -1283,7 +1297,8 @@
 
       const defaultCats = {};
       CATEGORY_KEYS.forEach(k => {
-        defaultCats[k] = Number(docData.categoryAverages?.[k] || 0);
+        const val = docData.categoryAverages?.[k];
+        defaultCats[k] = (val === null || val === undefined || val === 'N/A') ? null : Number(val);
       });
 
       const preservedReviews = (existingStreet && Array.isArray(existingStreet.reviews) && existingStreet.reviews.length > 0)
@@ -1313,6 +1328,7 @@
         postalCode: docData.postalCode || existingStreet?.postalCode || resolveDefaultPostalCode(cityKey),
         latitude: lat,
         longitude: lng,
+        streetType: docData.streetType || existingStreet?.streetType || '',
         reviewsCount: Number(docData.reviewCount ?? docData.reviewsCount ?? preservedReviews.length ?? 0),
         avgOverallRating: Number(docData.ratingOverall ?? docData.avgOverallRating ?? 0),
         categoryAverages: defaultCats,
@@ -3252,6 +3268,7 @@
               streetProvince: finalProvince,
               latitude: finalLat,
               longitude: finalLng,
+              streetType: reviewPayload.streetType || oldRev.streetType || '🏡 Urbana',
               ratings: reviewPayload.ratings,
               overallRating: reviewPayload.overallRating,
               comment: reviewPayload.comment,
@@ -3278,6 +3295,7 @@
               streetProvince: finalProvince,
               latitude: finalLat,
               longitude: finalLng,
+              streetType: reviewPayload.streetType || '🏡 Urbana',
               date: 'Oggi',
               createdAt: nowIso,
               updatedAt: nowIso,
@@ -3295,10 +3313,19 @@
 
           const updatedCat = {};
           CATEGORY_KEYS.forEach(k => {
-            const sum = updatedReviews.reduce((acc, r) => acc + (r.ratings?.[k] || 0), 0);
-            updatedCat[k] = Number((sum / updatedReviews.length).toFixed(1));
+            const valid = updatedReviews
+              .map(r => r.ratings?.[k])
+              .filter(v => v !== null && v !== undefined && v !== 'N/A' && !isNaN(Number(v)) && Number(v) > 0);
+            updatedCat[k] = valid.length > 0 ? Number((valid.reduce((acc, v) => acc + Number(v), 0) / valid.length).toFixed(1)) : null;
           });
-          const newAvg = Number((Object.values(updatedCat).reduce((a, b) => a + b, 0) / CATEGORY_KEYS.length).toFixed(1));
+
+          const validOverall = updatedReviews
+            .map(r => Number(r.overallRating ?? r.ratingOverall))
+            .filter(v => !isNaN(v) && v > 0);
+          const validCats = Object.values(updatedCat).filter(v => v !== null && v > 0);
+          const newAvg = validOverall.length > 0
+            ? Number((validOverall.reduce((a, b) => a + b, 0) / validOverall.length).toFixed(1))
+            : (validCats.length > 0 ? Number((validCats.reduce((a, b) => a + b, 0) / validCats.length).toFixed(1)) : 0);
 
           const mergedParking = Array.from(new Set(updatedReviews.flatMap(r => r.parkingTypes || [])));
           const mergedCycle = updatedReviews.some(r => r.hasCyclePath);
@@ -3311,6 +3338,7 @@
             city: finalCity,
             province: finalProvince,
             postalCode: finalPostal,
+            streetType: reviewPayload.streetType || s.streetType || '🏡 Urbana',
             reviewsCount: newCount,
             avgOverallRating: newAvg,
             categoryAverages: updatedCat,
@@ -3351,6 +3379,7 @@
           authorId: authorId,
           authorName: authorName,
           authorAvatar: authorAvatar,
+          streetType: reviewPayload.streetType || '🏡 Urbana',
           ratingOverall: reviewPayload.overallRating,
           ratings: reviewPayload.ratings,
           parkingTypes: reviewPayload.parkingTypes,
@@ -3688,10 +3717,18 @@
             // Caso 1: Rimangono altre recensioni -> ricalcola medie e tag
             const updatedCat = {};
             CATEGORY_KEYS.forEach(k => {
-              const sum = remainingRevs.reduce((acc, r) => acc + Number(r.ratings?.[k] || 0), 0);
-              updatedCat[k] = Number((sum / remainingRevs.length).toFixed(1));
+              const valid = remainingRevs
+                .map(r => r.ratings?.[k])
+                .filter(v => v !== null && v !== undefined && v !== 'N/A' && !isNaN(Number(v)) && Number(v) > 0);
+              updatedCat[k] = valid.length > 0 ? Number((valid.reduce((acc, v) => acc + Number(v), 0) / valid.length).toFixed(1)) : null;
             });
-            const newAvg = Number((Object.values(updatedCat).reduce((a, b) => a + b, 0) / CATEGORY_KEYS.length).toFixed(1));
+            const validOverall = remainingRevs
+              .map(r => Number(r.overallRating ?? r.ratingOverall))
+              .filter(v => !isNaN(v) && v > 0);
+            const validCats = Object.values(updatedCat).filter(v => v !== null && v > 0);
+            const newAvg = validOverall.length > 0
+              ? Number((validOverall.reduce((a, b) => a + b, 0) / validOverall.length).toFixed(1))
+              : (validCats.length > 0 ? Number((validCats.reduce((a, b) => a + b, 0) / validCats.length).toFixed(1)) : 0);
             const mergedParking = Array.from(new Set(remainingRevs.flatMap(r => r.parkingTypes || [])));
             const mergedCycle = remainingRevs.some(r => Boolean(r.hasCyclePath));
             const mergedAmenities = Array.from(new Set(remainingRevs.flatMap(r => r.amenities || [])));
@@ -4490,8 +4527,13 @@
               <div className="px-5 pb-3 flex items-start justify-between border-b border-slate-100">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">{selectedStreet.name}</h2>
-                  <p className="text-xs text-slate-500 font-medium">
-                    {selectedStreet.city}{selectedStreet.province ? ` (${selectedStreet.province})` : ''}{selectedStreet.postalCode ? ` · ${selectedStreet.postalCode}` : ''}
+                  <p className="text-xs text-slate-500 font-medium flex items-center gap-2 flex-wrap mt-0.5">
+                    <span>{selectedStreet.city}{selectedStreet.province ? ` (${selectedStreet.province})` : ''}{selectedStreet.postalCode ? ` · ${selectedStreet.postalCode}` : ''}</span>
+                    {selectedStreet.streetType && (
+                      <span className="text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.2 rounded-full">
+                        {selectedStreet.streetType}
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -4623,28 +4665,37 @@
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Spaccato Categorie (13 Parametri)</h4>
                       <div className="space-y-2 text-xs">
                         {[
-                          ['Manto Stradale', selectedStreet.categoryAverages?.roadSurface || 0],
-                          ['Segnaletica a terra', selectedStreet.categoryAverages?.groundSignage || 0],
-                          ['Segnaletica verticale', selectedStreet.categoryAverages?.verticalSignage || 0],
-                          ['Quantità parcheggi', selectedStreet.categoryAverages?.parkingQuantity || 0],
-                          ['Qualità marciapiedi', selectedStreet.categoryAverages?.sidewalkQuality || 0],
-                          ['Illuminazione', selectedStreet.categoryAverages?.lighting || 0],
-                          ['Pulizia e Decoro', selectedStreet.categoryAverages?.cleanliness || 0],
-                          ['Accessibilità', selectedStreet.categoryAverages?.accessibility || 0],
-                          ['Drenaggio Piovano', selectedStreet.categoryAverages?.rainDrainage || 0],
-                          ['Ombreggiatura e Verde', selectedStreet.categoryAverages?.greeneryShade || 0],
-                          ['Tranquillità e Silenzio', selectedStreet.categoryAverages?.quietness || 0],
-                          ['Visibilità Incroci', selectedStreet.categoryAverages?.intersectionVisibility || 0],
-                          ['Larghezza Carreggiata', selectedStreet.categoryAverages?.laneWidth || 0],
-                        ].map(([label, score]) => (
-                          <div key={label} className="flex items-center justify-between">
-                            <span className="text-slate-700 font-medium w-40 truncate">{label}</span>
-                            <div className="flex-1 mx-3 h-2 bg-slate-200 rounded-full overflow-hidden">
-                              <div className="h-full bg-blue-600 rounded-full" style={{ width: `${(score / 5) * 100}%` }} />
+                          ['Manto Stradale', selectedStreet.categoryAverages?.roadSurface],
+                          ['Segnaletica a terra', selectedStreet.categoryAverages?.groundSignage],
+                          ['Segnaletica verticale', selectedStreet.categoryAverages?.verticalSignage],
+                          ['Quantità parcheggi', selectedStreet.categoryAverages?.parkingQuantity],
+                          ['Qualità marciapiedi', selectedStreet.categoryAverages?.sidewalkQuality],
+                          ['Illuminazione', selectedStreet.categoryAverages?.lighting],
+                          ['Pulizia e Decoro', selectedStreet.categoryAverages?.cleanliness],
+                          ['Accessibilità', selectedStreet.categoryAverages?.accessibility],
+                          ['Drenaggio Piovano', selectedStreet.categoryAverages?.rainDrainage],
+                          ['Ombreggiatura e Verde', selectedStreet.categoryAverages?.greeneryShade],
+                          ['Tranquillità e Silenzio', selectedStreet.categoryAverages?.quietness],
+                          ['Visibilità Incroci', selectedStreet.categoryAverages?.intersectionVisibility],
+                          ['Larghezza Carreggiata', selectedStreet.categoryAverages?.laneWidth],
+                        ].map(([label, rawScore]) => {
+                          const isNA = rawScore === null || rawScore === undefined || rawScore === 0 || rawScore === 'N/A';
+                          const score = isNA ? 'N/A' : Number(rawScore).toFixed(1);
+                          return (
+                            <div key={label} className="flex items-center justify-between">
+                              <span className="text-slate-700 font-medium w-40 truncate">{label}</span>
+                              <div className="flex-1 mx-3 h-2 bg-slate-200 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-blue-600 rounded-full transition-all"
+                                  style={{ width: isNA ? '0%' : `${(Number(score) / 5) * 100}%` }}
+                                />
+                              </div>
+                              <span className={`w-8 text-right font-bold ${isNA ? 'text-slate-400 text-[10px]' : 'text-slate-800'}`}>
+                                {score}
+                              </span>
                             </div>
-                            <span className="font-bold text-slate-800 w-8 text-right">{score}</span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -4858,6 +4909,21 @@
                                       title={`Tratto o punto di riferimento indicato: ${r.streetSegment}`}
                                     >
                                       <span>📍 Tratto: {r.streetSegment}</span>
+                                    </span>
+                                  )}
+                                  {r.streetType && (
+                                    <span
+                                      className="text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                                    >
+                                      <span>{r.streetType}</span>
+                                    </span>
+                                  )}
+                                  {Boolean(r.overallRating || r.ratingOverall) && (
+                                    <span
+                                      className="text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full inline-flex items-center gap-0.5"
+                                    >
+                                      <span className="text-amber-500">★</span>
+                                      <span>{Number(r.overallRating || r.ratingOverall).toFixed(1)}</span>
                                     </span>
                                   )}
                                   <span className="text-slate-400 text-[11px]">{r.date}</span>
@@ -5315,19 +5381,123 @@
       );
     }
 
+    // --- COSTANTI TIPOLOGIE STRADA & PARAMETRI TECNICI ---
+    const STREET_TYPES = [
+      '🚶 Pedonale / ZTL',
+      '🏡 Urbana',
+      '🏭 Industriale',
+      '🛣️ Statale / Provinciale (SS / SP)',
+      '🟢 Autostrada'
+    ];
+
+    const detectStreetTypeFromStreetName = (name = '') => {
+      const n = String(name || '').trim();
+      // Prefissi A seguito da numeri (es. A14, A1), Autostrada, Raccordo -> 🟢 Autostrada
+      if (/\bA[- ]?\d{1,3}\b/i.test(n) || /autostrad/i.test(n) || /raccordo/i.test(n)) {
+        return '🟢 Autostrada';
+      }
+      // SS, SP, S.S., S.P., Strada Statale, Strada Provinciale, SR -> 🛣️ Statale / Provinciale (SS / SP)
+      if (/\b(SS|SP|S\.S\.|S\.P\.|SR|S\.R\.)\b/i.test(n) || /strada\s+statale/i.test(n) || /strada\s+provinciale/i.test(n) || /statale/i.test(n) || /provinciale/i.test(n)) {
+        return '🛣️ Statale / Provinciale (SS / SP)';
+      }
+      return '🏡 Urbana';
+    };
+
+    const getIncompatibleKeysForStreetType = (type) => {
+      if (type === '🟢 Autostrada' || type === '🛣️ Statale / Provinciale (SS / SP)') {
+        return ['sidewalkQuality', 'accessibility'];
+      }
+      if (type === '🚶 Pedonale / ZTL') {
+        return ['laneWidth', 'parkingQuantity'];
+      }
+      return [];
+    };
+
+    const TECHNICAL_CATEGORIES = [
+      { key: 'roadSurface', label: 'Manto Stradale (asfalto, buche)', icon: '🛣️' },
+      { key: 'groundSignage', label: 'Segnaletica a terra (strisce, stop)', icon: '🛑' },
+      { key: 'verticalSignage', label: 'Segnaletica verticale (cartelli visibili)', icon: '🪧' },
+      { key: 'parkingQuantity', label: 'Quantità di parcheggi', icon: '🅿️' },
+      { key: 'sidewalkQuality', label: 'Qualità dei marciapiedi', icon: '🚶' },
+      { key: 'lighting', label: 'Illuminazione notturna', icon: '💡' },
+      { key: 'cleanliness', label: 'Pulizia e decoro urbano', icon: '✨' },
+      { key: 'accessibility', label: 'Accessibilità (passeggini / PMR)', icon: '♿' },
+      { key: 'rainDrainage', label: 'Drenaggio piovano (caditoie, tombini)', icon: '🌧️' },
+      { key: 'greeneryShade', label: 'Ombreggiatura e verde (alberi, radici)', icon: '🌳' },
+      { key: 'quietness', label: 'Tranquillità e silenziosità (rumore)', icon: '🤫' },
+      { key: 'intersectionVisibility', label: 'Visibilità incroci (specchi, visuale)', icon: '👀' },
+      { key: 'laneWidth', label: 'Larghezza carreggiata (manovra, spazio)', icon: '↔️' },
+    ];
+
     // --- SOTTORAPPRESENTAZIONE MODALE RECENSIONE INTERATTIVA ---
     function ReviewModal({ streetName, currentUser, initialData, defaultStreetSegment = '', isPioneerCandidate, onClose, onSubmit, onDelete, onOpenPrivacy }) {
       const isEditing = Boolean(initialData);
-      const defaultRatings = {
-        roadSurface: 4, groundSignage: 4, verticalSignage: 4,
-        parkingQuantity: 3, sidewalkQuality: 4, lighting: 4,
-        cleanliness: 4, accessibility: 4, rainDrainage: 4,
-        greeneryShade: 4, quietness: 4, intersectionVisibility: 4,
-        laneWidth: 4
+
+      // Risoluzione iniziale tipologia strada (priorità: dato salvato in precedenza, altrimenti rilevamento da nome via)
+      const resolveInitialStreetType = () => {
+        if (initialData?.streetType) {
+          const raw = String(initialData.streetType).trim();
+          const match = STREET_TYPES.find(t => t === raw);
+          if (match) return match;
+          if (/autostrad/i.test(raw)) return '🟢 Autostrada';
+          if (/statale|provincial/i.test(raw)) return '🛣️ Statale / Provinciale (SS / SP)';
+          if (/pedonal|ztl/i.test(raw)) return '🚶 Pedonale / ZTL';
+          if (/industrial/i.test(raw)) return '🏭 Industriale';
+          return '🏡 Urbana';
+        }
+        return detectStreetTypeFromStreetName(streetName);
       };
-      const [ratings, setRatings] = useState(
-        initialData?.ratings ? { ...defaultRatings, ...initialData.ratings } : defaultRatings
-      );
+
+      const [streetType, setStreetType] = useState(resolveInitialStreetType);
+
+      // Voto complessivo Google Places style (1 a 5)
+      const [overallRating, setOverallRating] = useState(() => {
+        if (initialData) {
+          const old = Number(initialData.ratingOverall ?? initialData.overallRating);
+          if (!isNaN(old) && old >= 1 && old <= 5) return Math.round(old);
+          if (initialData.ratings) {
+            const valid = Object.values(initialData.ratings).filter(v => v !== null && v !== undefined && v !== 'N/A' && Number(v) > 0);
+            if (valid.length > 0) return Math.round(valid.reduce((a, b) => a + Number(b), 0) / valid.length);
+          }
+        }
+        return 0;
+      });
+      const [hoverRating, setHoverRating] = useState(0);
+
+      // Accordion parametri tecnici
+      const [isAccordionOpen, setIsAccordionOpen] = useState(false);
+
+      // Generazione ratings tecnici iniziali
+      const buildRatingsState = (currentType) => {
+        const base = {
+          roadSurface: 4, groundSignage: 4, verticalSignage: 4,
+          parkingQuantity: 3, sidewalkQuality: 4, lighting: 4,
+          cleanliness: 4, accessibility: 4, rainDrainage: 4,
+          greeneryShade: 4, quietness: 4, intersectionVisibility: 4,
+          laneWidth: 4
+        };
+        if (initialData?.ratings) {
+          const res = {};
+          TECHNICAL_CATEGORIES.forEach(cat => {
+            const v = initialData.ratings[cat.key];
+            if (v === null || v === undefined || v === 'N/A') {
+              res[cat.key] = null;
+            } else {
+              const num = Number(v);
+              res[cat.key] = (!isNaN(num) && num >= 1 && num <= 5) ? num : null;
+            }
+          });
+          return res;
+        }
+        // Pre-impostazione intelligente N/A per nuova recensione
+        const incompatible = getIncompatibleKeysForStreetType(currentType);
+        incompatible.forEach(k => {
+          base[k] = null;
+        });
+        return base;
+      };
+
+      const [ratings, setRatings] = useState(() => buildRatingsState(streetType));
       const [parkingTypes, setParkingTypes] = useState(initialData?.parkingTypes || ['FREE']);
       const [hasCyclePath, setHasCyclePath] = useState(initialData?.hasCyclePath || false);
       const [amenities, setAmenities] = useState(initialData?.amenities || []);
@@ -5342,38 +5512,72 @@
       useEffect(() => {
         setModerationError('');
         if (initialData) {
-          setRatings({
-            ...defaultRatings,
-            ...initialData.ratings
-          });
+          const loadedType = resolveInitialStreetType();
+          setStreetType(loadedType);
+          const old = Number(initialData.ratingOverall ?? initialData.overallRating);
+          if (!isNaN(old) && old >= 1 && old <= 5) {
+            setOverallRating(Math.round(old));
+          } else if (initialData.ratings) {
+            const valid = Object.values(initialData.ratings).filter(v => v !== null && v !== undefined && v !== 'N/A' && Number(v) > 0);
+            setOverallRating(valid.length > 0 ? Math.round(valid.reduce((a, b) => a + Number(b), 0) / valid.length) : 0);
+          } else {
+            setOverallRating(0);
+          }
+          setRatings(buildRatingsState(loadedType));
           setParkingTypes(initialData.parkingTypes || []);
           setHasCyclePath(initialData.hasCyclePath || false);
           setAmenities(initialData.amenities || []);
           setStreetSegment(initialData.streetSegment || defaultStreetSegment || '');
           setComment(initialData.comment || '');
         } else {
-          setRatings(defaultRatings);
+          const autoType = detectStreetTypeFromStreetName(streetName);
+          setStreetType(autoType);
+          setOverallRating(0);
+          setRatings(buildRatingsState(autoType));
           setParkingTypes(['FREE']);
           setHasCyclePath(false);
           setAmenities([]);
           setStreetSegment(defaultStreetSegment || '');
           setComment('');
         }
-      }, [initialData, defaultStreetSegment]);
+      }, [initialData, defaultStreetSegment, streetName]);
 
-      const overall = Number(
-        (Object.values(ratings).reduce((a, b) => a + b, 0) / 13).toFixed(1)
-      );
+      // Cambio tipologia con aggiornamento intelligente dei suggerimenti N/A
+      const handleSelectStreetType = (newType) => {
+        setStreetType(newType);
+        const incompatible = getIncompatibleKeysForStreetType(newType);
+        setRatings(prev => {
+          const next = { ...prev };
+          incompatible.forEach(k => {
+            next[k] = null;
+          });
+          // Se torna su Urbana e non stiamo modificando una recensione vecchia che aveva voti nulli, ripristina a 4
+          if (newType === '🏡 Urbana' && !initialData?.ratings) {
+            ['sidewalkQuality', 'accessibility', 'laneWidth', 'parkingQuantity'].forEach(k => {
+              if (next[k] === null) next[k] = 4;
+            });
+          }
+          return next;
+        });
+      };
 
-      // Calcolo live degli XP che questa recensione assegna
-      const liveXP = computeSingleReviewXP(
-        { comment, parkingTypes, amenities },
-        Boolean(isPioneerCandidate)
-      );
-      const commentChars = comment.trim().length;
+      // Toggle pulsante N/A per parametro tecnico
+      const toggleNA = (catKey) => {
+        setRatings(prev => {
+          const isNA = prev[catKey] === null || prev[catKey] === undefined || prev[catKey] === 'N/A';
+          return {
+            ...prev,
+            [catKey]: isNA ? 4 : null,
+          };
+        });
+      };
 
-      const handleStarClick = (categoryKey, starVal) => {
-        setRatings(prev => ({ ...prev, [categoryKey]: starVal }));
+      // Click stella categoria tecnica
+      const handleCategoryStarClick = (catKey, starVal) => {
+        setRatings(prev => ({
+          ...prev,
+          [catKey]: starVal,
+        }));
       };
 
       const toggleParking = (type) => {
@@ -5384,9 +5588,44 @@
         setAmenities(prev => prev.includes(val) ? prev.filter(a => a !== val) : [...prev, val]);
       };
 
+      // Calcolo live degli XP guadagnati
+      const liveXP = computeSingleReviewXP(
+        { comment, parkingTypes, amenities },
+        Boolean(isPioneerCandidate)
+      );
+      const commentChars = comment.trim().length;
+
+      const handleFormSubmit = (e) => {
+        if (e) e.preventDefault();
+        if (overallRating === 0) {
+          setModerationError('Seleziona un voto a stelle complessivo (da 1 a 5) prima di pubblicare.');
+          return;
+        }
+        const finalComment = comment.trim() || 'Esperienza complessiva registrata.';
+        const finalSegment = streetSegment.trim().slice(0, 60);
+        const check = validateReviewComment(`${finalSegment} ${finalComment}`.trim());
+        if (!check.valid) {
+          setModerationError(check.message);
+          return;
+        }
+        setModerationError('');
+        onSubmit({
+          userName: currentUser ? currentUser.name : 'Tu (Cittadino)',
+          streetType: streetType,
+          overallRating: overallRating,
+          ratings: ratings,
+          comment: finalComment,
+          streetSegment: finalSegment,
+          parkingTypes: parkingTypes,
+          hasCyclePath: hasCyclePath,
+          amenities: amenities,
+        });
+      };
+
       return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
           <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden animate-slide-up">
+            {/* Header Modale */}
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div>
                 <div className="flex items-center gap-2">
@@ -5399,13 +5638,15 @@
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-500">{streetName}</p>
+                <p className="text-xs text-slate-500 font-medium truncate max-w-[260px]">{streetName}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full">
                   ⚡ +{liveXP.totalXP} XP
                 </span>
-                <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">★ {overall}</span>
+                <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                  ★ {overallRating > 0 ? overallRating : '-'}
+                </span>
                 <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
                   <IconClose size={20} />
                 </button>
@@ -5438,226 +5679,365 @@
             )}
 
             <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const finalComment = comment.trim() || 'Recensione pubblicata con successo.';
-                const finalSegment = streetSegment.trim().slice(0, 60);
-                const check = validateReviewComment(`${finalSegment} ${finalComment}`.trim());
-                if (!check.valid) {
-                  setModerationError(check.message);
-                  return;
-                }
-                setModerationError('');
-                onSubmit({
-                  userName: currentUser ? currentUser.name : 'Tu (Cittadino)',
-                  ratings,
-                  overallRating: overall,
-                  comment: finalComment,
-                  streetSegment: finalSegment,
-                  parkingTypes,
-                  hasCyclePath,
-                  amenities,
-                });
-              }}
+              onSubmit={handleFormSubmit}
               className="flex-1 overflow-y-auto px-6 py-4 space-y-4 text-xs"
             >
-              {/* Campo Tratto o Punto di Riferimento per Strade Lunghe (opzionale, max 60 caratteri) */}
-              <div className="space-y-1.5 bg-cyan-50/50 p-3 rounded-2xl border border-cyan-200/70">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="font-extrabold text-slate-800 flex items-center gap-1">
-                    <span>📍 Tratto o punto di riferimento (opzionale)</span>
+              {/* 1. SELETTORE RAPIDO "TIPOLOGIA STRADA" (In cima al modulo) */}
+              <div className="space-y-1.5 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <label className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                    <span>🛣️ Tipologia Strada:</span>
                   </label>
-                  <span className="text-[10px] font-semibold text-slate-400">
-                    {streetSegment.length}/60
-                  </span>
+                  <span className="text-[10px] text-slate-400 font-semibold">Tocca per cambiare</span>
                 </div>
-                <input
-                  type="text"
-                  maxLength={60}
-                  value={streetSegment}
-                  onChange={(e) => {
-                    setStreetSegment(e.target.value.slice(0, 60));
-                    if (moderationError) setModerationError('');
-                  }}
-                  placeholder="Es. Altezza civico 120, Tratto Sud, vicino Piazza..."
-                  className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-slate-800 font-medium placeholder-slate-400"
-                />
-              </div>
-
-              <p className="text-slate-500 font-semibold uppercase text-[10px]">Valuta le 13 categorie obbligatorie:</p>
-
-              {[
-                ['roadSurface', 'Manto Stradale (asfalto, buche)'],
-                ['groundSignage', 'Segnaletica a terra (strisce, stop)'],
-                ['verticalSignage', 'Segnaletica verticale (cartelli visibili)'],
-                ['parkingQuantity', 'Quantità di parcheggi'],
-                ['sidewalkQuality', 'Qualità dei marciapiedi'],
-                ['lighting', 'Illuminazione notturna'],
-                ['cleanliness', 'Pulizia e decoro urbano'],
-                ['accessibility', 'Accessibilità (passeggini / PMR)'],
-                ['rainDrainage', 'Drenaggio piovano (caditoie, tombini)'],
-                ['greeneryShade', 'Ombreggiatura e verde (alberi, radici)'],
-                ['quietness', 'Tranquillità e silenziosità (rumore)'],
-                ['intersectionVisibility', 'Visibilità incroci (specchi, visuale)'],
-                ['laneWidth', 'Larghezza carreggiata (manovra, spazio)'],
-              ].map(([key, label]) => (
-                <div key={key} className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                  <span className="font-semibold text-slate-700 truncate pr-2">{label}</span>
-                  <div className="flex gap-1 text-amber-400 select-none">
-                    {[1, 2, 3, 4, 5].map(star => (
-                      <span
-                        key={star}
-                        onClick={() => handleStarClick(key, star)}
-                        className={`cursor-pointer text-base transition-transform hover:scale-125 ${
-                          star <= (ratings[key] || 0) ? 'text-amber-400' : 'text-slate-200'
-                        }`}
-                      >
-                        ★
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              {/* Tag Parcheggi */}
-              <div className="space-y-1.5 pt-1">
-                <p className="font-semibold text-slate-700">Tipologia parcheggio presente:</p>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    ['FREE', 'Parcheggio Gratuito', 'bg-slate-50 text-slate-700 border-slate-200', 'bg-blue-600 text-white border-blue-600 shadow-xs'],
-                    ['PAID', 'A Pagamento (Blu)', 'bg-slate-50 text-slate-700 border-slate-200', 'bg-blue-600 text-white border-blue-600 shadow-xs'],
-                    ['PARKING_DISC', '⏱️ Disco Orario', 'bg-slate-50 text-slate-700 border-slate-200', 'bg-slate-800 text-white border-slate-800 shadow-xs'],
-                    ['DISABLED', '♿ Posti Disabili', 'bg-amber-50 text-amber-900 border-amber-300', 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'],
-                    ['PINK', '🌸 Posti Rosa', 'bg-pink-50 text-pink-900 border-pink-300', 'bg-pink-500 text-white font-black border-pink-600 shadow-xs'],
-                    ['LOADING_UNLOADING', '🚚 Carico / Scarico', 'bg-orange-50 text-orange-900 border-orange-300', 'bg-orange-500 text-white font-black border-orange-600 shadow-xs'],
-                  ].map(([val, name, unselCls, selCls]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => toggleParking(val)}
-                      className={`px-3 py-1.5 rounded-xl font-bold border transition-all cursor-pointer ${
-                        parkingTypes.includes(val) ? selCls : unselCls
-                      }`}
-                    >
-                      {name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Tag Dotazioni Urbane / Servizi */}
-              <div className="space-y-1.5 pt-1">
-                <p className="font-semibold text-slate-700">Dotazioni Urbane / Servizi (Tag rapidi):</p>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    ['EV_CHARGING', '⚡ Colonnine EV'],
-                    ['BIKE_RACKS', '🚲 Rastrelliere Bici'],
-                    ['SPEED_BUMPS', '⚠️ Dossi / Dissuasori'],
-                    ['COBBLESTONE', '🏛️ Pavimentazione Speciale'],
-                    ['DRINKING_FOUNTAIN', '🚰 Fontanella'],
-                    ['DOG_AREA', '🐕 Area Cani'],
-                    ['PLAYGROUND', '🎠 Area Giochi'],
-                    ['BENCHES', '🪑 Panchine'],
-                    ['TRASH_BINS', '🗑️ Cestini'],
-                  ].map(([val, name]) => {
-                    const isSelected = amenities.includes(val) || (val === 'PLAYGROUND' && amenities.includes('Area Giochi')) || (val === 'DOG_AREA' && amenities.includes('Area Cani'));
+                <div className="flex flex-wrap gap-1.5">
+                  {STREET_TYPES.map((type) => {
+                    const isSelected = streetType === type;
                     return (
                       <button
-                        key={val}
+                        key={type}
                         type="button"
-                        onClick={() => toggleAmenity(val)}
-                        className={`px-3 py-1.5 rounded-xl font-bold border transition-all cursor-pointer ${
+                        onClick={() => handleSelectStreetType(type)}
+                        className={`px-3 py-1.5 rounded-xl font-bold text-xs border transition-all cursor-pointer ${
                           isSelected
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm scale-[1.02]'
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
                         }`}
                       >
-                        {name} {isSelected && '✓'}
+                        {type} {isSelected && '✓'}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Tag Pista Ciclabile */}
-              <div className="space-y-1.5">
-                <p className="font-semibold text-slate-700">Pista ciclabile presente?</p>
-                <div className="flex gap-2">
+              {/* 2. SEZIONE VOTO OVERALL (STILE GOOGLE PLACES - COMPILAZIONE FLASH IN 15S) */}
+              <div className="bg-gradient-to-b from-amber-50/70 via-amber-50/20 to-slate-50 p-4 rounded-3xl border border-amber-200/80 shadow-xs space-y-3.5">
+                <div className="text-center space-y-1">
+                  <label className="text-xs font-black uppercase tracking-wider text-slate-700">
+                    Valutazione Complessiva del Luogo
+                  </label>
+                  <p className="text-[11px] font-semibold text-slate-500">
+                    {overallRating === 0
+                      ? 'Tocca le 5 stelle dorate per assegnare il tuo voto'
+                      : overallRating === 1
+                      ? '⭐ 1/5 - Molto negativa'
+                      : overallRating === 2
+                      ? '⭐⭐ 2/5 - Negativa'
+                      : overallRating === 3
+                      ? '⭐⭐⭐ 3/5 - Nella media'
+                      : overallRating === 4
+                      ? '⭐⭐⭐⭐ 4/5 - Buona'
+                      : '⭐⭐⭐⭐⭐ 5/5 - Eccellente'}
+                  </p>
+                </div>
+
+                {/* 5 Grandi Stelle Dorate al centro */}
+                <div className="flex justify-center items-center gap-2 py-1 select-none">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => {
+                        setOverallRating(star);
+                        if (moderationError) setModerationError('');
+                      }}
+                      onMouseEnter={() => setHoverRating(star)}
+                      onMouseLeave={() => setHoverRating(0)}
+                      className="p-1 cursor-pointer transition-transform hover:scale-125 active:scale-95 focus:outline-none"
+                      title={`Vota ${star} stella${star > 1 ? 'e' : ''}`}
+                    >
+                      <span
+                        className={`text-4xl sm:text-5xl transition-colors ${
+                          star <= (hoverRating || overallRating)
+                            ? 'text-amber-400 drop-shadow-sm'
+                            : 'text-slate-200 hover:text-amber-200'
+                        }`}
+                      >
+                        ★
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Campo Commento Essenziale */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <label className="font-bold text-slate-700">La tua opinione:</label>
+                    <span
+                      className={`font-extrabold px-2 py-0.5 rounded-full border text-[10px] ${
+                        liveXP.isDetailed
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-slate-100 text-slate-500 border-slate-200'
+                      }`}
+                    >
+                      {liveXP.isDetailed
+                        ? '✓ Bonus Dettaglio +20 XP attivo!'
+                        : `✍️ ${commentChars}/40 car. + 1 tag per +20 XP extra`}
+                    </span>
+                  </div>
+                  <textarea
+                    value={comment}
+                    onChange={(e) => {
+                      setComment(e.target.value);
+                      if (moderationError) setModerationError('');
+                    }}
+                    rows={3}
+                    placeholder="Condividi la tua esperienza in questo luogo..."
+                    className={`w-full p-3 rounded-2xl bg-white border focus:outline-none focus:ring-2 text-xs text-slate-800 font-medium placeholder-slate-400 ${
+                      moderationError
+                        ? 'border-rose-400 focus:ring-rose-500 bg-rose-50/30'
+                        : 'border-slate-200 focus:ring-blue-500'
+                    }`}
+                  />
+                  {moderationError && (
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-start gap-1.5 animate-fade-in">
+                      <span className="text-sm leading-none shrink-0 mt-0.5">🛡️</span>
+                      <span>{moderationError}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tratto o punto di riferimento facoltativo */}
+                <div className="flex items-center gap-2 bg-white/80 px-3 py-1.5 rounded-xl border border-slate-200/80 text-[11px]">
+                  <span className="shrink-0 text-slate-500 font-semibold">📍 Tratto (opzionale):</span>
+                  <input
+                    type="text"
+                    maxLength={60}
+                    value={streetSegment}
+                    onChange={(e) => setStreetSegment(e.target.value.slice(0, 60))}
+                    placeholder="Es. Civico 12, tratto nord..."
+                    className="flex-1 bg-transparent border-0 focus:outline-none text-slate-800 placeholder-slate-400 text-xs"
+                  />
+                  <span className="text-[10px] text-slate-400 font-semibold">{streetSegment.length}/60</span>
+                </div>
+
+                {/* Pulsante primario chiaro ad alto contrasto: "🚀 Pubblica subito" */}
+                <div className="pt-1">
                   <button
-                    type="button"
-                    onClick={() => setHasCyclePath(true)}
-                    className={`flex-1 py-2 rounded-xl font-bold border ${hasCyclePath ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 text-slate-700 border-slate-200'}`}
+                    type="submit"
+                    disabled={overallRating === 0}
+                    className={`w-full py-3.5 px-4 font-black rounded-2xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${
+                      overallRating === 0
+                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                        : isEditing
+                        ? 'bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white shadow-indigo-500/25 cursor-pointer'
+                        : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white shadow-blue-500/25 cursor-pointer'
+                    }`}
                   >
-                    Sì, presente
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setHasCyclePath(false)}
-                    className={`flex-1 py-2 rounded-xl font-bold border ${!hasCyclePath ? 'bg-slate-800 text-white border-slate-800' : 'bg-slate-50 text-slate-700 border-slate-200'}`}
-                  >
-                    No, assente
+                    <span>🚀</span>
+                    <span>
+                      {overallRating === 0
+                        ? 'Tocca una stella sopra per pubblicare'
+                        : isEditing
+                        ? `Aggiorna subito (+${liveXP.totalXP} XP)`
+                        : `Pubblica subito (+${liveXP.totalXP} XP)`}
+                    </span>
                   </button>
                 </div>
               </div>
 
-              {/* Commento Libero con indicatore Bonus Dettaglio (+20 XP) e Moderazione Live */}
-              <div className="space-y-1.5 pt-1">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-slate-700">Commento libero:</label>
-                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
-                    liveXP.isDetailed
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-slate-100 text-slate-500 border-slate-200'
-                  }`}>
-                    {liveXP.isDetailed
-                      ? '✓ Bonus Dettaglio +20 XP attivo!'
-                      : `✍️ ${commentChars}/40 car. + 1 tag per +20 XP extra`}
+              {/* 3. SEZIONE A FISARMONICA "APPROFONDISCI PARAMETRI TECNICI" (Opzionale & Richiudibile) */}
+              <div className="border border-slate-200 rounded-3xl overflow-hidden bg-white shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setIsAccordionOpen(!isAccordionOpen)}
+                  className="w-full py-3 px-4 bg-slate-50 hover:bg-slate-100 flex items-center justify-between font-extrabold text-slate-700 text-xs transition-colors cursor-pointer select-none"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="text-blue-600 font-bold">{isAccordionOpen ? '▲' : '▼'}</span>
+                    <span>Approfondisci parametri tecnici (Opzionale)</span>
                   </span>
-                </div>
-                <textarea 
-                  value={comment}
-                  onChange={(e) => {
-                    setComment(e.target.value);
-                    if (moderationError) setModerationError('');
-                  }}
-                  rows={3} 
-                  placeholder="Aggiungi almeno 40 caratteri utili per i residenti (es. 'Zona tranquilla, marciapiedi larghi ma pochi parcheggi la sera') per ottenere +20 XP extra. Non inserire targhe, telefoni o dati personali."
-                  className={`w-full p-2.5 rounded-xl border focus:outline-none focus:ring-2 text-slate-800 ${
-                    moderationError ? 'border-rose-400 focus:ring-rose-500 bg-rose-50/30' : 'border-slate-200 focus:ring-blue-500'
-                  }`}
-                />
-                {moderationError && (
-                  <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-start gap-2 animate-fade-in">
-                    <span className="text-sm leading-none shrink-0 mt-0.5">🛡️</span>
-                    <span>{moderationError}</span>
+                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">
+                    ⚡ Extra XP
+                  </span>
+                </button>
+
+                {isAccordionOpen && (
+                  <div className="p-4 space-y-4 border-t border-slate-100 animate-slide-up">
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-semibold text-slate-600">
+                        Valuta i singoli parametri tecnici o usa il toggle <strong className="text-slate-800">[N/A]</strong> per quelli non applicabili:
+                      </p>
+                    </div>
+
+                    {/* Voti a stelle con pulsante [N/A] accanto a ciascuna voce */}
+                    <div className="space-y-2">
+                      {TECHNICAL_CATEGORIES.map(({ key, label, icon }) => {
+                        const val = ratings[key];
+                        const isNA = val === null || val === undefined || val === 'N/A';
+                        return (
+                          <div
+                            key={key}
+                            className={`flex items-center justify-between p-2.5 rounded-xl border transition-colors ${
+                              isNA ? 'bg-slate-50/70 border-slate-200 text-slate-400' : 'bg-white border-slate-200 text-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                              <span className="text-sm shrink-0">{icon}</span>
+                              <span className={`text-xs font-semibold truncate ${isNA ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-700'}`}>
+                                {label}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <div className="flex gap-0.5 select-none">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <button
+                                    key={star}
+                                    type="button"
+                                    onClick={() => handleCategoryStarClick(key, star)}
+                                    className="p-0.5 cursor-pointer transition-transform hover:scale-125 focus:outline-none"
+                                    title={`${label}: ${star} stelle`}
+                                  >
+                                    <span
+                                      className={`text-base ${
+                                        !isNA && star <= (val || 0)
+                                          ? 'text-amber-400'
+                                          : 'text-slate-200 hover:text-amber-300'
+                                      }`}
+                                    >
+                                      ★
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => toggleNA(key)}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-black cursor-pointer transition-all ${
+                                  isNA
+                                    ? 'bg-slate-700 text-white shadow-xs'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
+                                }`}
+                                title={isNA ? 'Clicca per abilitare la valutazione' : 'Imposta come Non Applicabile'}
+                              >
+                                N/A
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Tag Parcheggi */}
+                    <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                      <p className="font-bold text-slate-700 text-xs">🅿️ Tipologia parcheggio presente:</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          ['FREE', 'Gratuito', 'bg-slate-50 text-slate-700 border-slate-200', 'bg-blue-600 text-white border-blue-600 shadow-xs'],
+                          ['PAID', 'Blu (a pagamento)', 'bg-slate-50 text-slate-700 border-slate-200', 'bg-blue-600 text-white border-blue-600 shadow-xs'],
+                          ['PARKING_DISC', '⏱️ Disco Orario', 'bg-slate-50 text-slate-700 border-slate-200', 'bg-slate-800 text-white border-slate-800 shadow-xs'],
+                          ['DISABLED', '♿ Disabili', 'bg-amber-50 text-amber-900 border-amber-300', 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'],
+                          ['PINK', '🌸 Rosa', 'bg-pink-50 text-pink-900 border-pink-300', 'bg-pink-500 text-white font-black border-pink-600 shadow-xs'],
+                          ['LOADING_UNLOADING', '🚚 Carico/Scarico', 'bg-orange-50 text-orange-900 border-orange-300', 'bg-orange-500 text-white font-black border-orange-600 shadow-xs'],
+                        ].map(([val, name, unselCls, selCls]) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => toggleParking(val)}
+                            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                              parkingTypes.includes(val) ? selCls : unselCls
+                            }`}
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Tag Dotazioni Urbane / Servizi */}
+                    <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                      <p className="font-bold text-slate-700 text-xs">🏛️ Dotazioni Urbane / Servizi (Tag rapidi):</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          ['EV_CHARGING', '⚡ Colonnine EV'],
+                          ['BIKE_RACKS', '🚲 Rastrelliere Bici'],
+                          ['SPEED_BUMPS', '⚠️ Dossi / Dissuasori'],
+                          ['COBBLESTONE', '🏛️ Pavimentazione Speciale'],
+                          ['DRINKING_FOUNTAIN', '🚰 Fontanella'],
+                          ['DOG_AREA', '🐕 Area Cani'],
+                          ['PLAYGROUND', '🎠 Area Giochi'],
+                          ['BENCHES', '🪑 Panchine'],
+                          ['TRASH_BINS', '🗑️ Cestini'],
+                        ].map(([val, name]) => {
+                          const isSelected = amenities.includes(val) || (val === 'PLAYGROUND' && amenities.includes('Area Giochi')) || (val === 'DOG_AREA' && amenities.includes('Area Cani'));
+                          return (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => toggleAmenity(val)}
+                              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              {name} {isSelected && '✓'}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Pista Ciclabile */}
+                    <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                      <p className="font-bold text-slate-700 text-xs">🚲 Pista ciclabile presente?</p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setHasCyclePath(true)}
+                          className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                            hasCyclePath ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' : 'bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          Sì, presente
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHasCyclePath(false)}
+                          className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                            !hasCyclePath ? 'bg-slate-800 text-white border-slate-800 shadow-xs' : 'bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          No, assente
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Pulsante secondario salva in fondo all'accordion */}
+                    <div className="pt-2">
+                      <button
+                        type="submit"
+                        disabled={overallRating === 0}
+                        className={`w-full py-3 px-4 font-bold rounded-2xl text-xs transition-all flex items-center justify-center gap-2 shadow-md ${
+                          overallRating === 0
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer active:scale-[0.99]'
+                        }`}
+                      >
+                        <span>🚀</span>
+                        <span>Conferma e pubblica con dettagli (+{liveXP.totalXP} XP)</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
 
-              <div className="space-y-2">
-                <div className="flex gap-2">
+              {/* Bottoni e link footer modale */}
+              <div className="space-y-2 pt-1">
+                {isEditing && onDelete && (
                   <button
-                    type="submit"
-                    className={`flex-1 py-3.5 text-white font-bold rounded-2xl shadow-lg active:scale-[0.99] text-sm cursor-pointer transition-all ${
-                      isEditing
-                        ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/25'
-                        : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25'
-                    }`}
+                    type="button"
+                    onClick={onDelete}
+                    className="w-full py-3 bg-rose-50 hover:bg-rose-100 active:scale-[0.99] text-rose-700 border border-rose-200 font-bold rounded-2xl flex items-center justify-center gap-1.5 text-xs cursor-pointer transition-all"
+                    title="Elimina definitivamente questa recensione"
                   >
-                    {isEditing ? `💾 Aggiorna recensione (+${liveXP.totalXP} XP)` : `Pubblica Recensione (+${liveXP.totalXP} XP)`}
+                    <span>🗑️</span>
+                    <span>Elimina questa recensione</span>
                   </button>
-                  {isEditing && onDelete && (
-                    <button
-                      type="button"
-                      onClick={onDelete}
-                      className="px-4 py-3.5 bg-rose-50 hover:bg-rose-100 active:scale-[0.99] text-rose-700 border border-rose-200 font-bold rounded-2xl flex items-center justify-center gap-1.5 text-sm cursor-pointer transition-all shrink-0"
-                      title="Elimina definitivamente questa recensione"
-                    >
-                      <span>🗑️</span>
-                      <span>Elimina</span>
-                    </button>
-                  )}
-                </div>
+                )}
                 <p className="text-[10px] text-center text-slate-400 leading-relaxed">
                   Continuando accetti i{' '}
                   <button
