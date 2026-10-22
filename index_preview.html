@@ -944,11 +944,20 @@
     // 1.5 Formule di Stigmatizzazione Demografica
     const DEMOGRAPHIC_STIGMA_REGEX = /\b(pien[oa]\s+di|invas[ao]\s+da|tropp[ioae]|pullula\s+di|zepp[oa]\s+di|infestat[ao]\s+da|frequentat[ao]\s+da)\s+(?:\w+\s+){0,2}(?:gentaglia|feccia|elementi|soggetti|individui|stranier[ioae]|immigrat[ioae]|clandestin[ioae]|zingar[ioae]|nomad[ie]|rom|marocchin[ioae]|albanes[ie]|cines[ie]|african[ioae]|asiatic[ioae]|ebre[ioae]|musulman[ioae]|islamic[ioae]|cristian[ioae]|cattolic[ioae]|extracomunitari[oaei])\b/i;
 
+    // 1.6 Filtro Anti-Omofobia e Insulti sull'Orientamento Sessuale
+    const HOMOPHOBIC_SLURS_REGEX = /\b(froci[oaei]|finocchi[oaei]|ricchion[ei]|culatton[ei]|checc[ae]|transessual[ei]|viad[oaei])\b/i;
+
+    // 1.7 Riferimenti Anatomici e Volgarità Sessuali Esplicite
+    const ANATOMICAL_VULGARITY_REGEX = /\b(membr[oi]|pen[ei]|fall[oi]|cul[oi]|chiapp[ae]|vagin[ae]|fig[ae]|cazz[oi])\b/i;
+
     // 2. Filtro Sostanze Stupefacenti e Attività Illecite (Anti-Diffamazione)
     const ILLICIT_SUBSTANCES_REGEX = /\b(drog[ae]|spacci(?:a|o|are|ano|atore|atrice|atori|atrici)?|pusher|cocaina|eroina|cannabis|fumo|maria|erba)\b/i;
 
     // 3. Filtro Anti-Doxxing e Nomi Propri (Tutela Privacy Residenziale)
     const RESIDENTIAL_LOCALIZATION_REGEX = /\b(qui\s+(ci\s+)?(abita|vive|risiede|sta\s+di\s+casa)|ci\s+(abita|vive)|(abita|vive)\s+qui|casa\s+di|appartamento\s+di|residenza\s+di|famiglia)\b/i;
+
+    // Formule colloquiali di presenza persona ("qui c'è", "ci sta un", "qui si trova", "trovate un")
+    const PRESENCE_LOCALIZATION_REGEX = /\b(qui\s+c['’]e|ci\s+sta\s+un[ao]?|qui\s+si\s+trova|trovate\s+un[ao]?)\b/i;
 
     const COMMON_ITALIAN_NAMES = [
       'chiara', 'marco', 'andrea', 'luca', 'giulia', 'sara', 'matteo', 'francesco',
@@ -973,10 +982,31 @@
       'i'
     );
 
+    const PRESENCE_PERSON_REGEX = new RegExp(
+      `\\b(?:qui\\s+c['’]e|ci\\s+sta\\s+un[ao]?|qui\\s+si\\s+trova|trovate\\s+un[ao]?)\\s+(?:(?:un[ao]?|il|la|quell[oa])\\s+)?(?:${NAMES_PATTERN})\\b`,
+      'i'
+    );
+
     // Regex dati personali e targhe (Tutela Privacy GDPR)
     const ITALIAN_PLATE_REGEX = /\b[A-Za-z]{2}\s?\d{3}\s?[A-Za-z]{2}\b/i;
     const PHONE_NUMBER_REGEX = /(?:\+39[\s.-]?|0039[\s.-]?)?\b(?:0\d{1,3}[\s.-]?\d{5,8}|3\d{2}[\s.-]?\d{3}[\s.-]?\d{3,4}|\d{9,11}|(?:\d[\s.-]?){8,10}\d)\b/;
     const EMAIL_IN_COMMENT_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
+
+    // Pre-Normalizzazione del Testo (Anti-Leetspeak & De-obfuscation)
+    const normalizeLeetSpeak = (str) => {
+      if (!str) return '';
+      let s = String(str).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      s = s.replace(/[’‘`]/g, "'");
+      // Sostituzione numeri e simboli usati come lettere (Anti-Leetspeak)
+      s = s.replace(/0/g, 'o')
+           .replace(/[1!|]/g, 'i')
+           .replace(/3/g, 'e')
+           .replace(/[4@]/g, 'a')
+           .replace(/[5$]/g, 's');
+      // Rimuove caratteri speciali intercalati tra lettere (es. f.r.o.c.i.o o f-r-o-c-i-o)
+      s = s.replace(/([a-z])[\.\-_*~^#/\\]+(?=[a-z])/gi, '$1');
+      return s;
+    };
 
     const validateReviewComment = (text) => {
       if (!text) return { valid: true };
@@ -985,53 +1015,69 @@
         return { valid: true };
       }
 
-      // Normalizza gli accenti per garantire che i word boundaries \b funzionino su tutte le parole italiane
-      const normalizedText = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      // Normalizzazione base e de-obfuscation anti-leetspeak
+      const baseClean = String(raw).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[’‘`]/g, "'");
+      const normalizedText = normalizeLeetSpeak(raw);
+      const textsToCheck = [raw, baseClean, normalizedText];
 
-      // 1. Controllo Anti-Doxxing e Tutela Privacy Residenziale (Nomi e Localizzazione abitativa)
-      if (RESIDENTIAL_LOCALIZATION_REGEX.test(normalizedText) || RESIDENCE_NAME_REGEX.test(normalizedText)) {
-        return {
-          valid: false,
-          reason: 'residential_privacy',
-          message: 'Per motivi di privacy e GDPR, è vietato indicare nomi di privati cittadini o riferimenti a chi abita nella via.',
-        };
+      // 1. Controllo Anti-Doxxing e Tutela Privacy Residenziale (Nomi e Localizzazione abitativa / formule di presenza)
+      for (const t of [baseClean, normalizedText]) {
+        if (
+          RESIDENTIAL_LOCALIZATION_REGEX.test(t) ||
+          RESIDENCE_NAME_REGEX.test(t) ||
+          PRESENCE_PERSON_REGEX.test(t)
+        ) {
+          return {
+            valid: false,
+            reason: 'residential_privacy',
+            message: 'Per motivi di privacy e GDPR, è vietato indicare nomi di privati cittadini o riferimenti a chi abita nella via.',
+          };
+        }
       }
 
       // 2. Controllo Anti-Discriminazione e Profilazione Etnico-Religiosa
-      if (ETHNO_RELIGIOUS_REGEX.test(normalizedText) || DEMOGRAPHIC_STIGMA_REGEX.test(normalizedText)) {
-        return {
-          valid: false,
-          reason: 'discrimination',
-          message: 'Il commento viola le linee guida della community: sono vietati riferimenti a confessioni religiose, etnie, nazionalità o forme di profilazione discriminatoria.',
-        };
+      for (const t of [baseClean, normalizedText]) {
+        if (ETHNO_RELIGIOUS_REGEX.test(t) || DEMOGRAPHIC_STIGMA_REGEX.test(t)) {
+          return {
+            valid: false,
+            reason: 'discrimination',
+            message: 'Il commento viola le linee guida della community: sono vietati riferimenti a confessioni religiose, etnie, nazionalità o forme di profilazione discriminatoria.',
+          };
+        }
       }
 
-      // 3. Controllo Linguaggio Offensivo / Bestemmie / Insulti / Termini Sessuali / Hate Speech / Diffamazione Morale
-      if (
-        PROFANITY_WORD_REGEX.test(normalizedText) ||
-        BLASPHEMY_PHRASE_REGEX.test(normalizedText) ||
-        SEXUAL_EXPLICIT_REGEX.test(normalizedText) ||
-        HATE_SPEECH_REGEX.test(normalizedText) ||
-        MORAL_DEFAMATION_REGEX.test(normalizedText) ||
-        SEXIST_DENIGRATORY_REGEX.test(normalizedText)
-      ) {
-        return {
-          valid: false,
-          reason: 'profanity',
-          message: 'Il commento contiene termini inappropriati, riferimenti espliciti o contenuti non ammessi dal regolamento.',
-        };
+      // 3. Controllo Anti-Omofobia, Riferimenti Anatomici, Linguaggio d'Odio, Volgarità Sessuali
+      for (const t of textsToCheck) {
+        if (
+          HOMOPHOBIC_SLURS_REGEX.test(t) ||
+          ANATOMICAL_VULGARITY_REGEX.test(t) ||
+          PROFANITY_WORD_REGEX.test(t) ||
+          BLASPHEMY_PHRASE_REGEX.test(t) ||
+          SEXUAL_EXPLICIT_REGEX.test(t) ||
+          HATE_SPEECH_REGEX.test(t) ||
+          MORAL_DEFAMATION_REGEX.test(t) ||
+          SEXIST_DENIGRATORY_REGEX.test(t)
+        ) {
+          return {
+            valid: false,
+            reason: 'hate_speech_profanity',
+            message: "Il commento è stato bloccato perché contiene linguaggio d'odio, insulti discriminatori o contenuti sessualmente espliciti non ammessi.",
+          };
+        }
       }
 
       // 4. Controllo Sostanze Stupefacenti e Attività Illecite (Anti-Diffamazione)
-      if (ILLICIT_SUBSTANCES_REGEX.test(normalizedText)) {
-        return {
-          valid: false,
-          reason: 'illicit_substances',
-          message: 'Il commento contiene termini inappropriati, riferimenti espliciti o contenuti non ammessi dal regolamento.',
-        };
+      for (const t of [baseClean, normalizedText]) {
+        if (ILLICIT_SUBSTANCES_REGEX.test(t)) {
+          return {
+            valid: false,
+            reason: 'illicit_substances',
+            message: "Il commento è stato bloccato perché contiene linguaggio d'odio, insulti discriminatori o contenuti sessualmente espliciti non ammessi.",
+          };
+        }
       }
 
-      // 4. Controllo Targhe Automobilistiche Italiane (es. AB123CD o AB 123 CD)
+      // 5. Controllo Targhe Automobilistiche Italiane (es. AB123CD o AB 123 CD)
       if (ITALIAN_PLATE_REGEX.test(raw)) {
         return {
           valid: false,
@@ -1040,7 +1086,7 @@
         };
       }
 
-      // 5. Controllo Numeri di Telefono (9-10+ cifre consecutive o separate da spazi/trattini)
+      // 6. Controllo Numeri di Telefono (9-10+ cifre consecutive o separate da spazi/trattini)
       if (PHONE_NUMBER_REGEX.test(raw)) {
         return {
           valid: false,
@@ -1049,7 +1095,7 @@
         };
       }
 
-      // 6. Controllo Indirizzi Email nel testo del commento
+      // 7. Controllo Indirizzi Email nel testo del commento
       if (EMAIL_IN_COMMENT_REGEX.test(raw)) {
         return {
           valid: false,
