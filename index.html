@@ -1137,7 +1137,7 @@
       return { valid: true };
     };
 
-    // --- MODERAZIONE AI MULTILINGUA CON GOOGLE GEMINI (2.0 FLASH CON FALLBACK 1.5 FLASH) ---
+    // --- MODERAZIONE AI MULTILINGUA CON GOOGLE GEMINI 2.5 FLASH (FALLBACK GEMINI-FLASH-LATEST) ---
     const GEMINI_MODERATION_API_KEY = window.__SR_GEMINI_KEY__ || atob("QVEuQWI4Uk42S2ZXRVpCUVRLbHZDU2hIUGhFMVV5NmxXRUIzVkdCS0dQY2MxSEx3Z2lwdmc=");
 
     const moderateWithGemini = async (commentText) => {
@@ -1145,52 +1145,46 @@
         return { allowed: true, reason: '' };
       }
 
-      const promptText = `Sei il moderatore ufficiale dell'applicazione Street Review.
-Analizza il seguente testo (in qualsiasi lingua, dialetto, slang o leetspeak):
-"${commentText}"
-
-Rispondi TASSATIVAMENTE ed ESCLUSIVAMENTE con un oggetto JSON valido:
+      const apiKey = GEMINI_MODERATION_API_KEY;
+      const promptText = `Sei il moderatore ufficiale dell'app Street Review.
+Analizza il seguente commento (in qualsiasi lingua, dialetto o slang): "${commentText}".
+Restituisci ESCLUSIVAMENTE un JSON valido con questo schema:
 { "allowed": boolean, "reason": string }
 
-Imposta allowed: false se il testo contiene:
-- Volgarità, espressioni o allusioni sessuali, prostituzione (es. "scopa", "pompini", "poco di buono", "succhia", "vacca").
-- Insulti personali, diffamazione, giudizi morali o omofobia (es. "depravati", "finocchio", "frocio").
-- Discriminazione etnico-religiosa, razzismo o insulti sociali (es. "maranza", "ebrei", "musulmani").
-- Accuse di reato o droga (es. "si vende la droga", "spaccio").
-- Doxxing/Privacy residenziale: riferimenti a chi abita, vive o si trova nella via con nomi o persone terze (es. "qui ci abita Chiara", "qui ci vive il papa", "la trovate in questa via").
+Imposta allowed: false per:
+- Contenuti sessuali espliciti, volgarità o prostituzione (incluso inglese come "blowjob", "fuck", o italiano come "succhia", "pompini", "poco di buono").
+- Insulti personali, omofobia o diffamazione morale.
+- Razzismo, discriminazione etnica/religiosa o insulti sociali ("maranza").
+- Accuse di reati o spaccio di droga.
+- Doxxing o riferimenti a residenti specifici nella via.
 
-Imposta allowed: true per critiche urbane legittime (asfalto, buche, parcheggi, rifiuti, rumore, illuminazione).`;
+Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, asfalto, illuminazione, parcheggi, traffico, rumore).`;
 
       const requestBody = JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: promptText
-              }
-            ]
-          }
-        ],
+        contents: [{
+          parts: [{
+            text: promptText
+          }]
+        }],
         generationConfig: {
           responseMimeType: "application/json"
         }
       });
 
-      const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+      const modelsToTry = ['gemini-2.5-flash', 'gemini-flash-latest'];
 
       for (let i = 0; i < modelsToTry.length; i++) {
         const modelName = modelsToTry[i];
-        const endpointUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(GEMINI_MODERATION_API_KEY)}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-          const response = await fetch(endpointUrl, {
+          const response = await fetch(url, {
             method: "POST",
             headers: {
-              "Content-Type": "application/json",
-              "x-goog-api-key": GEMINI_MODERATION_API_KEY
+              "Content-Type": "application/json"
             },
             body: requestBody,
             signal: controller.signal
@@ -1201,9 +1195,9 @@ Imposta allowed: true per critiche urbane legittime (asfalto, buche, parcheggi, 
             const errorBody = await response.text();
             console.error("[Gemini API Error]", response.status, errorBody);
 
-            // Fallback automatico su gemini-1.5-flash se il primo modello restituisce 404
+            // Fallback automatico su gemini-flash-latest se il primo modello restituisce 404
             if (response.status === 404 && i === 0) {
-              console.warn(`[Gemini Moderation] Modello ${modelName} 404, tentativo su fallback gemini-1.5-flash...`);
+              console.warn(`[Gemini Moderation] Modello ${modelName} 404, tentativo su fallback gemini-flash-latest...`);
               continue;
             }
 
