@@ -954,7 +954,7 @@
     const ILLICIT_SUBSTANCES_REGEX = /\b(drog[ae]|spacci(?:a|o|are|ano|atore|atrice|atori|atrici)?|pusher|cocaina|eroina|cannabis|fumo|maria|erba)\b/i;
 
     // 3. Filtro Anti-Doxxing e Nomi Propri (Tutela Privacy Residenziale)
-    const RESIDENTIAL_LOCALIZATION_REGEX = /\b(qui\s+(ci\s+)?(abita|vive|risiede|sta\s+di\s+casa)|ci\s+(abita|vive)|(abita|vive)\s+qui|casa\s+di|appartamento\s+di|residenza\s+di|famiglia)\b/i;
+    const RESIDENTIAL_LOCALIZATION_REGEX = /\b(qui\s+(ci\s+)?(abita|vive|risiede|sta\s+di\s+casa)|ci\s+(abita|vive)|(abita|vive)\s+qui|casa\s+di|appartamento\s+di|residenza\s+di|famiglia|l[oaei]\s+(trovate|beccate|incontrate)\s+(in|a|lungo|su|qui|qua))\b/i;
 
     // Formule colloquiali di presenza persona ("qui c'è", "ci sta un", "qui si trova", "trovate un")
     const PRESENCE_LOCALIZATION_REGEX = /\b(qui\s+c['’]e|ci\s+sta\s+un[ao]?|qui\s+si\s+trova|trovate\s+un[ao]?)\b/i;
@@ -1131,6 +1131,76 @@
       }
 
       return { valid: true };
+    };
+
+    // --- MODERAZIONE AI MULTILINGUA CON GOOGLE GEMINI 2.5 FLASH ---
+    const GEMINI_MODERATION_API_KEY = window.__SR_GEMINI_KEY__ || atob("QVEuQWI4Uk42S2ZXRVpCUVRLbHZDU2hIUGhFMVV5NmxXRUIzVkdCS0dQY2MxSEx3Z2lwdmc=");
+    const GEMINI_MODERATION_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_MODERATION_API_KEY}`;
+    const GEMINI_MODERATION_PROMPT = `Sei il moderatore ufficiale dell'applicazione Street Review. Analizza il testo fornito (scritto in qualsiasi lingua, dialetto o slang, inclusi tentativi di mascheramento leetspeak come fr0ci0 o cazz0).
+Restituisci tassativamente un JSON con schema: { "allowed": boolean, "reason": string }.
+Imposta allowed: false se il testo contiene:
+- Volgarità esplicite, bestemmie, espressioni sessuali o riferimenti alla prostituzione/eufemismi denigratori (es. 'scopa forte', 'pompini', 'poco di buono', 'vacca').
+- Insulti personali, giudizi morali diffamatori (es. 'depravati') o omofobia (es. 'finocchio', 'frocio', 'culattone').
+- Razzismo, discriminazione etnico-religiosa o stigmatizzazione sociale (es. 'via piena di ebrei e musulmani', 'maranza', offese razziali).
+- Accuse di reato o spaccio di sostanze stupefacenti (es. 'qui si vende la droga', 'pusher', 'cocaina').
+- Doxxing residenziale: formule che collegano l'abitazione o la presenza in loco a nomi di battesimo, soggetti o terzi (es. 'qui ci abita Chiara', 'qui ci vive il papa', 'la trovate in questa via').
+Imposta allowed: true per recensioni critiche ma legittime sullo stato urbano (buche, asfalto dissestato, sporcizia, scarsa illuminazione, rumore, parcheggi selvaggi).`;
+
+    const moderateWithGemini = async (commentText) => {
+      if (!commentText || !String(commentText).trim()) {
+        return { allowed: true, reason: '' };
+      }
+      try {
+        const payload = {
+          systemInstruction: {
+            parts: [{ text: GEMINI_MODERATION_PROMPT }]
+          },
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: `Testo della recensione da analizzare:\n"""${commentText}"""` }]
+            }
+          ],
+          generationConfig: {
+            responseMimeType: "application/json"
+          }
+        };
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+        const response = await fetch(GEMINI_MODERATION_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          console.warn('[Gemini Moderation] Risposta HTTP API non valida:', response.status, response.statusText);
+          // Fallback resiliente: in caso di HTTP error / quota non bloccare l'utente
+          return { allowed: true, fallback: true };
+        }
+
+        const data = await response.json();
+        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawText) {
+          return { allowed: true, fallback: true };
+        }
+
+        const result = JSON.parse(rawText.trim());
+        return {
+          allowed: typeof result.allowed === 'boolean' ? result.allowed : true,
+          reason: result.reason || ''
+        };
+      } catch (err) {
+        console.warn('[Gemini Moderation] Errore connessione o timeout, fallback locale:', err);
+        // Fallback resiliente: consenti salvataggio basandoti sul verdetto delle regole locali
+        return { allowed: true, fallback: true };
+      }
     };
 
     const hasAnyParkingOrAmenityTag = (rev) => {
@@ -4809,8 +4879,12 @@
                   </span>
                   {isAdmin && (
                     <span
-                      title="Profilo Amministratore Street Review attivo"
-                      className="hidden md:inline-flex px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black tracking-wide shadow-sm border border-rose-400 whitespace-nowrap"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsAdminReportsOpen(true);
+                      }}
+                      title="Profilo Amministratore Street Review attivo - Clicca per aprire la Bacheca Segnalazioni"
+                      className="hidden md:inline-flex px-1.5 py-0.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black tracking-wide shadow-sm border border-rose-400 whitespace-nowrap cursor-pointer transition-all"
                     >
                       🛡️ ADMIN
                     </span>
@@ -4850,11 +4924,25 @@
                             <p className="text-xs font-extrabold text-slate-900 truncate">{currentUser.name}</p>
                             {isAdmin && (
                               <div className="flex items-center gap-1 shrink-0">
-                                <span className="px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[9px] font-black tracking-wide shadow-sm">
+                                <span
+                                  onClick={() => {
+                                    setIsUserMenuOpen(false);
+                                    setIsAdminReportsOpen(true);
+                                  }}
+                                  className="px-1.5 py-0.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-black tracking-wide shadow-sm cursor-pointer"
+                                  title="Apri Bacheca Segnalazioni"
+                                >
                                   🛡️ ADMIN
                                 </span>
                                 {adminReports.length > 0 && (
-                                  <span className="px-1.5 py-0.5 rounded-md bg-red-600 text-white text-[9px] font-black tracking-wide shadow-sm animate-pulse">
+                                  <span
+                                    onClick={() => {
+                                      setIsUserMenuOpen(false);
+                                      setIsAdminReportsOpen(true);
+                                    }}
+                                    className="px-1.5 py-0.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-[9px] font-black tracking-wide shadow-sm animate-pulse cursor-pointer"
+                                    title="Segnalazioni in attesa"
+                                  >
                                     🚩 {adminReports.length}
                                   </span>
                                 )}
@@ -5771,7 +5859,7 @@
                                           streetLng: selectedStreet.lng || selectedStreet.longitude,
                                         });
                                       }}
-                                      className="report-btn p-1 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                      className="report-review-btn report-btn p-1 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
                                       title="Segnala questa recensione"
                                     >
                                       <span>🚩</span>
@@ -6330,9 +6418,11 @@
       const [streetSegment, setStreetSegment] = useState(initialData?.streetSegment || '');
       const [comment, setComment] = useState(initialData?.comment || '');
       const [moderationError, setModerationError] = useState('');
+      const [isCheckingModeration, setIsCheckingModeration] = useState(false);
 
       useEffect(() => {
         setModerationError('');
+        setIsCheckingModeration(false);
         if (initialData) {
           const loadedType = resolveInitialStreetType();
           setStreetType(loadedType);
@@ -6415,20 +6505,41 @@
       );
       const commentChars = comment.trim().length;
 
-      const handleFormSubmit = (e) => {
+      const handleFormSubmit = async (e) => {
         if (e) e.preventDefault();
+        if (isCheckingModeration) return;
         if (overallRating === 0) {
           setModerationError('Seleziona un voto a stelle complessivo (da 1 a 5) prima di pubblicare.');
           return;
         }
         const finalComment = comment.trim() || 'Esperienza complessiva registrata.';
         const finalSegment = streetSegment.trim().slice(0, 60);
-        const check = validateReviewComment(`${finalSegment} ${finalComment}`.trim());
+        const textToCheck = `${finalSegment} ${finalComment}`.trim();
+
+        // 1. Controllo sincrono locale rapido
+        const check = validateReviewComment(textToCheck);
         if (!check.valid) {
           setModerationError(check.message);
           return;
         }
         setModerationError('');
+
+        // 2. Moderazione AI multilingua in tempo reale (Google Gemini 2.5 Flash)
+        setIsCheckingModeration(true);
+        try {
+          const aiResult = await moderateWithGemini(textToCheck);
+          if (aiResult && aiResult.allowed === false) {
+            const errorMsg = "Il tuo commento non rispetta le linee guida della community: " + (aiResult.reason || "contenuto non appropriato.");
+            setModerationError(errorMsg);
+            alert(errorMsg);
+            setIsCheckingModeration(false);
+            return;
+          }
+        } catch (err) {
+          console.warn('[ReviewModal] Moderazione AI fallback su validazione locale:', err);
+        } finally {
+          setIsCheckingModeration(false);
+        }
 
         // Se è una recensione Flash (accordion mai aperto e nessun parametro tecnico toccato), salva null per tutte le categorie tecniche
         const finalRatings = {};
@@ -6636,16 +6747,23 @@
                 <div className="pt-1">
                   <button
                     type="submit"
-                    disabled={overallRating === 0}
+                    disabled={overallRating === 0 || isCheckingModeration}
                     className={`w-full py-3.5 px-4 font-black rounded-2xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${
-                      overallRating === 0
+                      overallRating === 0 || isCheckingModeration
                         ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                         : isEditing
                         ? 'bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white shadow-indigo-500/25 cursor-pointer'
                         : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white shadow-blue-500/25 cursor-pointer'
                     }`}
                   >
-                    <span>Pubblica</span>
+                    {isCheckingModeration ? (
+                      <span className="flex items-center gap-2">
+                        <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        <span>Verifica in corso...</span>
+                      </span>
+                    ) : (
+                      <span>Pubblica</span>
+                    )}
                   </button>
                 </div>
               </div>
@@ -6843,14 +6961,21 @@
                     <div className="pt-2">
                       <button
                         type="submit"
-                        disabled={overallRating === 0}
+                        disabled={overallRating === 0 || isCheckingModeration}
                         className={`w-full py-3 px-4 font-bold rounded-2xl text-xs transition-all flex items-center justify-center gap-2 shadow-md ${
-                          overallRating === 0
+                          overallRating === 0 || isCheckingModeration
                             ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                             : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer active:scale-[0.99]'
                         }`}
                       >
-                        <span>{isEditing ? 'Conferma modifiche' : 'Conferma e pubblica'} (+{liveXP.totalXP} XP)</span>
+                        {isCheckingModeration ? (
+                          <span className="flex items-center gap-2">
+                            <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                            <span>Verifica in corso...</span>
+                          </span>
+                        ) : (
+                          <span>{isEditing ? 'Conferma modifiche' : 'Conferma e pubblica'} (+{liveXP.totalXP} XP)</span>
+                        )}
                       </button>
                     </div>
                   </div>
@@ -7138,10 +7263,10 @@
     // --- MODALE SEGNALAZIONE RECENSIONE ("🚩 SEGNALA") ---
     function ReportModal({ reportData, onClose, currentUser, onReportSuccess }) {
       const REPORT_REASONS = [
-        '👤 Violazione Privacy / Nomi di residenti',
-        '🤬 Linguaggio volgare o offensivo',
-        '⚠️ Calunnia, diffamazione o accuse illecite',
-        '🚫 Discriminazione, odio o profilazione',
+        '👤 Violazione Privacy / Doxxing residenti',
+        '🤬 Linguaggio volgare, offensivo o sessuale',
+        '⚠️ Calunnia, reati o diffamazione',
+        '🚫 Odio, razzismo o discriminazione',
         '📢 Spam o contenuto non pertinente',
       ];
 
@@ -7427,21 +7552,21 @@
                         </button>
                         <button
                           type="button"
-                          onClick={() => onDismissReport(rep)}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 text-xs font-bold rounded-xl border border-slate-200 hover:border-emerald-200 transition-colors flex items-center gap-1.5 cursor-pointer"
-                          title="Ignora la segnalazione e conservala come archiviata"
-                        >
-                          <span>✅</span>
-                          <span>Ignora / Archivia</span>
-                        </button>
-                        <button
-                          type="button"
                           onClick={() => onDeleteReview(rep)}
                           className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl border border-rose-700 shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
                           title="Elimina definitivamente la recensione su Firestore e archivia la segnalazione"
                         >
                           <span>🗑️</span>
                           <span>Elimina Recensione</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDismissReport(rep)}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 text-xs font-bold rounded-xl border border-slate-200 hover:border-emerald-200 transition-colors flex items-center gap-1.5 cursor-pointer"
+                          title="Ignora la segnalazione e conservala come archiviata"
+                        >
+                          <span>📁</span>
+                          <span>Archivia / Ignora</span>
                         </button>
                       </div>
                     </div>
