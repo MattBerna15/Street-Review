@@ -1068,6 +1068,190 @@
       'laneWidth'
     ];
 
+    // --- COSTANTI TIPOLOGIE STRADA, PARAMETRI TECNICI E AGGREGAZIONE BLINDATA ---
+    const STREET_TYPES = [
+      '🚶 Pedonale / ZTL',
+      '🏡 Urbana',
+      '🏭 Industriale',
+      '🛣️ Statale / Provinciale (SS / SP)',
+      '🟢 Autostrada'
+    ];
+
+    const detectStreetTypeFromStreetName = (name = '') => {
+      const n = String(name || '').trim();
+      // Prefissi A seguito da numeri (es. A14, A1), Autostrada, Raccordo -> 🟢 Autostrada
+      if (/\bA[- ]?\d{1,3}\b/i.test(n) || /autostrad/i.test(n) || /raccordo/i.test(n)) {
+        return '🟢 Autostrada';
+      }
+      // SS, SP, S.S., S.P., Strada Statale, Strada Provinciale, SR -> 🛣️ Statale / Provinciale (SS / SP)
+      if (/\b(SS|SP|S\.S\.|S\.P\.|SR|S\.R\.)\b/i.test(n) || /strada\s+statale/i.test(n) || /strada\s+provinciale/i.test(n) || /statale/i.test(n) || /provinciale/i.test(n)) {
+        return '🛣️ Statale / Provinciale (SS / SP)';
+      }
+      return '🏡 Urbana';
+    };
+
+    const normalizeStreetTypeLabel = (raw) => {
+      if (!raw) return '';
+      const str = String(raw).trim();
+      if (!str) return '';
+      const exact = STREET_TYPES.find(t => t === str);
+      if (exact) return exact;
+      if (/autostrad/i.test(str) || /\bA[- ]?\d{1,3}\b/i.test(str) || /raccordo/i.test(str)) return '🟢 Autostrada';
+      if (/statale|provincial|\b(SS|SP|S\.S\.|S\.P\.|SR|S\.R\.)\b/i.test(str)) return '🛣️ Statale / Provinciale (SS / SP)';
+      if (/pedonal|ztl/i.test(str)) return '🚶 Pedonale / ZTL';
+      if (/industrial/i.test(str)) return '🏭 Industriale';
+      if (/urban/i.test(str)) return '🏡 Urbana';
+      return str;
+    };
+
+    const getIncompatibleKeysForStreetType = (type) => {
+      const norm = normalizeStreetTypeLabel(type);
+      if (norm === '🟢 Autostrada' || norm === '🛣️ Statale / Provinciale (SS / SP)') {
+        return ['sidewalkQuality', 'accessibility'];
+      }
+      if (norm === '🚶 Pedonale / ZTL') {
+        return ['laneWidth', 'parkingQuantity'];
+      }
+      return [];
+    };
+
+    const TECHNICAL_CATEGORIES = [
+      { key: 'roadSurface', label: 'Manto Stradale (asfalto, buche)', icon: '🛣️' },
+      { key: 'groundSignage', label: 'Segnaletica a terra (strisce, stop)', icon: '🛑' },
+      { key: 'verticalSignage', label: 'Segnaletica verticale (cartelli visibili)', icon: '🪧' },
+      { key: 'parkingQuantity', label: 'Quantità di parcheggi', icon: '🅿️' },
+      { key: 'sidewalkQuality', label: 'Qualità dei marciapiedi', icon: '🚶' },
+      { key: 'lighting', label: 'Illuminazione notturna', icon: '💡' },
+      { key: 'cleanliness', label: 'Pulizia e decoro urbano', icon: '✨' },
+      { key: 'accessibility', label: 'Accessibilità (passeggini / PMR)', icon: '♿' },
+      { key: 'rainDrainage', label: 'Drenaggio piovano (caditoie, tombini)', icon: '🌧️' },
+      { key: 'greeneryShade', label: 'Ombreggiatura e verde (alberi, radici)', icon: '🌳' },
+      { key: 'quietness', label: 'Tranquillità e silenziosità (rumore)', icon: '🤫' },
+      { key: 'intersectionVisibility', label: 'Visibilità incroci (specchi, visuale)', icon: '👀' },
+      { key: 'laneWidth', label: 'Larghezza carreggiata (manovra, spazio)', icon: '↔️' },
+    ];
+
+    // Timestamp numerico (ms) per ordinamento cronologico decrescente (dalla più recente alla più vecchia)
+    const parseReviewChronologicalMs = (rev) => {
+      const raw = rev?.updatedAt || rev?.createdAt;
+      if (!raw) return 0;
+      if (typeof raw === 'number') return raw;
+      if (typeof raw?.toMillis === 'function') return raw.toMillis();
+      if (typeof raw?.seconds === 'number') return raw.seconds * 1000;
+      const parsed = Date.parse(String(raw));
+      return isNaN(parsed) ? 0 : parsed;
+    };
+
+    // Determina lo streetType prevalente sulle ULTIME 10 recensioni (ordinate in senso cronologico decrescente).
+    // Criterio di parità: vince la tipologia scelta dalla recensione più recente tra quelle considerate.
+    // Fallback: rilevazione automatica dal nome della via o '🏡 Urbana'.
+    const computePrevalentStreetType = (reviewsList, streetName = '', fallbackType = '') => {
+      const safeReviews = Array.isArray(reviewsList) ? reviewsList : [];
+      const sortedDesc = [...safeReviews].sort((a, b) => parseReviewChronologicalMs(b) - parseReviewChronologicalMs(a));
+      const last10Reviews = sortedDesc.slice(0, 10);
+
+      const freqMap = new Map();
+      last10Reviews.forEach((r, idx) => {
+        const normType = normalizeStreetTypeLabel(r?.streetType);
+        if (!normType) return;
+        if (!freqMap.has(normType)) {
+          freqMap.set(normType, { count: 1, mostRecentIndex: idx });
+        } else {
+          freqMap.get(normType).count += 1;
+        }
+      });
+
+      let prevalentType = '';
+      let maxCount = 0;
+      let bestRecentIdx = Number.MAX_SAFE_INTEGER;
+
+      freqMap.forEach((info, typeLabel) => {
+        if (
+          info.count > maxCount ||
+          (info.count === maxCount && info.mostRecentIndex < bestRecentIdx)
+        ) {
+          maxCount = info.count;
+          bestRecentIdx = info.mostRecentIndex;
+          prevalentType = typeLabel;
+        }
+      });
+
+      if (!prevalentType) {
+        prevalentType =
+          normalizeStreetTypeLabel(fallbackType) ||
+          detectStreetTypeFromStreetName(streetName) ||
+          '🏡 Urbana';
+      }
+      return prevalentType;
+    };
+
+    // Restituisce il voto complessivo (1..5) di una singola recensione (con fallback sulle categorie valide per le recensioni storiche)
+    const getSingleReviewOverallScore = (r) => {
+      const direct = Number(r?.ratingOverall ?? r?.overallRating);
+      if (!isNaN(direct) && direct >= 1 && direct <= 5) {
+        return direct;
+      }
+      if (r?.ratings && typeof r.ratings === 'object') {
+        const validCatVals = CATEGORY_KEYS
+          .map(k => r.ratings[k])
+          .filter(v => v !== null && v !== undefined && v !== 'N/A' && v !== '' && !isNaN(Number(v)) && Number(v) >= 1 && Number(v) <= 5)
+          .map(v => Number(v));
+        if (validCatVals.length > 0) {
+          return validCatVals.reduce((a, b) => a + b, 0) / validCatVals.length;
+        }
+      }
+      return 0;
+    };
+
+    // Calcolo matematico blindato di ratingOverall, categoryAverages (escludendo null/undefined/'N/A') e streetType prevalente
+    const computeStreetAggregatesFromReviews = (reviewsList, streetName = '', fallbackStreetType = '') => {
+      const safeReviews = Array.isArray(reviewsList) ? reviewsList : [];
+
+      // 1. Tipologia prevalente sulle ultime 10 recensioni
+      const streetType = computePrevalentStreetType(safeReviews, streetName, fallbackStreetType);
+
+      // 2. Voto complessivo della strada: media aritmetica semplice di review.ratingOverall (1..5), arrotondata a 1 decimale
+      const validOveralls = safeReviews
+        .map(r => getSingleReviewOverallScore(r))
+        .filter(v => !isNaN(v) && v >= 1 && v <= 5);
+      const ratingOverall = validOveralls.length > 0
+        ? Number((validOveralls.reduce((acc, v) => acc + v, 0) / validOveralls.length).toFixed(1))
+        : 0;
+
+      // 3. Medie di singola categoria tecnica: filtra rigorosamente solo valori numerici [1..5], altrimenti null (mai 0)
+      const categoryAverages = {};
+      CATEGORY_KEYS.forEach(k => {
+        const validCatScores = [];
+        safeReviews.forEach(r => {
+          const rawVal = r?.ratings?.[k];
+          if (rawVal === null || rawVal === undefined || rawVal === 'N/A' || rawVal === '') return;
+          const numVal = Number(rawVal);
+          if (!isNaN(numVal) && numVal >= 1 && numVal <= 5) {
+            validCatScores.push(numVal);
+          }
+        });
+        if (validCatScores.length > 0) {
+          const sum = validCatScores.reduce((acc, v) => acc + v, 0);
+          categoryAverages[k] = Number((sum / validCatScores.length).toFixed(1));
+        } else {
+          categoryAverages[k] = null;
+        }
+      });
+
+      const parkingTypes = Array.from(new Set(safeReviews.flatMap(r => r.parkingTypes || [])));
+      const hasCyclePath = safeReviews.some(r => Boolean(r.hasCyclePath));
+      const amenities = Array.from(new Set(safeReviews.flatMap(r => r.amenities || [])));
+
+      return {
+        streetType,
+        ratingOverall,
+        categoryAverages,
+        parkingTypes,
+        hasCyclePath,
+        amenities,
+      };
+    };
+
     const createDefaultProfile = (usr) => {
       const base = {
         authorId: usr?.id || usr?.authorId || 'guest',
@@ -1173,8 +1357,8 @@
         date: r.date || (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString('it-IT') : 'Recente'),
         createdAt: r.createdAt || r.updatedAt || null,
         updatedAt: r.updatedAt || r.createdAt || null,
-        streetType: r.streetType || '',
-        overallRating: Number(r.ratingOverall ?? r.overallRating ?? 0),
+        streetType: normalizeStreetTypeLabel(r.streetType),
+        overallRating: Number(getSingleReviewOverallScore(r).toFixed(1)),
         comment: r.comment || '',
         ratings: r.ratings || {},
         parkingTypes: Array.isArray(r.parkingTypes) ? r.parkingTypes : [],
@@ -1215,35 +1399,14 @@
       const postalCode = anchor.postalCode || fallbackMeta.postalCode || sample?.postalCode || resolveDefaultPostalCode(streetCityKey);
       const streetKey = fallbackMeta.streetKey || createStreetCompositeKey(streetName, streetCity, anchor.lat, anchor.lng, province);
 
-      const categoryAverages = {};
-      CATEGORY_KEYS.forEach(k => {
-        const validRev = safeReviews.filter(r => {
-          const val = r.ratings?.[k];
-          return val !== null && val !== undefined && val !== 'N/A' && !isNaN(Number(val)) && Number(val) > 0;
-        });
-        if (validRev.length === 0) {
-          categoryAverages[k] = null;
-        } else {
-          const sum = validRev.reduce((acc, r) => acc + Number(r.ratings[k]), 0);
-          categoryAverages[k] = Number((sum / validRev.length).toFixed(1));
-        }
-      });
-
-      const overallScores = safeReviews
-        .map(r => Number(r.ratingOverall ?? r.overallRating))
-        .filter(val => !isNaN(val) && val > 0);
-
-      const validCatAverages = Object.values(categoryAverages).filter(v => v !== null && v > 0);
-      const ratingOverall = overallScores.length > 0
-        ? Number((overallScores.reduce((a, b) => a + b, 0) / overallScores.length).toFixed(1))
-        : (validCatAverages.length > 0
-          ? Number((validCatAverages.reduce((a, b) => a + b, 0) / validCatAverages.length).toFixed(1))
-          : 0);
-
-      const parkingTypes = Array.from(new Set(safeReviews.flatMap(r => r.parkingTypes || [])));
-      const hasCyclePath = safeReviews.some(r => Boolean(r.hasCyclePath));
-      const amenities = Array.from(new Set(safeReviews.flatMap(r => r.amenities || [])));
-      const detectedStreetType = safeReviews.find(r => r.streetType)?.streetType || fallbackMeta?.streetType || '';
+      const {
+        streetType: detectedStreetType,
+        ratingOverall,
+        categoryAverages,
+        parkingTypes,
+        hasCyclePath,
+        amenities,
+      } = computeStreetAggregatesFromReviews(safeReviews, streetName, fallbackMeta?.streetType);
 
       // Determina l'autore Pioniere (prima recensione storica della via per timestamp createdAt)
       let pioneerRev = safeReviews[safeReviews.length - 1] || null;
@@ -1298,7 +1461,10 @@
       const defaultCats = {};
       CATEGORY_KEYS.forEach(k => {
         const val = docData.categoryAverages?.[k];
-        defaultCats[k] = (val === null || val === undefined || val === 'N/A') ? null : Number(val);
+        const num = Number(val);
+        defaultCats[k] = (val !== null && val !== undefined && val !== 'N/A' && val !== '' && !isNaN(num) && num >= 1 && num <= 5)
+          ? Number(num.toFixed(1))
+          : null;
       });
 
       const preservedReviews = (existingStreet && Array.isArray(existingStreet.reviews) && existingStreet.reviews.length > 0)
@@ -1318,6 +1484,10 @@
         : rawAmenities;
 
       const mergedCyclePath = Boolean(docData.hasCyclePath) || preservedReviews.some(r => Boolean(r.hasCyclePath));
+      const resolvedStreetType =
+        normalizeStreetTypeLabel(docData.streetType) ||
+        normalizeStreetTypeLabel(existingStreet?.streetType) ||
+        computePrevalentStreetType(preservedReviews, rawName);
 
       return {
         id: existingStreet?.id || canonicalId,
@@ -1328,7 +1498,7 @@
         postalCode: docData.postalCode || existingStreet?.postalCode || resolveDefaultPostalCode(cityKey),
         latitude: lat,
         longitude: lng,
-        streetType: docData.streetType || existingStreet?.streetType || '',
+        streetType: resolvedStreetType,
         reviewsCount: Number(docData.reviewCount ?? docData.reviewsCount ?? preservedReviews.length ?? 0),
         avgOverallRating: Number(docData.ratingOverall ?? docData.avgOverallRating ?? 0),
         categoryAverages: defaultCats,
@@ -2284,6 +2454,11 @@
             }
           }
 
+          // Ricalcola gli aggregati (tipologia prevalente sulle ultime 10 recensioni, media complessiva e categorie con supporto N/A)
+          const onDemandAgg = formattedReviews.length > 0
+            ? computeStreetAggregatesFromReviews(formattedReviews, targetStreet.name, targetStreet.streetType)
+            : null;
+
           // Aggiorna la strada selezionata e la lista strade con i commenti caricati on-demand
           setStreets(prevStreets => {
             const next = prevStreets.map(s => {
@@ -2291,6 +2466,11 @@
                 return {
                   ...s,
                   streetKey: targetStreetKey,
+                  ...(onDemandAgg ? {
+                    streetType: onDemandAgg.streetType,
+                    avgOverallRating: onDemandAgg.ratingOverall || s.avgOverallRating,
+                    categoryAverages: onDemandAgg.categoryAverages,
+                  } : {}),
                   reviews: formattedReviews,
                   reviewsCount: Math.max(s.reviewsCount || 0, formattedReviews.length),
                   reviewsLoaded: true,
@@ -2308,6 +2488,11 @@
               return {
                 ...prevSel,
                 streetKey: targetStreetKey,
+                ...(onDemandAgg ? {
+                  streetType: onDemandAgg.streetType,
+                  avgOverallRating: onDemandAgg.ratingOverall || prevSel.avgOverallRating,
+                  categoryAverages: onDemandAgg.categoryAverages,
+                } : {}),
                 reviews: formattedReviews,
                 reviewsCount: Math.max(prevSel.reviewsCount || 0, formattedReviews.length),
                 reviewsLoaded: true,
@@ -2336,6 +2521,7 @@
         const matching = findExistingStreetInList(streets, selectedStreet);
         if (matching && (
           matching.id !== selectedStreet.id ||
+          matching.streetType !== selectedStreet.streetType ||
           matching.reviewsCount !== selectedStreet.reviewsCount ||
           matching.avgOverallRating !== selectedStreet.avgOverallRating ||
           (matching.reviews?.length || 0) !== (selectedStreet.reviews?.length || 0) ||
@@ -3109,17 +3295,18 @@
             latitude: resolvedLat,
             longitude: resolvedLng,
             placeId: target.placeId || null,
+            streetType: detectStreetTypeFromStreetName(resolvedName),
             avgOverallRating: 0,
             reviewsCount: 0,
             hasCyclePath: false,
             commonParkingTypes: [],
             amenities: [],
             categoryAverages: {
-              roadSurface: 0, groundSignage: 0, verticalSignage: 0,
-              parkingQuantity: 0, sidewalkQuality: 0, lighting: 0,
-              cleanliness: 0, accessibility: 0, rainDrainage: 0,
-              greeneryShade: 0, quietness: 0, intersectionVisibility: 0,
-              laneWidth: 0,
+              roadSurface: null, groundSignage: null, verticalSignage: null,
+              parkingQuantity: null, sidewalkQuality: null, lighting: null,
+              cleanliness: null, accessibility: null, rainDrainage: null,
+              greeneryShade: null, quietness: null, intersectionVisibility: null,
+              laneWidth: null,
             },
             reviews: [],
             reviewsLoaded: true,
@@ -3311,25 +3498,14 @@
             newCount = Math.max((s.reviewsCount || 0) + 1, updatedReviews.length);
           }
 
-          const updatedCat = {};
-          CATEGORY_KEYS.forEach(k => {
-            const valid = updatedReviews
-              .map(r => r.ratings?.[k])
-              .filter(v => v !== null && v !== undefined && v !== 'N/A' && !isNaN(Number(v)) && Number(v) > 0);
-            updatedCat[k] = valid.length > 0 ? Number((valid.reduce((acc, v) => acc + Number(v), 0) / valid.length).toFixed(1)) : null;
-          });
-
-          const validOverall = updatedReviews
-            .map(r => Number(r.overallRating ?? r.ratingOverall))
-            .filter(v => !isNaN(v) && v > 0);
-          const validCats = Object.values(updatedCat).filter(v => v !== null && v > 0);
-          const newAvg = validOverall.length > 0
-            ? Number((validOverall.reduce((a, b) => a + b, 0) / validOverall.length).toFixed(1))
-            : (validCats.length > 0 ? Number((validCats.reduce((a, b) => a + b, 0) / validCats.length).toFixed(1)) : 0);
-
-          const mergedParking = Array.from(new Set(updatedReviews.flatMap(r => r.parkingTypes || [])));
-          const mergedCycle = updatedReviews.some(r => r.hasCyclePath);
-          const mergedAmenities = Array.from(new Set(updatedReviews.flatMap(r => r.amenities || [])));
+          const {
+            streetType: prevalentStreetType,
+            ratingOverall: newAvg,
+            categoryAverages: updatedCat,
+            parkingTypes: mergedParking,
+            hasCyclePath: mergedCycle,
+            amenities: mergedAmenities,
+          } = computeStreetAggregatesFromReviews(updatedReviews, canonicalStreetName, reviewPayload.streetType || s.streetType);
 
           return {
             ...s,
@@ -3338,7 +3514,7 @@
             city: finalCity,
             province: finalProvince,
             postalCode: finalPostal,
-            streetType: reviewPayload.streetType || s.streetType || '🏡 Urbana',
+            streetType: prevalentStreetType,
             reviewsCount: newCount,
             avgOverallRating: newAvg,
             categoryAverages: updatedCat,
@@ -3681,6 +3857,7 @@
           latitude: finalLat,
           longitude: finalLng,
           placeId: targetStreet?.placeId || null,
+          streetType: detectStreetTypeFromStreetName(canonicalStreetName),
           avgOverallRating: 0,
           reviewsCount: 0,
           hasCyclePath: false,
@@ -3690,11 +3867,11 @@
           pioneerReviewId: null,
           pioneerAuthorName: '',
           categoryAverages: {
-            roadSurface: 0, groundSignage: 0, verticalSignage: 0,
-            parkingQuantity: 0, sidewalkQuality: 0, lighting: 0,
-            cleanliness: 0, accessibility: 0, rainDrainage: 0,
-            greeneryShade: 0, quietness: 0, intersectionVisibility: 0,
-            laneWidth: 0,
+            roadSurface: null, groundSignage: null, verticalSignage: null,
+            parkingQuantity: null, sidewalkQuality: null, lighting: null,
+            cleanliness: null, accessibility: null, rainDrainage: null,
+            greeneryShade: null, quietness: null, intersectionVisibility: null,
+            laneWidth: null,
           },
           reviews: [],
           reviewsLoaded: true,
@@ -3714,24 +3891,15 @@
             // Caso 2: 0 recensioni rimaste -> riporta il PIN e la scheda aperta allo stato neutro "Strada Vuota / Nuova"
             optimisticStreets.push(emptyResetStreet);
           } else {
-            // Caso 1: Rimangono altre recensioni -> ricalcola medie e tag
-            const updatedCat = {};
-            CATEGORY_KEYS.forEach(k => {
-              const valid = remainingRevs
-                .map(r => r.ratings?.[k])
-                .filter(v => v !== null && v !== undefined && v !== 'N/A' && !isNaN(Number(v)) && Number(v) > 0);
-              updatedCat[k] = valid.length > 0 ? Number((valid.reduce((acc, v) => acc + Number(v), 0) / valid.length).toFixed(1)) : null;
-            });
-            const validOverall = remainingRevs
-              .map(r => Number(r.overallRating ?? r.ratingOverall))
-              .filter(v => !isNaN(v) && v > 0);
-            const validCats = Object.values(updatedCat).filter(v => v !== null && v > 0);
-            const newAvg = validOverall.length > 0
-              ? Number((validOverall.reduce((a, b) => a + b, 0) / validOverall.length).toFixed(1))
-              : (validCats.length > 0 ? Number((validCats.reduce((a, b) => a + b, 0) / validCats.length).toFixed(1)) : 0);
-            const mergedParking = Array.from(new Set(remainingRevs.flatMap(r => r.parkingTypes || [])));
-            const mergedCycle = remainingRevs.some(r => Boolean(r.hasCyclePath));
-            const mergedAmenities = Array.from(new Set(remainingRevs.flatMap(r => r.amenities || [])));
+            // Caso 1: Rimangono altre recensioni -> ricalcola medie, tipologia prevalente e tag
+            const {
+              streetType: prevalentStreetType,
+              ratingOverall: newAvg,
+              categoryAverages: updatedCat,
+              parkingTypes: mergedParking,
+              hasCyclePath: mergedCycle,
+              amenities: mergedAmenities,
+            } = computeStreetAggregatesFromReviews(remainingRevs, canonicalStreetName, s.streetType);
 
             let oldestRev = remainingRevs[remainingRevs.length - 1] || null;
             let minTime = oldestRev ? parseReviewTimestampMs(oldestRev) : Number.MAX_SAFE_INTEGER;
@@ -3748,6 +3916,7 @@
             optimisticStreets.push({
               ...s,
               streetKey: streetCompKey,
+              streetType: prevalentStreetType,
               reviewsCount: remainingRevs.length,
               avgOverallRating: newAvg,
               categoryAverages: updatedCat,
@@ -4524,19 +4693,36 @@
                 <div className="w-12 h-1.5 bg-slate-300 rounded-full" />
               </div>
 
-              <div className="px-5 pb-3 flex items-start justify-between border-b border-slate-100">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">{selectedStreet.name}</h2>
-                  <p className="text-xs text-slate-500 font-medium flex items-center gap-2 flex-wrap mt-0.5">
-                    <span>{selectedStreet.city}{selectedStreet.province ? ` (${selectedStreet.province})` : ''}{selectedStreet.postalCode ? ` · ${selectedStreet.postalCode}` : ''}</span>
-                    {selectedStreet.streetType && (
-                      <span className="text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.2 rounded-full">
-                        {selectedStreet.streetType}
-                      </span>
-                    )}
+              <div className="px-5 pb-3 flex items-start justify-between gap-3 border-b border-slate-100">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-xl font-bold text-slate-900">{selectedStreet.name}</h2>
+                    {(() => {
+                      const activeStreetType =
+                        normalizeStreetTypeLabel(selectedStreet.streetType) ||
+                        computePrevalentStreetType(selectedStreet.reviews || [], selectedStreet.name);
+                      const typeBadgeCls =
+                        activeStreetType === '🟢 Autostrada'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : activeStreetType === '🛣️ Statale / Provinciale (SS / SP)'
+                          ? 'bg-sky-50 text-sky-900 border-sky-200'
+                          : activeStreetType === '🚶 Pedonale / ZTL'
+                          ? 'bg-purple-50 text-purple-800 border-purple-200'
+                          : activeStreetType === '🏭 Industriale'
+                          ? 'bg-amber-50 text-amber-900 border-amber-200'
+                          : 'bg-blue-50 text-blue-800 border-blue-200';
+                      return (
+                        <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1 shadow-2xs ${typeBadgeCls}`}>
+                          {activeStreetType}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    {selectedStreet.city}{selectedStreet.province ? ` (${selectedStreet.province})` : ''}{selectedStreet.postalCode ? ` · ${selectedStreet.postalCode}` : ''}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <div className={`px-2.5 py-1 rounded-xl font-bold text-sm border flex items-center gap-1 ${
                     isSelectedStreetNew
                       ? 'bg-slate-100 text-slate-600 border-slate-200'
@@ -4663,7 +4849,7 @@
 
                     <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Spaccato Categorie (13 Parametri)</h4>
-                      <div className="space-y-2 text-xs">
+                      <div className="space-y-2.5 text-xs">
                         {[
                           ['Manto Stradale', selectedStreet.categoryAverages?.roadSurface],
                           ['Segnaletica a terra', selectedStreet.categoryAverages?.groundSignage],
@@ -4679,20 +4865,51 @@
                           ['Visibilità Incroci', selectedStreet.categoryAverages?.intersectionVisibility],
                           ['Larghezza Carreggiata', selectedStreet.categoryAverages?.laneWidth],
                         ].map(([label, rawScore]) => {
-                          const isNA = rawScore === null || rawScore === undefined || rawScore === 0 || rawScore === 'N/A';
-                          const score = isNA ? 'N/A' : Number(rawScore).toFixed(1);
+                          const numScore = (rawScore === null || rawScore === undefined || rawScore === 'N/A' || rawScore === '')
+                            ? NaN
+                            : Number(rawScore);
+                          const isNA = isNaN(numScore) || numScore <= 0;
+
                           return (
-                            <div key={label} className="flex items-center justify-between">
-                              <span className="text-slate-700 font-medium w-40 truncate">{label}</span>
-                              <div className="flex-1 mx-3 h-2 bg-slate-200 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-blue-600 rounded-full transition-all"
-                                  style={{ width: isNA ? '0%' : `${(Number(score) / 5) * 100}%` }}
-                                />
-                              </div>
-                              <span className={`w-8 text-right font-bold ${isNA ? 'text-slate-400 text-[10px]' : 'text-slate-800'}`}>
-                                {score}
+                            <div key={label} className="flex items-center justify-between gap-2">
+                              <span className={`font-medium w-38 sm:w-44 truncate ${isNA ? 'text-slate-400' : 'text-slate-700'}`}>
+                                {label}
                               </span>
+                              {isNA ? (
+                                <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 border border-slate-200/80 px-2.5 py-0.5 rounded-full shrink-0">
+                                  Non applicabile (N/A)
+                                </span>
+                              ) : (
+                                <div className="flex items-center gap-2 flex-1 justify-end">
+                                  <div className="hidden sm:block flex-1 max-w-[110px] h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-blue-600 rounded-full transition-all"
+                                      style={{ width: `${(numScore / 5) * 100}%` }}
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-0.5 select-none shrink-0" aria-label={`${numScore.toFixed(1)} su 5`}>
+                                    {[1, 2, 3, 4, 5].map(starIdx => {
+                                      const fillPct = Math.max(0, Math.min(100, Math.round((numScore - (starIdx - 1)) * 100)));
+                                      return (
+                                        <span key={starIdx} className="relative inline-block text-sm leading-none text-slate-200">
+                                          ★
+                                          {fillPct > 0 && (
+                                            <span
+                                              className="absolute inset-y-0 left-0 overflow-hidden text-amber-400"
+                                              style={{ width: `${fillPct}%` }}
+                                            >
+                                              ★
+                                            </span>
+                                          )}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                  <span className="font-extrabold text-slate-800 w-10 text-right shrink-0">
+                                    ★ {numScore.toFixed(1)}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -5381,54 +5598,6 @@
       );
     }
 
-    // --- COSTANTI TIPOLOGIE STRADA & PARAMETRI TECNICI ---
-    const STREET_TYPES = [
-      '🚶 Pedonale / ZTL',
-      '🏡 Urbana',
-      '🏭 Industriale',
-      '🛣️ Statale / Provinciale (SS / SP)',
-      '🟢 Autostrada'
-    ];
-
-    const detectStreetTypeFromStreetName = (name = '') => {
-      const n = String(name || '').trim();
-      // Prefissi A seguito da numeri (es. A14, A1), Autostrada, Raccordo -> 🟢 Autostrada
-      if (/\bA[- ]?\d{1,3}\b/i.test(n) || /autostrad/i.test(n) || /raccordo/i.test(n)) {
-        return '🟢 Autostrada';
-      }
-      // SS, SP, S.S., S.P., Strada Statale, Strada Provinciale, SR -> 🛣️ Statale / Provinciale (SS / SP)
-      if (/\b(SS|SP|S\.S\.|S\.P\.|SR|S\.R\.)\b/i.test(n) || /strada\s+statale/i.test(n) || /strada\s+provinciale/i.test(n) || /statale/i.test(n) || /provinciale/i.test(n)) {
-        return '🛣️ Statale / Provinciale (SS / SP)';
-      }
-      return '🏡 Urbana';
-    };
-
-    const getIncompatibleKeysForStreetType = (type) => {
-      if (type === '🟢 Autostrada' || type === '🛣️ Statale / Provinciale (SS / SP)') {
-        return ['sidewalkQuality', 'accessibility'];
-      }
-      if (type === '🚶 Pedonale / ZTL') {
-        return ['laneWidth', 'parkingQuantity'];
-      }
-      return [];
-    };
-
-    const TECHNICAL_CATEGORIES = [
-      { key: 'roadSurface', label: 'Manto Stradale (asfalto, buche)', icon: '🛣️' },
-      { key: 'groundSignage', label: 'Segnaletica a terra (strisce, stop)', icon: '🛑' },
-      { key: 'verticalSignage', label: 'Segnaletica verticale (cartelli visibili)', icon: '🪧' },
-      { key: 'parkingQuantity', label: 'Quantità di parcheggi', icon: '🅿️' },
-      { key: 'sidewalkQuality', label: 'Qualità dei marciapiedi', icon: '🚶' },
-      { key: 'lighting', label: 'Illuminazione notturna', icon: '💡' },
-      { key: 'cleanliness', label: 'Pulizia e decoro urbano', icon: '✨' },
-      { key: 'accessibility', label: 'Accessibilità (passeggini / PMR)', icon: '♿' },
-      { key: 'rainDrainage', label: 'Drenaggio piovano (caditoie, tombini)', icon: '🌧️' },
-      { key: 'greeneryShade', label: 'Ombreggiatura e verde (alberi, radici)', icon: '🌳' },
-      { key: 'quietness', label: 'Tranquillità e silenziosità (rumore)', icon: '🤫' },
-      { key: 'intersectionVisibility', label: 'Visibilità incroci (specchi, visuale)', icon: '👀' },
-      { key: 'laneWidth', label: 'Larghezza carreggiata (manovra, spazio)', icon: '↔️' },
-    ];
-
     // --- SOTTORAPPRESENTAZIONE MODALE RECENSIONE INTERATTIVA ---
     function ReviewModal({ streetName, currentUser, initialData, defaultStreetSegment = '', isPioneerCandidate, onClose, onSubmit, onDelete, onOpenPrivacy }) {
       const isEditing = Boolean(initialData);
@@ -5436,14 +5605,7 @@
       // Risoluzione iniziale tipologia strada (priorità: dato salvato in precedenza, altrimenti rilevamento da nome via)
       const resolveInitialStreetType = () => {
         if (initialData?.streetType) {
-          const raw = String(initialData.streetType).trim();
-          const match = STREET_TYPES.find(t => t === raw);
-          if (match) return match;
-          if (/autostrad/i.test(raw)) return '🟢 Autostrada';
-          if (/statale|provincial/i.test(raw)) return '🛣️ Statale / Provinciale (SS / SP)';
-          if (/pedonal|ztl/i.test(raw)) return '🚶 Pedonale / ZTL';
-          if (/industrial/i.test(raw)) return '🏭 Industriale';
-          return '🏡 Urbana';
+          return normalizeStreetTypeLabel(initialData.streetType) || detectStreetTypeFromStreetName(streetName);
         }
         return detectStreetTypeFromStreetName(streetName);
       };
@@ -5453,19 +5615,16 @@
       // Voto complessivo Google Places style (1 a 5)
       const [overallRating, setOverallRating] = useState(() => {
         if (initialData) {
-          const old = Number(initialData.ratingOverall ?? initialData.overallRating);
-          if (!isNaN(old) && old >= 1 && old <= 5) return Math.round(old);
-          if (initialData.ratings) {
-            const valid = Object.values(initialData.ratings).filter(v => v !== null && v !== undefined && v !== 'N/A' && Number(v) > 0);
-            if (valid.length > 0) return Math.round(valid.reduce((a, b) => a + Number(b), 0) / valid.length);
-          }
+          const old = getSingleReviewOverallScore(initialData);
+          if (old >= 1 && old <= 5) return Math.round(old);
         }
         return 0;
       });
       const [hoverRating, setHoverRating] = useState(0);
 
-      // Accordion parametri tecnici
+      // Accordion parametri tecnici e tracciamento compilazione Flash vs Approfondita
       const [isAccordionOpen, setIsAccordionOpen] = useState(false);
+      const [hasTouchedTechnical, setHasTouchedTechnical] = useState(Boolean(initialData));
 
       // Generazione ratings tecnici iniziali
       const buildRatingsState = (currentType) => {
@@ -5480,7 +5639,7 @@
           const res = {};
           TECHNICAL_CATEGORIES.forEach(cat => {
             const v = initialData.ratings[cat.key];
-            if (v === null || v === undefined || v === 'N/A') {
+            if (v === null || v === undefined || v === 'N/A' || v === '') {
               res[cat.key] = null;
             } else {
               const num = Number(v);
@@ -5514,16 +5673,10 @@
         if (initialData) {
           const loadedType = resolveInitialStreetType();
           setStreetType(loadedType);
-          const old = Number(initialData.ratingOverall ?? initialData.overallRating);
-          if (!isNaN(old) && old >= 1 && old <= 5) {
-            setOverallRating(Math.round(old));
-          } else if (initialData.ratings) {
-            const valid = Object.values(initialData.ratings).filter(v => v !== null && v !== undefined && v !== 'N/A' && Number(v) > 0);
-            setOverallRating(valid.length > 0 ? Math.round(valid.reduce((a, b) => a + Number(b), 0) / valid.length) : 0);
-          } else {
-            setOverallRating(0);
-          }
+          const old = getSingleReviewOverallScore(initialData);
+          setOverallRating(old >= 1 && old <= 5 ? Math.round(old) : 0);
           setRatings(buildRatingsState(loadedType));
+          setHasTouchedTechnical(true);
           setParkingTypes(initialData.parkingTypes || []);
           setHasCyclePath(initialData.hasCyclePath || false);
           setAmenities(initialData.amenities || []);
@@ -5534,6 +5687,8 @@
           setStreetType(autoType);
           setOverallRating(0);
           setRatings(buildRatingsState(autoType));
+          setHasTouchedTechnical(false);
+          setIsAccordionOpen(false);
           setParkingTypes(['FREE']);
           setHasCyclePath(false);
           setAmenities([]);
@@ -5563,6 +5718,7 @@
 
       // Toggle pulsante N/A per parametro tecnico
       const toggleNA = (catKey) => {
+        setHasTouchedTechnical(true);
         setRatings(prev => {
           const isNA = prev[catKey] === null || prev[catKey] === undefined || prev[catKey] === 'N/A';
           return {
@@ -5574,6 +5730,7 @@
 
       // Click stella categoria tecnica
       const handleCategoryStarClick = (catKey, starVal) => {
+        setHasTouchedTechnical(true);
         setRatings(prev => ({
           ...prev,
           [catKey]: starVal,
@@ -5609,11 +5766,25 @@
           return;
         }
         setModerationError('');
+
+        // Se è una recensione Flash (accordion mai aperto e nessun parametro tecnico toccato), salva null per tutte le categorie tecniche
+        const finalRatings = {};
+        const includeTechnical = isEditing || isAccordionOpen || hasTouchedTechnical;
+        TECHNICAL_CATEGORIES.forEach(cat => {
+          if (!includeTechnical) {
+            finalRatings[cat.key] = null;
+          } else {
+            const v = ratings[cat.key];
+            const num = (v === null || v === undefined || v === 'N/A' || v === '') ? NaN : Number(v);
+            finalRatings[cat.key] = (!isNaN(num) && num >= 1 && num <= 5) ? num : null;
+          }
+        });
+
         onSubmit({
           userName: currentUser ? currentUser.name : 'Tu (Cittadino)',
           streetType: streetType,
           overallRating: overallRating,
-          ratings: ratings,
+          ratings: finalRatings,
           comment: finalComment,
           streetSegment: finalSegment,
           parkingTypes: parkingTypes,
@@ -5841,7 +6012,10 @@
               <div className="border border-slate-200 rounded-3xl overflow-hidden bg-white shadow-2xs">
                 <button
                   type="button"
-                  onClick={() => setIsAccordionOpen(!isAccordionOpen)}
+                  onClick={() => {
+                    setIsAccordionOpen(!isAccordionOpen);
+                    setHasTouchedTechnical(true);
+                  }}
                   className="w-full py-3 px-4 bg-slate-50 hover:bg-slate-100 flex items-center justify-between font-extrabold text-slate-700 text-xs transition-colors cursor-pointer select-none"
                 >
                   <span className="flex items-center gap-2">
