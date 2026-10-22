@@ -1137,16 +1137,15 @@
       return { valid: true };
     };
 
-    // --- MODERAZIONE AI MULTILINGUA CON GOOGLE GEMINI 2.5 FLASH ---
+    // --- MODERAZIONE AI MULTILINGUA CON GOOGLE GEMINI (2.0 FLASH CON FALLBACK 1.5 FLASH) ---
     const GEMINI_MODERATION_API_KEY = window.__SR_GEMINI_KEY__ || atob("QVEuQWI4Uk42S2ZXRVpCUVRLbHZDU2hIUGhFMVV5NmxXRUIzVkdCS0dQY2MxSEx3Z2lwdmc=");
-    const GEMINI_MODERATION_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
     const moderateWithGemini = async (commentText) => {
       if (!commentText || !String(commentText).trim()) {
         return { allowed: true, reason: '' };
       }
-      try {
-        const promptText = `Sei il moderatore ufficiale dell'applicazione Street Review.
+
+      const promptText = `Sei il moderatore ufficiale dell'applicazione Street Review.
 Analizza il seguente testo (in qualsiasi lingua, dialetto, slang o leetspeak):
 "${commentText}"
 
@@ -1162,56 +1161,79 @@ Imposta allowed: false se il testo contiene:
 
 Imposta allowed: true per critiche urbane legittime (asfalto, buche, parcheggi, rifiuti, rumore, illuminazione).`;
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
-
-        const response = await fetch(GEMINI_MODERATION_ENDPOINT, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": GEMINI_MODERATION_API_KEY
-          },
-          body: JSON.stringify({
-            contents: [
+      const requestBody = JSON.stringify({
+        contents: [
+          {
+            parts: [
               {
-                parts: [
-                  {
-                    text: promptText
-                  }
-                ]
+                text: promptText
               }
-            ],
-            generationConfig: {
-              responseMimeType: "application/json"
+            ]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      });
+
+      const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+
+      for (let i = 0; i < modelsToTry.length; i++) {
+        const modelName = modelsToTry[i];
+        const endpointUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(GEMINI_MODERATION_API_KEY)}`;
+
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+          const response = await fetch(endpointUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": GEMINI_MODERATION_API_KEY
+            },
+            body: requestBody,
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            const errorBody = await response.text();
+            console.error("[Gemini API Error]", response.status, errorBody);
+
+            // Fallback automatico su gemini-1.5-flash se il primo modello restituisce 404
+            if (response.status === 404 && i === 0) {
+              console.warn(`[Gemini Moderation] Modello ${modelName} 404, tentativo su fallback gemini-1.5-flash...`);
+              continue;
             }
-          }),
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
 
-        if (!response.ok) {
-          console.warn('[Gemini Moderation] Risposta HTTP API non valida:', response.status, response.statusText);
-          // Fallback resiliente: in caso di HTTP error / quota non bloccare l'utente
+            // In caso di altro errore HTTP / quota non bloccare l'utente (fallback resiliente su regole locali)
+            return { allowed: true, fallback: true };
+          }
+
+          const data = await response.json();
+          const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!rawText) {
+            return { allowed: true, fallback: true };
+          }
+
+          const parsedResult = JSON.parse(rawText.trim());
+          console.log("[Gemini Moderation Success]", parsedResult);
+          return {
+            allowed: typeof parsedResult.allowed === 'boolean' ? parsedResult.allowed : true,
+            reason: parsedResult.reason || ''
+          };
+        } catch (err) {
+          console.warn(`[Gemini Moderation] Errore connessione o timeout per ${modelName}:`, err);
+          if (i === 0) {
+            continue;
+          }
+          // Fallback resiliente: consenti salvataggio basandoti sul verdetto delle regole locali
           return { allowed: true, fallback: true };
         }
-
-        const data = await response.json();
-        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!rawText) {
-          return { allowed: true, fallback: true };
-        }
-
-        const parsedResult = JSON.parse(rawText.trim());
-        console.log("[Gemini Moderation] Esito:", parsedResult);
-        return {
-          allowed: typeof parsedResult.allowed === 'boolean' ? parsedResult.allowed : true,
-          reason: parsedResult.reason || ''
-        };
-      } catch (err) {
-        console.warn('[Gemini Moderation] Errore connessione o timeout, fallback locale:', err);
-        // Fallback resiliente: consenti salvataggio basandoti sul verdetto delle regole locali
-        return { allowed: true, fallback: true };
       }
+
+      return { allowed: true, fallback: true };
     };
 
     const hasAnyParkingOrAmenityTag = (rev) => {
@@ -3810,12 +3832,21 @@ Imposta allowed: true per critiche urbane legittime (asfalto, buche, parcheggi, 
       };
       handleSelectStreetRef.current = handleSelectStreet;
 
-      // 4. AGGIORNAMENTO SINCRONO AL SALVATAGGIO/MODIFICA RECENSIONE (reviews + streets + users + EmailJS)
-      const handleAddReview = (reviewPayload) => {
+      // 4. AGGIORNAMENTO AL SALVATAGGIO/MODIFICA RECENSIONE (reviews + streets + users + EmailJS)
+      const handleAddReview = async (reviewPayload) => {
         // 0. FILTRO AUTOMATICO ANTI-PROFANITY E DATI SENSIBILI (PRE-SALVATAGGIO)
         const moderationCheck = validateReviewComment(reviewPayload?.comment);
         if (!moderationCheck.valid) {
           alert(moderationCheck.message);
+          return false;
+        }
+
+        // 0.1 MODERAZIONE AI MULTILINGUA GEMINI (PRE-SCRITTURA FIRESTORE)
+        const textToCheck = `${reviewPayload?.streetSegment || ''} ${reviewPayload?.comment || ''}`.trim();
+        const aiCheck = await moderateWithGemini(textToCheck);
+        if (aiCheck && aiCheck.allowed === false) {
+          const warnMsg = "Recensione non ammessa: " + (aiCheck.reason || "il testo viola le linee guida della community.");
+          alert(warnMsg);
           return false;
         }
 
@@ -6535,47 +6566,47 @@ Imposta allowed: true per critiche urbane legittime (asfalto, buche, parcheggi, 
         }
         setModerationError('');
 
-        // 2. Moderazione AI multilingua in tempo reale (Google Gemini 2.5 Flash)
+        // 2. Moderazione AI multilingua in tempo reale (Google Gemini 2.0 Flash / 1.5 Flash)
         setIsCheckingModeration(true);
         try {
           const aiResult = await moderateWithGemini(textToCheck);
           if (aiResult && aiResult.allowed === false) {
-            const errorMsg = "Il tuo commento non rispetta le linee guida della community: " + (aiResult.reason || "contenuto non appropriato.");
+            const errorMsg = "Recensione non ammessa: " + (aiResult.reason || "il testo viola le linee guida della community.");
             setModerationError(errorMsg);
             alert(errorMsg);
             setIsCheckingModeration(false);
             return;
           }
+
+          // Se è una recensione Flash (accordion mai aperto e nessun parametro tecnico toccato), salva null per tutte le categorie tecniche
+          const finalRatings = {};
+          const includeTechnical = isEditing || isAccordionOpen || hasTouchedTechnical;
+          TECHNICAL_CATEGORIES.forEach(cat => {
+            if (!includeTechnical) {
+              finalRatings[cat.key] = null;
+            } else {
+              const v = ratings[cat.key];
+              const num = (v === null || v === undefined || v === 'N/A' || v === '') ? NaN : Number(v);
+              finalRatings[cat.key] = (!isNaN(num) && num >= 1 && num <= 5) ? num : null;
+            }
+          });
+
+          await onSubmit({
+            userName: currentUser ? currentUser.name : 'Tu (Cittadino)',
+            streetType: streetType,
+            overallRating: overallRating,
+            ratings: finalRatings,
+            comment: finalComment,
+            streetSegment: finalSegment,
+            parkingTypes: parkingTypes,
+            hasCyclePath: hasCyclePath,
+            amenities: amenities,
+          });
         } catch (err) {
-          console.warn('[ReviewModal] Moderazione AI fallback su validazione locale:', err);
+          console.warn('[ReviewModal] Moderazione AI o invio recensione:', err);
         } finally {
           setIsCheckingModeration(false);
         }
-
-        // Se è una recensione Flash (accordion mai aperto e nessun parametro tecnico toccato), salva null per tutte le categorie tecniche
-        const finalRatings = {};
-        const includeTechnical = isEditing || isAccordionOpen || hasTouchedTechnical;
-        TECHNICAL_CATEGORIES.forEach(cat => {
-          if (!includeTechnical) {
-            finalRatings[cat.key] = null;
-          } else {
-            const v = ratings[cat.key];
-            const num = (v === null || v === undefined || v === 'N/A' || v === '') ? NaN : Number(v);
-            finalRatings[cat.key] = (!isNaN(num) && num >= 1 && num <= 5) ? num : null;
-          }
-        });
-
-        onSubmit({
-          userName: currentUser ? currentUser.name : 'Tu (Cittadino)',
-          streetType: streetType,
-          overallRating: overallRating,
-          ratings: finalRatings,
-          comment: finalComment,
-          streetSegment: finalSegment,
-          parkingTypes: parkingTypes,
-          hasCyclePath: hasCyclePath,
-          amenities: amenities,
-        });
       };
 
       return (
