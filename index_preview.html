@@ -3260,18 +3260,12 @@
       // COMPORTAMENTO ALLA RICERCA DELLA VIA:
       // Lookup preventivo sui dati esistenti (streetsRef.current): se la via esiste già, apre la sua scheda e centra il marker;
       // solo se NON esiste ancora genera il segnaposto temporaneo ('— Nuova').
-      // Inoltre, se l'utente ha cercato un civico (es. "Viale Secondo Moretti 120"), precompila il campo Tratto con "Altezza civico 120".
       const handleSelectStreet = (target) => {
         const rawLat = target.lat ?? target.latitude;
         const rawLng = target.lng ?? target.longitude;
         const civicParsed = extractCivicNumberFromQuery(target.name || '');
         const cleanTargetName = civicParsed.cleanQuery || target.name;
-        const detectedStreetNumber = (target.streetNumber || civicParsed.streetNumber || '').trim();
-        setPrefilledStreetSegment(
-          detectedStreetNumber
-            ? `Altezza civico ${detectedStreetNumber}`
-            : (target.streetSegment || '')
-        );
+        setPrefilledStreetSegment('');
 
         const targetCity = resolveCanonicalCityName(target.city, rawLat, rawLng);
         const targetProvince = normalizeProvinceCode(target.province || target.streetProvince || '');
@@ -5753,11 +5747,7 @@
       const [parkingTypes, setParkingTypes] = useState(initialData?.parkingTypes || ['FREE']);
       const [hasCyclePath, setHasCyclePath] = useState(initialData?.hasCyclePath || false);
       const [amenities, setAmenities] = useState(initialData?.amenities || []);
-      const [streetSegment, setStreetSegment] = useState(
-        initialData?.streetSegment !== undefined
-          ? (initialData.streetSegment || '')
-          : (defaultStreetSegment || '')
-      );
+      const [streetSegment, setStreetSegment] = useState(initialData?.streetSegment || '');
       const [comment, setComment] = useState(initialData?.comment || '');
       const [moderationError, setModerationError] = useState('');
 
@@ -5773,7 +5763,7 @@
           setParkingTypes(initialData.parkingTypes || []);
           setHasCyclePath(initialData.hasCyclePath || false);
           setAmenities(initialData.amenities || []);
-          setStreetSegment(initialData.streetSegment || defaultStreetSegment || '');
+          setStreetSegment(initialData.streetSegment || '');
           setComment(initialData.comment || '');
         } else {
           const autoType = detectStreetTypeFromStreetName(streetName);
@@ -5785,10 +5775,10 @@
           setParkingTypes(['FREE']);
           setHasCyclePath(false);
           setAmenities([]);
-          setStreetSegment(defaultStreetSegment || '');
+          setStreetSegment('');
           setComment('');
         }
-      }, [initialData, defaultStreetSegment, streetName]);
+      }, [initialData, streetName]);
 
       // Cambio tipologia con aggiornamento intelligente dei suggerimenti N/A
       const handleSelectStreetType = (newType) => {
@@ -5979,21 +5969,21 @@
               <div className="bg-gradient-to-b from-amber-50/70 via-amber-50/20 to-slate-50 p-4 rounded-3xl border border-amber-200/80 shadow-xs space-y-3.5">
                 <div className="text-center space-y-1">
                   <label className="text-xs font-black uppercase tracking-wider text-slate-700">
-                    Valutazione Complessiva del Luogo
+                    VALUTAZIONE COMPLESSIVA DELLA STRADA
                   </label>
-                  <p className="text-[11px] font-semibold text-slate-500">
-                    {overallRating === 0
-                      ? 'Tocca le 5 stelle dorate per assegnare il tuo voto'
-                      : overallRating === 1
-                      ? '⭐ 1/5 - Molto negativa'
-                      : overallRating === 2
-                      ? '⭐⭐ 2/5 - Negativa'
-                      : overallRating === 3
-                      ? '⭐⭐⭐ 3/5 - Nella media'
-                      : overallRating === 4
-                      ? '⭐⭐⭐⭐ 4/5 - Buona'
-                      : '⭐⭐⭐⭐⭐ 5/5 - Eccellente'}
-                  </p>
+                  {overallRating > 0 && (
+                    <p className="text-[11px] font-semibold text-slate-500">
+                      {overallRating === 1
+                        ? '⭐ 1/5 - Molto negativa'
+                        : overallRating === 2
+                        ? '⭐⭐ 2/5 - Negativa'
+                        : overallRating === 3
+                        ? '⭐⭐⭐ 3/5 - Nella media'
+                        : overallRating === 4
+                        ? '⭐⭐⭐⭐ 4/5 - Buona'
+                        : '⭐⭐⭐⭐⭐ 5/5 - Eccellente'}
+                    </p>
+                  )}
                 </div>
 
                 {/* 5 Grandi Stelle Dorate al centro */}
@@ -6047,7 +6037,7 @@
                       if (moderationError) setModerationError('');
                     }}
                     rows={3}
-                    placeholder="Condividi la tua esperienza in questo luogo..."
+                    placeholder="Condividi ciò che pensi di questa strada..."
                     className={`w-full p-3 rounded-2xl bg-white border focus:outline-none focus:ring-2 text-xs text-slate-800 font-medium placeholder-slate-400 ${
                       moderationError
                         ? 'border-rose-400 focus:ring-rose-500 bg-rose-50/30'
@@ -6062,21 +6052,7 @@
                   )}
                 </div>
 
-                {/* Tratto o punto di riferimento facoltativo */}
-                <div className="flex items-center gap-2 bg-white/80 px-3 py-1.5 rounded-xl border border-slate-200/80 text-[11px]">
-                  <span className="shrink-0 text-slate-500 font-semibold">📍 Tratto (opzionale):</span>
-                  <input
-                    type="text"
-                    maxLength={60}
-                    value={streetSegment}
-                    onChange={(e) => setStreetSegment(e.target.value.slice(0, 60))}
-                    placeholder="Es. Civico 12, tratto nord..."
-                    className="flex-1 bg-transparent border-0 focus:outline-none text-slate-800 placeholder-slate-400 text-xs"
-                  />
-                  <span className="text-[10px] text-slate-400 font-semibold">{streetSegment.length}/60</span>
-                </div>
-
-                {/* Pulsante primario chiaro ad alto contrasto: "🚀 Pubblica subito" */}
+                {/* Pulsante primario chiaro ad alto contrasto: "Pubblica" */}
                 <div className="pt-1">
                   <button
                     type="submit"
@@ -6089,39 +6065,49 @@
                         : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white shadow-blue-500/25 cursor-pointer'
                     }`}
                   >
-                    <span>🚀</span>
-                    <span>
-                      {overallRating === 0
-                        ? 'Tocca una stella sopra per pubblicare'
-                        : isEditing
-                        ? `Aggiorna subito (+${liveXP.totalXP} XP)`
-                        : `Pubblica subito (+${liveXP.totalXP} XP)`}
-                    </span>
+                    <span>Pubblica</span>
                   </button>
                 </div>
               </div>
 
-              {/* 3. SEZIONE A FISARMONICA "APPROFONDISCI PARAMETRI TECNICI" (Opzionale & Richiudibile) */}
-              <div className="border border-slate-200 rounded-3xl overflow-hidden bg-white shadow-2xs">
+              {/* 3. SEZIONE A FISARMONICA "APPROFONDISCI PARAMETRI TECNICI" */}
+              <div className="border-2 border-sky-200/90 hover:border-sky-300 rounded-3xl overflow-hidden bg-white shadow-md shadow-sky-950/5 transition-all">
                 <button
                   type="button"
                   onClick={() => {
                     setIsAccordionOpen(!isAccordionOpen);
                     setHasTouchedTechnical(true);
                   }}
-                  className="w-full py-3 px-4 bg-slate-50 hover:bg-slate-100 flex items-center justify-between font-extrabold text-slate-700 text-xs transition-colors cursor-pointer select-none"
+                  style={{ padding: '14px 18px' }}
+                  className="w-full bg-gradient-to-r from-sky-50/80 via-blue-50/40 to-slate-50 hover:from-sky-100/80 hover:to-blue-50/70 flex items-center justify-between text-slate-800 transition-all cursor-pointer select-none"
                 >
-                  <span className="flex items-center gap-2">
-                    <span className="text-blue-600 font-bold">{isAccordionOpen ? '▲' : '▼'}</span>
-                    <span>Approfondisci parametri tecnici (Opzionale)</span>
+                  <span className="flex items-center gap-2.5 text-[15px] font-semibold tracking-tight text-slate-900">
+                    <span className="w-6 h-6 rounded-full bg-sky-100 border border-sky-300 flex items-center justify-center text-xs text-sky-700 font-black shrink-0">
+                      {isAccordionOpen ? '▲' : '▼'}
+                    </span>
+                    <span>Approfondisci parametri tecnici</span>
                   </span>
-                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">
+                  <span className="text-[11px] font-extrabold text-amber-900 bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full shrink-0 shadow-2xs">
                     ⚡ Extra XP
                   </span>
                 </button>
 
                 {isAccordionOpen && (
                   <div className="p-4 space-y-4 border-t border-slate-100 animate-slide-up">
+                    {/* Tratto o punto di riferimento facoltativo */}
+                    <div className="flex items-center gap-2 bg-slate-50 px-3.5 py-2.5 rounded-2xl border border-slate-200 text-xs focus-within:border-sky-400 focus-within:bg-white transition-all">
+                      <span className="shrink-0 text-slate-700 font-bold">📍 Tratto (opzionale):</span>
+                      <input
+                        type="text"
+                        maxLength={60}
+                        value={streetSegment}
+                        onChange={(e) => setStreetSegment(e.target.value.slice(0, 60))}
+                        placeholder="Es. Civico 12, incrocio, tratto nord..."
+                        className="flex-1 bg-transparent border-0 focus:outline-none text-slate-800 placeholder-slate-400 text-xs font-medium"
+                      />
+                      <span className="text-[10px] text-slate-400 font-semibold">{streetSegment.length}/60</span>
+                    </div>
+
                     <div className="space-y-1">
                       <p className="text-[11px] font-semibold text-slate-600">
                         Valuta i singoli parametri tecnici o usa il toggle <strong className="text-slate-800">[N/A]</strong> per quelli non applicabili:
@@ -6284,8 +6270,7 @@
                             : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer active:scale-[0.99]'
                         }`}
                       >
-                        <span>🚀</span>
-                        <span>Conferma e pubblica con dettagli (+{liveXP.totalXP} XP)</span>
+                        <span>{isEditing ? 'Conferma modifiche' : 'Conferma e pubblica'} (+{liveXP.totalXP} XP)</span>
                       </button>
                     </div>
                   </div>
