@@ -929,11 +929,20 @@
     // 1. Estensione Blacklist Termini Sessuali e Flessioni Verbali
     const SEXUAL_EXPLICIT_REGEX = /\b(scop(?:a|are|ano|ata|ate|i)|tromba(?:re|no|ta|te)?|troi[ae]|mignott[ae]|prostitut[aeo]|puttan[ae]|marchett[ae])\b/i;
 
+    // 1.1 Inclusione del termine "Maranza" (Termini Offensivi / Hate Speech)
+    const HATE_SPEECH_REGEX = /\b(maranz[aieo]|maranzin[oaei])\b/i;
+
+    // 1.2 Dispregiativi morali e diffamatori
+    const MORAL_DEFAMATION_REGEX = /\b(depravat[oaei]|pervertit[oaei]|maniac[oaei]|degenerat[oaei]|delinquent[ei])\b/i;
+
+    // 1.3 Insulti sessisti e denigratori figurati
+    const SEXIST_DENIGRATORY_REGEX = /\b(vacc[ae]|troi[ae]|cagn[ae]|zoccol[ae]|puttan[ae]|mignott[ae])\b/i;
+
     // 2. Filtro Sostanze Stupefacenti e Attività Illecite (Anti-Diffamazione)
     const ILLICIT_SUBSTANCES_REGEX = /\b(drog[ae]|spacci(?:a|o|are|ano|atore|atrice|atori|atrici)?|pusher|cocaina|eroina|cannabis|fumo|maria|erba)\b/i;
 
     // 3. Filtro Anti-Doxxing e Nomi Propri (Tutela Privacy Residenziale)
-    const RESIDENTIAL_LOCALIZATION_REGEX = /\b(qui\s+ci\s+abita|ci\s+abita|qui\s+abita|abita\s+qui|casa\s+di|appartamento\s+di|famiglia)\b/i;
+    const RESIDENTIAL_LOCALIZATION_REGEX = /\b(qui\s+(ci\s+)?(abita|vive|risiede|sta\s+di\s+casa)|ci\s+(abita|vive)|(abita|vive)\s+qui|casa\s+di|appartamento\s+di|residenza\s+di|famiglia)\b/i;
 
     const COMMON_ITALIAN_NAMES = [
       'chiara', 'marco', 'andrea', 'luca', 'giulia', 'sara', 'matteo', 'francesco',
@@ -973,11 +982,23 @@
       // Normalizza gli accenti per garantire che i word boundaries \b funzionino su tutte le parole italiane
       const normalizedText = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-      // 1. Controllo Linguaggio Offensivo / Bestemmie / Insulti / Termini Sessuali
+      // 1. Controllo Anti-Doxxing e Tutela Privacy Residenziale (Nomi e Localizzazione abitativa)
+      if (RESIDENTIAL_LOCALIZATION_REGEX.test(normalizedText) || RESIDENCE_NAME_REGEX.test(normalizedText)) {
+        return {
+          valid: false,
+          reason: 'residential_privacy',
+          message: 'Per motivi di privacy e GDPR, è vietato indicare nomi di privati cittadini o riferimenti a chi abita nella via.',
+        };
+      }
+
+      // 2. Controllo Linguaggio Offensivo / Bestemmie / Insulti / Termini Sessuali / Hate Speech / Diffamazione Morale
       if (
         PROFANITY_WORD_REGEX.test(normalizedText) ||
         BLASPHEMY_PHRASE_REGEX.test(normalizedText) ||
-        SEXUAL_EXPLICIT_REGEX.test(normalizedText)
+        SEXUAL_EXPLICIT_REGEX.test(normalizedText) ||
+        HATE_SPEECH_REGEX.test(normalizedText) ||
+        MORAL_DEFAMATION_REGEX.test(normalizedText) ||
+        SEXIST_DENIGRATORY_REGEX.test(normalizedText)
       ) {
         return {
           valid: false,
@@ -986,21 +1007,12 @@
         };
       }
 
-      // 2. Controllo Sostanze Stupefacenti e Attività Illecite (Anti-Diffamazione)
+      // 3. Controllo Sostanze Stupefacenti e Attività Illecite (Anti-Diffamazione)
       if (ILLICIT_SUBSTANCES_REGEX.test(normalizedText)) {
         return {
           valid: false,
           reason: 'illicit_substances',
           message: 'Il commento contiene termini inappropriati, riferimenti espliciti o contenuti non ammessi dal regolamento.',
-        };
-      }
-
-      // 3. Controllo Anti-Doxxing e Tutela Privacy Residenziale (Nomi e Localizzazione abitativa)
-      if (RESIDENTIAL_LOCALIZATION_REGEX.test(normalizedText) || RESIDENCE_NAME_REGEX.test(normalizedText)) {
-        return {
-          valid: false,
-          reason: 'residential_privacy',
-          message: 'Per motivi di privacy e GDPR, è vietato indicare nomi di privati cittadini o riferimenti a chi abita nella via.',
         };
       }
 
