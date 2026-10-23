@@ -6520,36 +6520,36 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const [hasTouchedTechnical, setHasTouchedTechnical] = useState(Boolean(initialData));
 
       // Generazione ratings tecnici iniziali
-      const buildRatingsState = (currentType) => {
-        const base = {
-          roadSurface: 4, groundSignage: 4, verticalSignage: 4,
-          parkingQuantity: 3, sidewalkQuality: 4, lighting: 4,
-          cleanliness: 4, accessibility: 4, rainDrainage: 4,
-          greeneryShade: 4, quietness: 4, intersectionVisibility: 4,
-          laneWidth: 4
-        };
-        if (initialData?.ratings) {
+      const buildRatingsState = () => {
+        if (initialData?.ratings && typeof initialData.ratings === 'object') {
+          const hasAnyNumericRating = TECHNICAL_CATEGORIES.some(cat => {
+            const v = initialData.ratings[cat.key];
+            return v !== null && v !== undefined && v !== 'N/A' && v !== '' && !isNaN(Number(v)) && Number(v) >= 1;
+          });
+
           const res = {};
           TECHNICAL_CATEGORIES.forEach(cat => {
             const v = initialData.ratings[cat.key];
-            if (v === null || v === undefined || v === 'N/A' || v === '') {
-              res[cat.key] = null;
+            if (v !== null && v !== undefined && v !== 'N/A' && v !== '' && !isNaN(Number(v)) && Number(v) >= 1 && Number(v) <= 5) {
+              res[cat.key] = Number(v);
+            } else if (hasAnyNumericRating || v === 'N/A') {
+              res[cat.key] = 'N/A';
             } else {
-              const num = Number(v);
-              res[cat.key] = (!isNaN(num) && num >= 1 && num <= 5) ? num : null;
+              res[cat.key] = null;
             }
           });
           return res;
         }
-        // Pre-impostazione intelligente N/A per nuova recensione
-        const incompatible = getIncompatibleKeysForStreetType(currentType);
-        incompatible.forEach(k => {
-          base[k] = null;
+
+        // Per NUOVE recensioni: stato neutro e non valutato per tutte le 13 voci (nessuna stella, nessun N/A)
+        const res = {};
+        TECHNICAL_CATEGORIES.forEach(cat => {
+          res[cat.key] = null;
         });
-        return base;
+        return res;
       };
 
-      const [ratings, setRatings] = useState(() => buildRatingsState(streetType));
+      const [ratings, setRatings] = useState(buildRatingsState);
       const [parkingTypes, setParkingTypes] = useState(initialData?.parkingTypes || ['FREE']);
       const [hasCyclePath, setHasCyclePath] = useState(initialData?.hasCyclePath || false);
       const [amenities, setAmenities] = useState(initialData?.amenities || []);
@@ -6559,6 +6559,21 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const [moderationError, setModerationError] = useState('');
       const [isCheckingModeration, setIsCheckingModeration] = useState(false);
 
+      // Verifica se una categoria ha uno stato valido (voto 1-5 oppure N/A esplicito)
+      const isCategoryCompleted = (val) => {
+        if (val === 'N/A') return true;
+        const num = Number(val);
+        return !isNaN(num) && num >= 1 && num <= 5;
+      };
+
+      const completedCategoriesCount = TECHNICAL_CATEGORIES.filter(cat => isCategoryCompleted(ratings[cat.key])).length;
+      const areAllCategoriesCompleted = completedCategoriesCount === TECHNICAL_CATEGORIES.length;
+
+      const isPublishDisabled =
+        overallRating === 0 ||
+        isCheckingModeration ||
+        (isAccordionOpen && !areAllCategoriesCompleted);
+
       useEffect(() => {
         setModerationError('');
         setIsCheckingModeration(false);
@@ -6567,8 +6582,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           setStreetType(loadedType);
           const old = getSingleReviewOverallScore(initialData);
           setOverallRating(old >= 1 && old <= 5 ? Math.round(old) : 0);
-          setRatings(buildRatingsState(loadedType));
-          setHasTouchedTechnical(true);
+          setRatings(buildRatingsState());
+          const hadTechnical = TECHNICAL_CATEGORIES.some(cat => {
+            const v = initialData.ratings?.[cat.key];
+            return v !== null && v !== undefined && v !== 'N/A' && v !== '' && !isNaN(Number(v)) && Number(v) >= 1;
+          });
+          setHasTouchedTechnical(hadTechnical);
+          setIsAccordionOpen(hadTechnical);
           setParkingTypes(initialData.parkingTypes || []);
           setHasCyclePath(initialData.hasCyclePath || false);
           setAmenities(initialData.amenities || []);
@@ -6579,7 +6599,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           const autoType = detectStreetTypeFromStreetName(streetName);
           setStreetType(autoType);
           setOverallRating(0);
-          setRatings(buildRatingsState(autoType));
+          setRatings(buildRatingsState());
           setHasTouchedTechnical(false);
           setIsAccordionOpen(false);
           setParkingTypes(['FREE']);
@@ -6591,35 +6611,18 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         }
       }, [initialData, streetName]);
 
-      // Cambio tipologia con aggiornamento intelligente dei suggerimenti N/A
+      // Cambio tipologia strada (non altera le valutazioni tecniche)
       const handleSelectStreetType = (newType) => {
         setStreetType(newType);
-        const incompatible = getIncompatibleKeysForStreetType(newType);
-        setRatings(prev => {
-          const next = { ...prev };
-          incompatible.forEach(k => {
-            next[k] = null;
-          });
-          // Se torna su Urbana e non stiamo modificando una recensione vecchia che aveva voti nulli, ripristina a 4
-          if (newType === '🏡 Urbana' && !initialData?.ratings) {
-            ['sidewalkQuality', 'accessibility', 'laneWidth', 'parkingQuantity'].forEach(k => {
-              if (next[k] === null) next[k] = 4;
-            });
-          }
-          return next;
-        });
       };
 
-      // Toggle pulsante N/A per parametro tecnico
+      // Toggle pulsante N/A per parametro tecnico (se attivo, torna a null neutro; se non attivo, imposta a 'N/A')
       const toggleNA = (catKey) => {
         setHasTouchedTechnical(true);
-        setRatings(prev => {
-          const isNA = prev[catKey] === null || prev[catKey] === undefined || prev[catKey] === 'N/A';
-          return {
-            ...prev,
-            [catKey]: isNA ? 4 : null,
-          };
-        });
+        setRatings(prev => ({
+          ...prev,
+          [catKey]: prev[catKey] === 'N/A' ? null : 'N/A',
+        }));
       };
 
       // Click stella categoria tecnica
@@ -6658,6 +6661,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           setModerationError('Seleziona un voto a stelle complessivo (da 1 a 5) prima di pubblicare.');
           return;
         }
+
+        if (isAccordionOpen && !areAllCategoriesCompleted) {
+          setModerationError('Completa tutti i 13 parametri tecnici (con voto da 1 a 5 o [N/A]) prima di pubblicare.');
+          return;
+        }
         const finalComment = (comment || '').trim();
         const finalSegment = (streetSegment || '').trim().slice(0, 60);
         const textToCheck = `${finalSegment} ${finalComment}`.trim();
@@ -6690,15 +6698,21 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           }
         }
 
-        // Se è una recensione Flash (accordion mai aperto e nessun parametro tecnico toccato), salva null per tutte le categorie tecniche
+        const hasExistingTechnicalRatings = Boolean(initialData?.ratings && TECHNICAL_CATEGORIES.some(cat => {
+          const v = initialData.ratings[cat.key];
+          return v !== null && v !== undefined && v !== 'N/A' && v !== '' && !isNaN(Number(v)) && Number(v) >= 1;
+        }));
+
+        // Se l'accordion è aperto al momento dell'invio (o stiamo modificando una recensione che aveva già parametri tecnici),
+        // salva i voti validi (1-5) e null per le voci N/A. Se l'accordion è chiuso, salva null per tutti (recensione flash).
         const finalRatings = {};
-        const includeTechnical = isEditing || isAccordionOpen || hasTouchedTechnical;
+        const includeTechnical = isAccordionOpen || (isEditing && hasExistingTechnicalRatings);
         TECHNICAL_CATEGORIES.forEach(cat => {
           if (!includeTechnical) {
             finalRatings[cat.key] = null;
           } else {
             const v = ratings[cat.key];
-            const num = (v === null || v === undefined || v === 'N/A' || v === '') ? NaN : Number(v);
+            const num = Number(v);
             finalRatings[cat.key] = (!isNaN(num) && num >= 1 && num <= 5) ? num : null;
           }
         });
@@ -6942,21 +6956,71 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                       </p>
                     </div>
 
+                    {/* Feedback Visivo di Avanzamento Parametri Tecnici */}
+                    <div className={`p-2.5 px-3 rounded-2xl border text-xs transition-all ${
+                      areAllCategoriesCompleted
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900 shadow-xs'
+                        : 'bg-amber-50/80 border-amber-200 text-amber-900'
+                    }`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-base leading-none shrink-0">
+                            {areAllCategoriesCompleted ? '✅' : '📝'}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-bold text-xs truncate">
+                              {areAllCategoriesCompleted ? (
+                                <span className="text-emerald-700 font-extrabold">✓ Tutti i parametri completati</span>
+                              ) : (
+                                <span>
+                                  Avanzamento parametri: <strong className="font-black text-amber-950">{completedCategoriesCount} di {TECHNICAL_CATEGORIES.length}</strong> completati
+                                </span>
+                              )}
+                            </p>
+                            {!areAllCategoriesCompleted && (
+                              <p className="text-[10px] text-amber-800 font-medium leading-tight">
+                                Assegna un voto o premi [N/A] per le restanti
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full shrink-0 ${
+                          areAllCategoriesCompleted
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : 'bg-amber-100 text-amber-900 border border-amber-300'
+                        }`}>
+                          {completedCategoriesCount}/{TECHNICAL_CATEGORIES.length}
+                        </span>
+                      </div>
+                    </div>
+
                     {/* Voti a stelle con pulsante [N/A] accanto a ciascuna voce */}
                     <div className="space-y-2">
                       {TECHNICAL_CATEGORIES.map(({ key, label, icon }) => {
                         const val = ratings[key];
-                        const isNA = val === null || val === undefined || val === 'N/A';
+                        const isNA = val === 'N/A';
+                        const isRated = typeof val === 'number' && val >= 1 && val <= 5;
+
                         return (
                           <div
                             key={key}
                             className={`flex items-center justify-between p-2.5 rounded-xl border transition-colors ${
-                              isNA ? 'bg-slate-50/70 border-slate-200 text-slate-400' : 'bg-white border-slate-200 text-slate-800'
+                              isNA
+                                ? 'bg-slate-50/70 border-slate-200 text-slate-400'
+                                : isRated
+                                ? 'bg-amber-50/20 border-amber-200/70 text-slate-800 shadow-2xs'
+                                : 'bg-white border-slate-200 text-slate-700'
                             }`}
                           >
                             <div className="flex items-center gap-1.5 min-w-0 pr-2">
                               <span className="text-sm shrink-0">{icon}</span>
-                              <span className={`text-xs font-semibold truncate ${isNA ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-700'}`}>
+                              <span className={`text-xs truncate ${
+                                isNA
+                                  ? 'text-slate-400 line-through decoration-slate-300'
+                                  : isRated
+                                  ? 'text-slate-900 font-bold'
+                                  : 'text-slate-700 font-medium'
+                              }`}>
                                 {label}
                               </span>
                             </div>
@@ -6972,9 +7036,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                                     title={`${label}: ${star} stelle`}
                                   >
                                     <span
-                                      className={`text-base ${
-                                        !isNA && star <= (val || 0)
-                                          ? 'text-amber-400'
+                                      className={`text-base leading-none transition-colors ${
+                                        isRated && star <= val
+                                          ? 'text-amber-400 drop-shadow-xs'
                                           : 'text-slate-200 hover:text-amber-300'
                                       }`}
                                     >
@@ -6992,7 +7056,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                                     ? 'bg-slate-700 text-white shadow-xs'
                                     : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
                                 }`}
-                                title={isNA ? 'Clicca per abilitare la valutazione' : 'Imposta come Non Applicabile'}
+                                title={isNA ? 'Clicca per rimuovere N/A' : 'Imposta come Non Applicabile'}
                               >
                                 N/A
                               </button>
@@ -7122,14 +7186,21 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 {/* Pulsante primario chiaro ad alto contrasto: "Pubblica" */}
                 <button
                   type="submit"
-                  disabled={overallRating === 0 || isCheckingModeration}
+                  disabled={isPublishDisabled}
                   className={`w-full py-3.5 px-4 font-black rounded-2xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${
-                    overallRating === 0 || isCheckingModeration
+                    isPublishDisabled
                       ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                       : isEditing
                       ? 'bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white shadow-indigo-500/25 cursor-pointer'
                       : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white shadow-blue-500/25 cursor-pointer'
                   }`}
+                  title={
+                    overallRating === 0
+                      ? 'Seleziona prima la valutazione complessiva a stelle'
+                      : isAccordionOpen && !areAllCategoriesCompleted
+                      ? `Completa tutti i 13 parametri (${completedCategoriesCount}/13) o chiudi l'approfondimento per pubblicare`
+                      : ''
+                  }
                 >
                   {isCheckingModeration ? (
                     <span className="flex items-center gap-2">
