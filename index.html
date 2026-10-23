@@ -6896,30 +6896,6 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     </div>
                   )}
                 </div>
-
-                {/* Pulsante primario chiaro ad alto contrasto: "Pubblica" */}
-                <div className="pt-1">
-                  <button
-                    type="submit"
-                    disabled={overallRating === 0 || isCheckingModeration}
-                    className={`w-full py-3.5 px-4 font-black rounded-2xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${
-                      overallRating === 0 || isCheckingModeration
-                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                        : isEditing
-                        ? 'bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white shadow-indigo-500/25 cursor-pointer'
-                        : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white shadow-blue-500/25 cursor-pointer'
-                    }`}
-                  >
-                    {isCheckingModeration ? (
-                      <span className="flex items-center gap-2">
-                        <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                        <span>Verifica in corso...</span>
-                      </span>
-                    ) : (
-                      <span>Pubblica</span>
-                    )}
-                  </button>
-                </div>
               </div>
 
               {/* 3. SEZIONE A FISARMONICA "APPROFONDISCI PARAMETRI TECNICI" */}
@@ -7137,34 +7113,34 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                         </button>
                       </div>
                     </div>
-
-                    {/* Pulsante secondario salva in fondo all'accordion */}
-                    <div className="pt-2">
-                      <button
-                        type="submit"
-                        disabled={overallRating === 0 || isCheckingModeration}
-                        className={`w-full py-3 px-4 font-bold rounded-2xl text-xs transition-all flex items-center justify-center gap-2 shadow-md ${
-                          overallRating === 0 || isCheckingModeration
-                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                            : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer active:scale-[0.99]'
-                        }`}
-                      >
-                        {isCheckingModeration ? (
-                          <span className="flex items-center gap-2">
-                            <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                            <span>Verifica in corso...</span>
-                          </span>
-                        ) : (
-                          <span>{isEditing ? 'Conferma modifiche' : 'Conferma e pubblica'} (+{liveXP.totalXP} XP)</span>
-                        )}
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>
 
               {/* Bottoni e link footer modale */}
-              <div className="space-y-2 pt-1">
+              <div className="space-y-2 pt-1 pb-1">
+                {/* Pulsante primario chiaro ad alto contrasto: "Pubblica" */}
+                <button
+                  type="submit"
+                  disabled={overallRating === 0 || isCheckingModeration}
+                  className={`w-full py-3.5 px-4 font-black rounded-2xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${
+                    overallRating === 0 || isCheckingModeration
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                      : isEditing
+                      ? 'bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white shadow-indigo-500/25 cursor-pointer'
+                      : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white shadow-blue-500/25 cursor-pointer'
+                  }`}
+                >
+                  {isCheckingModeration ? (
+                    <span className="flex items-center gap-2">
+                      <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      <span>Verifica in corso...</span>
+                    </span>
+                  ) : (
+                    <span>{isEditing ? 'Salva modifiche' : 'Pubblica'}</span>
+                  )}
+                </button>
+
                 {isEditing && onDelete && (
                   <button
                     type="button"
