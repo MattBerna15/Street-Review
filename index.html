@@ -897,11 +897,30 @@
       },
     ];
 
+    const isMeaningfulReviewComment = (text) => {
+      if (!text) return false;
+      const raw = String(text).trim();
+      if (!raw) return false;
+      const clean = raw.toLowerCase().replace(/[.,!?;:()"'«»\-_/\\#*]/g, '').trim();
+      if (!clean) return false;
+      const autoPhrases = [
+        'esperienza complessiva registrata',
+        'esperienza registrata',
+        'recensione pubblicata con successo',
+        'recensione pubblicata',
+        'nessun commento',
+        'nessuna recensione',
+        'nessuna recensione testuale',
+        'nessuna nota',
+        'senza commento',
+        'solo voto'
+      ];
+      return !autoPhrases.includes(clean);
+    };
+
     const isDetailedCommentText = (commentStr) => {
-      if (!commentStr) return false;
-      const trimmed = String(commentStr).trim();
-      if (trimmed === 'Recensione pubblicata con successo.') return false;
-      return trimmed.length >= 40;
+      if (!isMeaningfulReviewComment(commentStr)) return false;
+      return String(commentStr).trim().length >= 40;
     };
 
     // --- FILTRO AUTOMATICO ANTI-PROFANITY E DATI SENSIBILI (PRE-SALVATAGGIO) ---
@@ -1025,7 +1044,7 @@
     const validateReviewComment = (text) => {
       if (!text) return { valid: true };
       const raw = String(text).trim();
-      if (!raw || raw === 'Recensione pubblicata con successo.') {
+      if (!raw || !isMeaningfulReviewComment(raw)) {
         return { valid: true };
       }
 
@@ -5831,29 +5850,26 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                           }
                           return 0;
                         });
-                        const maxLevelOnStreet = sortedReviews.length > 0
-                          ? gamification.getAuthorProfile(sortedReviews[0]).levelInfo.level
-                          : 1;
-
-                        return sortedReviews.map((r, idx) => {
+                        return sortedReviews.map((r) => {
                           const isMyReview = currentUser && (r.userId === currentUser.id || r.user === currentUser.name);
                           const authorProfile = gamification.getAuthorProfile(r);
                           const lvl = authorProfile.levelInfo;
-                          const revMeta = gamification.reviewMetaMap[r.id] || computeSingleReviewXP(r, false);
-                          const isTopLevelHighlight = lvl.level >= 2 || (sortedReviews.length > 1 && idx === 0 && lvl.level >= maxLevelOnStreet);
+                          const hasTextComment = isMeaningfulReviewComment(r.comment);
+                          const ratingScore = Number(r.overallRating || r.ratingOverall || 0);
 
                           return (
                             <div
                               key={r.id}
-                              className={`p-3.5 rounded-2xl shadow-xs space-y-2 border transition-all ${
+                              className={`p-3.5 rounded-2xl shadow-xs space-y-2.5 border transition-all ${
                                 isMyReview
                                   ? 'border-blue-400 ring-2 ring-blue-50 bg-white'
                                   : lvl.commentHighlightClass
                               }`}
                             >
-                              <div className="flex flex-wrap justify-between items-start gap-2 text-xs">
+                              {/* Header Card: Autore e Livello a sinistra, Badge Voto prioritario a destra */}
+                              <div className="flex items-center justify-between gap-2.5">
                                 <div className="flex items-center gap-2.5 min-w-0">
-                                  {/* Avatar con cornice colorata in base al grado */}
+                                  {/* Avatar con cornice colorata in base al livello */}
                                   <div className="relative shrink-0">
                                     {r.avatarUrl ? (
                                       <img
@@ -5869,7 +5885,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                                     )}
                                     <span
                                       className="absolute -bottom-1 -right-1 text-[10px] leading-none bg-white rounded-full px-0.5 shadow-2xs border border-slate-200"
-                                      title={lvl.fullTitle}
+                                      title={`Livello ${lvl.level}`}
                                     >
                                       {lvl.icon}
                                     </span>
@@ -5877,122 +5893,119 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
                                   <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-1.5">
-                                      <span className="font-bold text-slate-900 truncate">{r.user}</span>
+                                      <span className="font-bold text-slate-900 text-xs truncate max-w-[130px] sm:max-w-[190px]">{r.user}</span>
                                       {isMyReview && (
-                                        <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                                        <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded-full shrink-0">
                                           Tu
                                         </span>
                                       )}
-                                      {/* Badge Livello / Titolo attuale */}
-                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${lvl.badgeClass}`}>
-                                        <span>Liv. {lvl.level}</span>
-                                        <span>·</span>
-                                        <span>{lvl.fullTitle}</span>
+                                      {/* Badge Livello essenziale (es. Liv. 7) */}
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center shrink-0 ${lvl.badgeClass}`}>
+                                        Liv. {lvl.level}
                                       </span>
                                     </div>
-
-                                    {/* Bollini di status: Top Esploratore / Pioniere / Dettaglio */}
-                                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                                      {isTopLevelHighlight && (
-                                        <span className="text-[10px] font-extrabold bg-amber-100/90 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded-md inline-flex items-center gap-0.5">
-                                          {lvl.level >= 7 ? '👑 Top Esploratore' : lvl.level >= 4 ? '🧭 Esploratore Esperto' : '⭐ Recensore Esperto'}
-                                        </span>
-                                      )}
-                                      {revMeta.isPioneer && (
-                                        <span className="text-[10px] font-extrabold bg-orange-100 text-orange-900 border border-orange-300 px-1.5 py-0.2 rounded-md inline-flex items-center gap-0.5" title="Primo utente a recensire questa strada (+30 XP)">
-                                          🧭 Pioniere della Via
-                                        </span>
-                                      )}
-                                      {revMeta.isDetailed && (
-                                        <span className="text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded-md inline-flex items-center gap-0.5" title="Recensione approfondita con tag (+20 XP)">
-                                          ✍️ Guida Dettagliata
-                                        </span>
-                                      )}
-                                      <span className="text-[10px] font-bold text-slate-400">
-                                        +{revMeta.totalXP} XP
-                                      </span>
+                                    <div className="text-[11px] text-slate-400 mt-0.5 leading-none">
+                                      {r.date}
                                     </div>
                                   </div>
                                 </div>
 
-                                <div className="flex flex-wrap items-center gap-1.5 shrink-0 ml-auto">
-                                  {isMyReview && (
-                                    <button
-                                      onClick={() => {
-                                        setEditingReview(r);
-                                        setIsReviewOpen(true);
-                                      }}
-                                      className="p-1 px-2 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                                      title="Modifica la tua recensione"
-                                    >
-                                      <span>✏️</span> Modifica
-                                    </button>
-                                  )}
-                                  {isMyReview && !isAdmin && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteReview(r)}
-                                      className="p-1 px-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                                      title="Elimina la tua recensione"
-                                    >
-                                      <span>🗑️</span> Elimina
-                                    </button>
-                                  )}
-                                  {isAdmin && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteReview(r)}
-                                      className="p-1 px-2 bg-rose-600 hover:bg-rose-700 text-white border border-rose-700 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                                      title="Elimina recensione come Amministratore e ricalcola medie e XP"
-                                    >
-                                      <span>🗑️</span> Elimina (Admin)
-                                    </button>
-                                  )}
-                                  {!isMyReview && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (!currentUser) {
-                                          setIsAuthOpen(true);
-                                          return;
-                                        }
-                                        setReportingReview({
-                                          review: r,
-                                          streetKey: selectedStreet.key || selectedStreet.id || selectedStreet.streetKey,
-                                          streetName: selectedStreet.name,
-                                          streetCity: selectedStreet.city,
-                                          streetProvince: selectedStreet.province,
-                                          streetLat: selectedStreet.lat || selectedStreet.latitude,
-                                          streetLng: selectedStreet.lng || selectedStreet.longitude,
-                                        });
-                                      }}
-                                      className="report-review-btn report-btn p-1 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                                      title="Segnala questa recensione"
-                                    >
-                                      <span>🚩</span>
-                                      <span>Segnala</span>
-                                    </button>
-                                  )}
-                                  {r.streetSegment && (
-                                    <span
-                                      className="text-[10px] font-extrabold bg-cyan-50 text-cyan-800 border border-cyan-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1"
-                                      title={`Tratto o punto di riferimento indicato: ${r.streetSegment}`}
-                                    >
-                                      <span>📍 Tratto: {r.streetSegment}</span>
-                                    </span>
-                                  )}
-                                  {Boolean(r.overallRating || r.ratingOverall) && (
-                                    <span
-                                      className="text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full inline-flex items-center gap-0.5"
-                                    >
-                                      <span className="text-amber-500">★</span>
-                                      <span>{Number(r.overallRating || r.ratingOverall).toFixed(1)}</span>
-                                    </span>
-                                  )}
-                                  <span className="text-slate-400 text-[11px]">{r.date}</span>
-                                </div>
+                                {/* Badge Voto prioritario e ingrandito in alto a destra */}
+                                {ratingScore > 0 && (
+                                  <div
+                                    className="shrink-0 inline-flex items-center gap-1.5 bg-amber-50 text-amber-900 border border-amber-300 rounded-xl font-bold shadow-2xs select-none"
+                                    style={{ fontSize: '1.05rem', padding: '6px 12px' }}
+                                    title={`Valutazione: ${ratingScore.toFixed(1)} su 5`}
+                                  >
+                                    <span className="text-amber-500 text-lg leading-none select-none">★</span>
+                                    <span className="font-bold leading-none">{ratingScore.toFixed(1)}</span>
+                                  </div>
+                                )}
                               </div>
-                              <p className="text-xs text-slate-700 leading-relaxed pl-0.5">"{r.comment}"</p>
+
+                              {/* Testo del commento (mostrato solo per opinioni reali, nessun placeholder o testo generato) */}
+                              {hasTextComment && (
+                                <p className="text-xs text-slate-700 leading-relaxed pl-0.5">
+                                  "{String(r.comment).trim()}"
+                                </p>
+                              )}
+
+                              {/* Footer Card: Tratto e Controlli Azione */}
+                              {Boolean(r.streetSegment || isMyReview || isAdmin || !isMyReview) && (
+                                <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 text-xs">
+                                  <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                                    {r.streetSegment && (
+                                      <span
+                                        className="text-[10px] font-bold bg-cyan-50 text-cyan-800 border border-cyan-200 px-2 py-0.5 rounded-md inline-flex items-center gap-1 max-w-full truncate"
+                                        title={`Tratto o punto di riferimento indicato: ${r.streetSegment}`}
+                                      >
+                                        <span>📍 Tratto: {r.streetSegment}</span>
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-1.5 shrink-0 ml-auto">
+                                    {isMyReview && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingReview(r);
+                                          setIsReviewOpen(true);
+                                        }}
+                                        className="p-1 px-2 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                        title="Modifica la tua recensione"
+                                      >
+                                        <span>✏️</span> Modifica
+                                      </button>
+                                    )}
+                                    {isMyReview && !isAdmin && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteReview(r)}
+                                        className="p-1 px-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                        title="Elimina la tua recensione"
+                                      >
+                                        <span>🗑️</span> Elimina
+                                      </button>
+                                    )}
+                                    {isAdmin && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteReview(r)}
+                                        className="p-1 px-2 bg-rose-600 hover:bg-rose-700 text-white border border-rose-700 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                                        title="Elimina recensione come Amministratore e ricalcola medie e XP"
+                                      >
+                                        <span>🗑️</span> Elimina (Admin)
+                                      </button>
+                                    )}
+                                    {!isMyReview && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!currentUser) {
+                                            setIsAuthOpen(true);
+                                            return;
+                                          }
+                                          setReportingReview({
+                                            review: r,
+                                            streetKey: selectedStreet.key || selectedStreet.id || selectedStreet.streetKey,
+                                            streetName: selectedStreet.name,
+                                            streetCity: selectedStreet.city,
+                                            streetProvince: selectedStreet.province,
+                                            streetLat: selectedStreet.lat || selectedStreet.latitude,
+                                            streetLng: selectedStreet.lng || selectedStreet.longitude,
+                                          });
+                                        }}
+                                        className="report-review-btn report-btn p-1 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                        title="Segnala questa recensione"
+                                      >
+                                        <span>🚩</span>
+                                        <span>Segnala</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         });
@@ -6627,7 +6640,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           setModerationError('Seleziona un voto a stelle complessivo (da 1 a 5) prima di pubblicare.');
           return;
         }
-        const finalComment = comment.trim() || 'Esperienza complessiva registrata.';
+        const finalComment = comment.trim();
         const finalSegment = streetSegment.trim().slice(0, 60);
         const textToCheck = `${finalSegment} ${finalComment}`.trim();
 
