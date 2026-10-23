@@ -1492,6 +1492,37 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       return 0;
     };
 
+    // Calcola il punteggio finale di una recensione: 100% voto globale (Flash) oppure media ponderata (40% globale + 60% categorie tecniche) se approfondita
+    const computeWeightedReviewRating = (overallScore, ratingsObj, isTechnicalActive) => {
+      const baseOverall = Number(overallScore) || 0;
+      if (!isTechnicalActive || baseOverall === 0) {
+        return baseOverall;
+      }
+
+      if (!ratingsObj || typeof ratingsObj !== 'object') {
+        return baseOverall;
+      }
+
+      const validVals = [];
+      const keys = (typeof CATEGORY_KEYS !== 'undefined' && Array.isArray(CATEGORY_KEYS)) ? CATEGORY_KEYS : Object.keys(ratingsObj);
+      keys.forEach(k => {
+        const rawVal = ratingsObj[k];
+        if (rawVal === null || rawVal === undefined || rawVal === 'N/A' || rawVal === '') return;
+        const num = Number(rawVal);
+        if (!isNaN(num) && num >= 1 && num <= 5) {
+          validVals.push(num);
+        }
+      });
+
+      if (validVals.length === 0) {
+        return baseOverall;
+      }
+
+      const mediaCategorie = validVals.reduce((acc, v) => acc + v, 0) / validVals.length;
+      const weighted = (baseOverall * 0.40) + (mediaCategorie * 0.60);
+      return Math.round(weighted * 10) / 10;
+    };
+
     // Calcolo matematico blindato di ratingOverall, categoryAverages (escludendo null/undefined/'N/A') e streetType prevalente
     const computeStreetAggregatesFromReviews = (reviewsList, streetName = '', fallbackStreetType = '') => {
       const safeReviews = Array.isArray(reviewsList) ? reviewsList : [];
@@ -1650,6 +1681,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         updatedAt: r.updatedAt || r.createdAt || null,
         streetType: normalizeStreetTypeLabel(r.streetType),
         overallRating: Number(getSingleReviewOverallScore(r).toFixed(1)),
+        rawOverallRating: r.rawOverallRating ? Number(r.rawOverallRating) : null,
         comment: r.comment || '',
         ratings: r.ratings || {},
         parkingTypes: Array.isArray(r.parkingTypes) ? r.parkingTypes : [],
@@ -4023,6 +4055,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               streetType: reviewPayload.streetType || oldRev.streetType || '🏡 Urbana',
               ratings: reviewPayload.ratings,
               overallRating: reviewPayload.overallRating,
+              rawOverallRating: reviewPayload.rawOverallRating || reviewPayload.overallRating,
               comment: reviewPayload.comment,
               streetSegment: (reviewPayload.streetSegment || '').trim().slice(0, 60),
               parkingTypes: reviewPayload.parkingTypes,
@@ -4052,6 +4085,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               createdAt: nowIso,
               updatedAt: nowIso,
               overallRating: reviewPayload.overallRating,
+              rawOverallRating: reviewPayload.rawOverallRating || reviewPayload.overallRating,
               comment: reviewPayload.comment,
               streetSegment: (reviewPayload.streetSegment || '').trim().slice(0, 60),
               ratings: reviewPayload.ratings,
@@ -4124,6 +4158,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           authorAvatar: authorAvatar,
           streetType: reviewPayload.streetType || '🏡 Urbana',
           ratingOverall: reviewPayload.overallRating,
+          rawOverallRating: reviewPayload.rawOverallRating || reviewPayload.overallRating,
           ratings: reviewPayload.ratings,
           parkingTypes: reviewPayload.parkingTypes,
           hasCyclePath: reviewPayload.hasCyclePath,
@@ -6508,6 +6543,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       // Voto complessivo Google Places style (1 a 5)
       const [overallRating, setOverallRating] = useState(() => {
         if (initialData) {
+          const rawStars = Number(initialData.rawOverallRating);
+          if (!isNaN(rawStars) && rawStars >= 1 && rawStars <= 5) return Math.round(rawStars);
           const old = getSingleReviewOverallScore(initialData);
           if (old >= 1 && old <= 5) return Math.round(old);
         }
@@ -6569,6 +6606,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const completedCategoriesCount = TECHNICAL_CATEGORIES.filter(cat => isCategoryCompleted(ratings[cat.key])).length;
       const areAllCategoriesCompleted = completedCategoriesCount === TECHNICAL_CATEGORIES.length;
 
+      // Calcolo dinamico del voto bilanciato (40% sintetico + 60% categorie tecniche)
+      const balancedScore = useMemo(() => {
+        return computeWeightedReviewRating(overallRating, ratings, isAccordionOpen);
+      }, [overallRating, ratings, isAccordionOpen]);
+
       const isPublishDisabled =
         overallRating === 0 ||
         isCheckingModeration ||
@@ -6580,7 +6622,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         if (initialData) {
           const loadedType = resolveInitialStreetType();
           setStreetType(loadedType);
-          const old = getSingleReviewOverallScore(initialData);
+          const rawStars = Number(initialData.rawOverallRating);
+          const old = (!isNaN(rawStars) && rawStars >= 1 && rawStars <= 5) ? rawStars : getSingleReviewOverallScore(initialData);
           setOverallRating(old >= 1 && old <= 5 ? Math.round(old) : 0);
           setRatings(buildRatingsState());
           const hadTechnical = TECHNICAL_CATEGORIES.some(cat => {
@@ -6717,11 +6760,15 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           }
         });
 
+        // Calcola il punteggio finale di ratingOverall: 100% sintetico se flash, oppure media ponderata (40% sintetico + 60% categorie) se approfondita
+        const finalCalculatedRating = computeWeightedReviewRating(overallRating, finalRatings, includeTechnical);
+
         try {
           await onSubmit({
             userName: currentUser ? currentUser.name : 'Tu (Cittadino)',
             streetType: streetType,
-            overallRating: overallRating,
+            overallRating: finalCalculatedRating,
+            rawOverallRating: overallRating,
             ratings: finalRatings,
             comment: finalComment,
             streetSegment: finalSegment,
@@ -6758,7 +6805,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   ⚡ +{liveXP.totalXP} XP
                 </span>
                 <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                  ★ {overallRating > 0 ? overallRating : '-'}
+                  ★ {isAccordionOpen && overallRating > 0 ? balancedScore.toFixed(1) : (overallRating > 0 ? overallRating : '-')}
                 </span>
                 <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
                   <IconClose size={20} />
@@ -6872,6 +6919,15 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     </button>
                   ))}
                 </div>
+
+                {/* Feedback Visivo Dinamico: Voto Bilanciato quando l'accordion tecnico è aperto */}
+                {isAccordionOpen && overallRating > 0 && (
+                  <div className="bg-amber-100/90 border border-amber-300 text-amber-950 px-3.5 py-2 rounded-2xl flex items-center justify-center gap-1.5 text-center shadow-xs animate-fade-in">
+                    <span className="text-xs sm:text-sm font-black tracking-tight">
+                      ⭐ Voto bilanciato della recensione: ★ {balancedScore.toFixed(1)} (40% sintetico + 60% tecnico)
+                    </span>
+                  </div>
+                )}
 
                 {/* Campo Commento Essenziale */}
                 <div className="space-y-1.5 pt-1">
@@ -7183,6 +7239,15 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
               {/* Bottoni e link footer modale */}
               <div className="space-y-2 pt-1 pb-1">
+                {/* Feedback Visivo Dinamico sopra il pulsante Pubblica */}
+                {isAccordionOpen && overallRating > 0 && (
+                  <div className="bg-amber-100 border border-amber-300 text-amber-950 px-3.5 py-2 rounded-2xl flex items-center justify-center gap-1.5 text-center shadow-xs animate-fade-in">
+                    <span className="text-xs sm:text-sm font-black tracking-tight">
+                      ⭐ Voto bilanciato della recensione: ★ {balancedScore.toFixed(1)} (40% sintetico + 60% tecnico)
+                    </span>
+                  </div>
+                )}
+
                 {/* Pulsante primario chiaro ad alto contrasto: "Pubblica" */}
                 <button
                   type="submit"
