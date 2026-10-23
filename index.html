@@ -1381,6 +1381,14 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       { key: 'laneWidth', label: 'Larghezza carreggiata (manovra, spazio)', icon: '↔️' },
     ];
 
+    const ROAD_OBSTACLE_OPTIONS = [
+      '⚠️ Sottopasso molto basso (< 2.3m - solo auto)',
+      '⚠️ Sottopasso medio (< 3.2m - no camper alti)',
+      '⚠️ Strettoia / Passaggio critico',
+      '⚠️ Salita/Discesa ripida',
+      '⚠️ Limite di portata / Peso',
+    ];
+
     // Timestamp numerico (ms) per ordinamento cronologico decrescente (dalla più recente alla più vecchia)
     const parseReviewChronologicalMs = (rev) => {
       const raw = rev?.updatedAt || rev?.createdAt;
@@ -1491,6 +1499,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const parkingTypes = Array.from(new Set(safeReviews.flatMap(r => r.parkingTypes || [])));
       const hasCyclePath = safeReviews.some(r => Boolean(r.hasCyclePath));
       const amenities = Array.from(new Set(safeReviews.flatMap(r => r.amenities || [])));
+      const roadObstacles = Array.from(new Set(safeReviews.flatMap(r => r.roadObstacles || [])));
 
       return {
         streetType,
@@ -1499,6 +1508,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         parkingTypes,
         hasCyclePath,
         amenities,
+        roadObstacles,
       };
     };
 
@@ -1614,6 +1624,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         parkingTypes: Array.isArray(r.parkingTypes) ? r.parkingTypes : [],
         hasCyclePath: Boolean(r.hasCyclePath),
         amenities: Array.isArray(r.amenities) ? r.amenities : [],
+        roadObstacles: Array.isArray(r.roadObstacles) ? r.roadObstacles : [],
         awardedMilestones: Array.isArray(r.awardedMilestones) ? r.awardedMilestones : [],
       };
     };
@@ -1656,6 +1667,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         parkingTypes,
         hasCyclePath,
         amenities,
+        roadObstacles,
       } = computeStreetAggregatesFromReviews(safeReviews, streetName, fallbackMeta?.streetType);
 
       // Determina l'autore Pioniere (prima recensione storica della via per timestamp createdAt)
@@ -1690,6 +1702,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         parkingTypes,
         hasCyclePath,
         amenities,
+        roadObstacles,
         pioneerAuthorId,
         pioneerReviewId,
         pioneerAuthorName,
@@ -1733,6 +1746,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         ? Array.from(new Set([...rawAmenities, ...preservedReviews.flatMap(r => r.amenities || [])]))
         : rawAmenities;
 
+      const rawObstacles = Array.isArray(docData.roadObstacles) ? docData.roadObstacles : [];
+      const mergedRoadObstacles = preservedReviews.length > 0
+        ? Array.from(new Set([...rawObstacles, ...preservedReviews.flatMap(r => r.roadObstacles || [])]))
+        : rawObstacles;
+
       const mergedCyclePath = Boolean(docData.hasCyclePath) || preservedReviews.some(r => Boolean(r.hasCyclePath));
       const resolvedStreetType =
         normalizeStreetTypeLabel(docData.streetType) ||
@@ -1755,6 +1773,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         commonParkingTypes: mergedParking,
         hasCyclePath: mergedCyclePath,
         amenities: mergedAmenities,
+        roadObstacles: mergedRoadObstacles,
         pioneerAuthorId: docData.pioneerAuthorId || existingStreet?.pioneerAuthorId || null,
         pioneerReviewId: docData.pioneerReviewId || existingStreet?.pioneerReviewId || null,
         pioneerAuthorName: docData.pioneerAuthorName || existingStreet?.pioneerAuthorName || '',
@@ -2467,6 +2486,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const [filterDrinkingFountain, setFilterDrinkingFountain] = useState(false);
       const [filterDogArea, setFilterDogArea] = useState(false);
       const [filterPlayground, setFilterPlayground] = useState(false);
+      const [filterRoadObstacles, setFilterRoadObstacles] = useState(false);
 
       const hasAnyActiveFilter = Boolean(
         filterStreetType ||
@@ -2478,7 +2498,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         filterCyclePath ||
         filterDrinkingFountain ||
         filterDogArea ||
-        filterPlayground
+        filterPlayground ||
+        filterRoadObstacles
       );
 
       const resetAllFilters = () => {
@@ -2492,6 +2513,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         setFilterDrinkingFountain(false);
         setFilterDogArea(false);
         setFilterPlayground(false);
+        setFilterRoadObstacles(false);
       };
 
       const mapContainerRef = useRef(null);
@@ -2839,6 +2861,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     streetType: onDemandAgg.streetType,
                     avgOverallRating: onDemandAgg.ratingOverall || s.avgOverallRating,
                     categoryAverages: onDemandAgg.categoryAverages,
+                    roadObstacles: onDemandAgg.roadObstacles,
                   } : {}),
                   reviews: formattedReviews,
                   reviewsCount: Math.max(s.reviewsCount || 0, formattedReviews.length),
@@ -2861,6 +2884,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   streetType: onDemandAgg.streetType,
                   avgOverallRating: onDemandAgg.ratingOverall || prevSel.avgOverallRating,
                   categoryAverages: onDemandAgg.categoryAverages,
+                  roadObstacles: onDemandAgg.roadObstacles,
                 } : {}),
                 reviews: formattedReviews,
                 reviewsCount: Math.max(prevSel.reviewsCount || 0, formattedReviews.length),
@@ -3417,9 +3441,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           if (filterDrinkingFountain && !streetAmenities.includes('DRINKING_FOUNTAIN')) return false;
           if (filterDogArea && !(streetAmenities.includes('DOG_AREA') || streetAmenities.includes('Area Cani'))) return false;
           if (filterPlayground && !(streetAmenities.includes('PLAYGROUND') || streetAmenities.includes('Area Giochi'))) return false;
+
+          // 4. Filtro Ostacoli Fisici & Sottopassi
+          if (filterRoadObstacles && (!Array.isArray(s.roadObstacles) || s.roadObstacles.length === 0)) return false;
+
           return true;
         });
-      }, [streets, filterStreetType, filterCategoryThresholds, filterEvCharging, filterDisabledParking, filterPinkParking, filterLoadingZone, filterCyclePath, filterDrinkingFountain, filterDogArea, filterPlayground]);
+      }, [streets, filterStreetType, filterCategoryThresholds, filterEvCharging, filterDisabledParking, filterPinkParking, filterLoadingZone, filterCyclePath, filterDrinkingFountain, filterDogArea, filterPlayground, filterRoadObstacles]);
 
       // OTTIMIZZAZIONE VIEWPORT RENDERING (Zoom >= 14): renderizza nel DOM solo i marker nell'area visibile (+ margine di buffer)
       const viewportStreets = useMemo(() => {
@@ -3791,6 +3819,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             hasCyclePath: false,
             commonParkingTypes: [],
             amenities: [],
+            roadObstacles: [],
             categoryAverages: {
               roadSurface: null, groundSignage: null, verticalSignage: null,
               parkingQuantity: null, sidewalkQuality: null, lighting: null,
@@ -4004,6 +4033,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             parkingTypes: mergedParking,
             hasCyclePath: mergedCycle,
             amenities: mergedAmenities,
+            roadObstacles: mergedObstacles,
           } = computeStreetAggregatesFromReviews(updatedReviews, canonicalStreetName, reviewPayload.streetType || s.streetType);
 
           return {
@@ -4020,6 +4050,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             commonParkingTypes: mergedParking,
             hasCyclePath: mergedCycle,
             amenities: mergedAmenities,
+            roadObstacles: mergedObstacles,
             pioneerAuthorId: s.pioneerAuthorId || (isPioneerForThisStreet ? authorId : null),
             reviews: updatedReviews,
             reviewsLoaded: true,
@@ -4060,6 +4091,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           parkingTypes: reviewPayload.parkingTypes,
           hasCyclePath: reviewPayload.hasCyclePath,
           amenities: reviewPayload.amenities || [],
+          roadObstacles: Array.isArray(reviewPayload.roadObstacles) ? reviewPayload.roadObstacles : [],
           comment: reviewPayload.comment,
           streetSegment: (reviewPayload.streetSegment || '').trim().slice(0, 60),
           awardedMilestones: Array.from(awardedMilestonesSet),
@@ -4362,6 +4394,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           hasCyclePath: false,
           commonParkingTypes: [],
           amenities: [],
+          roadObstacles: [],
           pioneerAuthorId: null,
           pioneerReviewId: null,
           pioneerAuthorName: '',
@@ -4398,6 +4431,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               parkingTypes: mergedParking,
               hasCyclePath: mergedCycle,
               amenities: mergedAmenities,
+              roadObstacles: mergedObstacles,
             } = computeStreetAggregatesFromReviews(remainingRevs, canonicalStreetName, s.streetType);
 
             let oldestRev = remainingRevs[remainingRevs.length - 1] || null;
@@ -4422,6 +4456,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               commonParkingTypes: mergedParking,
               hasCyclePath: mergedCycle,
               amenities: mergedAmenities,
+              roadObstacles: mergedObstacles,
               pioneerAuthorId: nextPioneerId,
               pioneerReviewId: oldestRev?.id || null,
               pioneerAuthorName: oldestRev?.user || oldestRev?.authorName || '',
@@ -5295,6 +5330,17 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
             <button
               type="button"
+              onClick={() => setFilterRoadObstacles(!filterRoadObstacles)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                filterRoadObstacles ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-amber-500/30 font-black' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <span>⚠️</span>
+              <span>Ostacoli / Sottopassi</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setFilterEvCharging(!filterEvCharging)}
               className={`px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
                 filterEvCharging ? 'bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/20' : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -5730,6 +5776,31 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                         </button>
                       );
                     })()}
+
+                    {/* AVVISO OSTACOLI & LIMITI DI SAGOMA (CAMPER / MEZZI INGOMBRANTI) */}
+                    {Array.isArray(selectedStreet.roadObstacles) && selectedStreet.roadObstacles.length > 0 && (
+                      <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3.5 space-y-2 shadow-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base leading-none">⚠️</span>
+                          <h4 className="text-xs font-black uppercase tracking-wider text-amber-950">
+                            Ostacoli &amp; Limiti di Sagoma Segnalati ({selectedStreet.roadObstacles.length})
+                          </h4>
+                        </div>
+                        <p className="text-[11px] text-amber-900 leading-snug">
+                          Attenzione per camper, furgoni e mezzi ingombranti: la community segnala le seguenti limitazioni:
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {selectedStreet.roadObstacles.map((obs, idx) => (
+                            <span
+                              key={idx}
+                              className="text-xs font-bold bg-amber-200/90 text-amber-950 border border-amber-400 px-2.5 py-1 rounded-xl shadow-2xs inline-flex items-center gap-1"
+                            >
+                              {obs}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
@@ -6451,6 +6522,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const [parkingTypes, setParkingTypes] = useState(initialData?.parkingTypes || ['FREE']);
       const [hasCyclePath, setHasCyclePath] = useState(initialData?.hasCyclePath || false);
       const [amenities, setAmenities] = useState(initialData?.amenities || []);
+      const [roadObstacles, setRoadObstacles] = useState(() => Array.isArray(initialData?.roadObstacles) ? initialData.roadObstacles : []);
       const [streetSegment, setStreetSegment] = useState(initialData?.streetSegment || '');
       const [comment, setComment] = useState(initialData?.comment || '');
       const [moderationError, setModerationError] = useState('');
@@ -6469,6 +6541,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           setParkingTypes(initialData.parkingTypes || []);
           setHasCyclePath(initialData.hasCyclePath || false);
           setAmenities(initialData.amenities || []);
+          setRoadObstacles(Array.isArray(initialData.roadObstacles) ? initialData.roadObstacles : []);
           setStreetSegment(initialData.streetSegment || '');
           setComment(initialData.comment || '');
         } else {
@@ -6481,6 +6554,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           setParkingTypes(['FREE']);
           setHasCyclePath(false);
           setAmenities([]);
+          setRoadObstacles([]);
           setStreetSegment('');
           setComment('');
         }
@@ -6532,6 +6606,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
       const toggleAmenity = (val) => {
         setAmenities(prev => prev.includes(val) ? prev.filter(a => a !== val) : [...prev, val]);
+      };
+
+      const toggleRoadObstacle = (obs) => {
+        setHasTouchedTechnical(true);
+        setRoadObstacles(prev => prev.includes(obs) ? prev.filter(o => o !== obs) : [...prev, obs]);
       };
 
       // Calcolo live degli XP guadagnati
@@ -6595,6 +6674,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             parkingTypes: parkingTypes,
             hasCyclePath: hasCyclePath,
             amenities: amenities,
+            roadObstacles: roadObstacles,
           });
         } catch (err) {
           console.warn('[ReviewModal] Moderazione AI o invio recensione:', err);
@@ -6962,6 +7042,33 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                               }`}
                             >
                               {name} {isSelected && '✓'}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Tag Ostacoli & Limiti di Sagoma (Camper / Mezzi alti e larghi) */}
+                    <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                      <p className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
+                        <span>⚠️</span>
+                        <span>Ostacoli &amp; Limiti di Sagoma (Camper / Mezzi alti e larghi):</span>
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {ROAD_OBSTACLE_OPTIONS.map((obs) => {
+                          const isSelected = roadObstacles.includes(obs);
+                          return (
+                            <button
+                              key={obs}
+                              type="button"
+                              onClick={() => toggleRoadObstacle(obs)}
+                              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs'
+                                  : 'bg-amber-50/70 text-amber-900 border-amber-200 hover:bg-amber-100'
+                              }`}
+                            >
+                              {obs} {isSelected && '✓'}
                             </button>
                           );
                         })}
