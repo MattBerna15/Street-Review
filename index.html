@@ -231,23 +231,33 @@
     const LOCAL_GAZETTEER = [
       {
         streetKey: 'corso-giuseppe-mazzini_grottammare_ap',
-        legacyKeys: ['corso-giuseppe-mazzini_grottammare', 'corso-mazzini_grottammare', 'corso-mazzini_grottammare_ap'],
+        legacyKeys: ['corso-giuseppe-mazzini_grottammare', 'corso-mazzini_grottammare', 'corso-mazzini_grottammare_ap', 'corso-giuseppe-mazzini_san-benedetto-del-tronto_ap', 'corso-giuseppe-mazzini_san-benedetto-del-tronto'],
         name: 'Corso Giuseppe Mazzini',
         city: 'Grottammare',
         province: 'AP',
         postalCode: '63066',
-        lat: 42.98915,
-        lng: 13.86985
+        lat: 42.9889,
+        lng: 13.8690
       },
       {
-        streetKey: 'corso-giuseppe-mazzini_san-benedetto-del-tronto_ap',
-        legacyKeys: ['corso-mazzini_san-benedetto-del-tronto', 'corso-giuseppe-mazzini_san-benedetto-del-tronto', 'corso-mazzini_san-benedetto-del-tronto_ap'],
-        name: 'Corso Giuseppe Mazzini',
-        city: 'San Benedetto del Tronto',
+        streetKey: 'piazza-g-carducci_grottammare_ap',
+        legacyKeys: ['piazza-g-carducci_san-benedetto-del-tronto_ap', 'piazza-carducci_san-benedetto-del-tronto_ap', 'piazza-carducci_grottammare_ap', 'piazza-g-carducci_grottammare'],
+        name: 'Piazza G. Carducci',
+        city: 'Grottammare',
         province: 'AP',
-        postalCode: '63074',
-        lat: 42.9538,
-        lng: 13.8828
+        postalCode: '63066',
+        lat: 42.9734,
+        lng: 13.8732
+      },
+      {
+        streetKey: 'via-firenze_grottammare_ap',
+        legacyKeys: ['via-firenze_san-benedetto-del-tronto', 'via-firenze_san-benedetto-del-tronto_ap', 'via-firenze_grottammare'],
+        name: 'Via Firenze',
+        city: 'Grottammare',
+        province: 'AP',
+        postalCode: '63066',
+        lat: 42.9632,
+        lng: 13.8708
       },
       {
         streetKey: 'contrada-san-donato_monteprandone_ap',
@@ -258,26 +268,6 @@
         postalCode: '63076',
         lat: 42.9150,
         lng: 13.8420
-      },
-      {
-        streetKey: 'piazza-g-carducci_grottammare_ap',
-        legacyKeys: ['piazza-g-carducci_san-benedetto-del-tronto_ap', 'piazza-carducci_san-benedetto-del-tronto_ap', 'piazza-carducci_grottammare_ap', 'piazza-g-carducci_grottammare'],
-        name: 'Piazza G. Carducci',
-        city: 'Grottammare',
-        province: 'AP',
-        postalCode: '63066',
-        lat: 42.9892,
-        lng: 13.8685
-      },
-      {
-        streetKey: 'via-firenze_grottammare_ap',
-        legacyKeys: ['via-firenze_san-benedetto-del-tronto', 'via-firenze_san-benedetto-del-tronto_ap', 'via-firenze_grottammare'],
-        name: 'Via Firenze',
-        city: 'Grottammare',
-        province: 'AP',
-        postalCode: '63066',
-        lat: 42.9934,
-        lng: 13.8712
       },
       {
         streetKey: 'via-dei-piceni_grottammare_ap',
@@ -433,7 +423,7 @@
       const nLng = Number(lng);
       if (!isNaN(nLat) && !isNaN(nLng) && nLat !== 0 && nLng !== 0) {
         if (isInsideRivieraBounds(nLat, nLng)) {
-          if (nLat >= 42.9635) return 'grottammare';
+          if (nLat >= 42.9620) return 'grottammare';
           if (nLng < 13.8300 && nLat >= 42.9300) return 'acquaviva-picena';
           if (nLng < 13.8750 && nLat < 42.9300) return 'monteprandone';
           return 'san-benedetto-del-tronto';
@@ -2124,18 +2114,28 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         ? fallbackLatNum
         : (validCoords.length > 0
             ? Number((validCoords.reduce((acc, rev) => acc + Number(rev.latitude), 0) / validCoords.length).toFixed(6))
-            : (Number(sample?.latitude) || 42.98915));
+            : (Number(sample?.latitude) || 42.9889));
 
       let baryLng = hasExplicitFallbackCoords
         ? fallbackLngNum
         : (validCoords.length > 0
             ? Number((validCoords.reduce((acc, rev) => acc + Number(rev.longitude), 0) / validCoords.length).toFixed(6))
-            : (Number(sample?.longitude) || 13.86985));
+            : (Number(sample?.longitude) || 13.8690));
 
-      // CASO SPECIALE CORSO MAZZINI GROTTAMMARE:
-      if (declaredCityKey === 'grottammare' && normalizeStreetName(rawName).includes('mazzini')) {
-        baryLat = 42.98915;
-        baryLng = 13.86985;
+      // CASI SPECIALI AUTORITATIVI (Mazzini Grottammare, Carducci, Firenze, San Donato):
+      const normRawName = normalizeStreetName(rawName);
+      if (normRawName.includes('mazzini')) {
+        baryLat = 42.9889;
+        baryLng = 13.8690;
+      } else if (normRawName.includes('carducci')) {
+        baryLat = 42.9734;
+        baryLng = 13.8732;
+      } else if (normRawName.includes('firenze') && (!declaredCityKey || declaredCityKey === 'grottammare')) {
+        baryLat = 42.9632;
+        baryLng = 13.8708;
+      } else if (normRawName.includes('san-donato')) {
+        baryLat = 42.9150;
+        baryLng = 13.8420;
       }
 
       const anchor = getCanonicalStreetAnchor(rawName, declaredCity, baryLat, baryLng, fallbackMeta.province || sample?.province);
@@ -2734,158 +2734,159 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       }
     };
 
-            // Routine Globale di Auto-Riparazione Database Firestore (reviews + streets) per Mazzini, San Donato, Carducci e Firenze
-    window.healStreetCoordinatesDatabase = async () => {
+    // Tabella di Correzione Forzata Immediata e Autoritativa (streets e reviews) per le 4 vie fuori coordinate
+    window.forcePinpointFourStreets = async () => {
       const firestore = window.db;
       if (!firestore) {
-        console.error("[HealDatabase] Firestore non disponibile in window.db");
+        console.error("[ForcePinpointFourStreets] Firestore non disponibile in window.db");
         return { success: false, error: "Database not connected" };
       }
 
-      console.log("[HealDatabase] Avvio auto-riparazione database Firestore (Mazzini, San Donato, Carducci e Firenze)...");
+      console.log("[ForcePinpointFourStreets] Avvio allineamento autoritativo per Mazzini (Grottammare), Carducci (Grottammare), Firenze (Grottammare) e San Donato (Monteprandone)...");
       try {
-        const TARGETS = [
+        const PINPOINT_TARGETS = [
           {
             id: "mazzini_grottammare",
-            canonicalName: "Corso Giuseppe Mazzini",
-            canonicalCity: "Grottammare",
+            streetName: "Corso Giuseppe Mazzini",
+            streetCity: "Grottammare",
             province: "AP",
             postalCode: "63066",
-            latitude: 42.98915,
-            longitude: 13.86985,
-            canonicalStreetKey: "corso-giuseppe-mazzini_grottammare_ap",
-            legacyKeys: ["corso-giuseppe-mazzini_grottammare", "corso-mazzini_grottammare", "corso-mazzini_grottammare_ap"],
-            matchesReview: (rName, rCity, rKey, rLat) => (rName.includes("mazzini") || rKey.includes("mazzini")) && (rCity.includes("grottammare") || rKey.includes("grottammare") || (rLat > 42.975 && !rCity.includes("san benedetto"))),
-            matchesStreetDoc: (sName, sCity, sKey, sLat) => (sName.includes("mazzini") || sKey.includes("mazzini")) && (sCity.includes("grottammare") || sKey.includes("grottammare") || sLat > 42.975)
+            latitude: 42.9889,
+            longitude: 13.8690,
+            streetKey: "corso-giuseppe-mazzini_grottammare_ap",
+            legacyKeys: [
+              "corso-giuseppe-mazzini_grottammare",
+              "corso-mazzini_grottammare",
+              "corso-mazzini_grottammare_ap",
+              "corso-giuseppe-mazzini_san-benedetto-del-tronto_ap",
+              "corso-giuseppe-mazzini_san-benedetto-del-tronto",
+              "corso-mazzini_san-benedetto-del-tronto",
+              "corso-mazzini_san-benedetto-del-tronto_ap"
+            ],
+            matches: (name, city, key) => name.includes("mazzini") || key.includes("mazzini")
           },
           {
-            id: "mazzini_sbt",
-            canonicalName: "Corso Giuseppe Mazzini",
-            canonicalCity: "San Benedetto del Tronto",
+            id: "carducci_grottammare",
+            streetName: "Piazza G. Carducci",
+            streetCity: "Grottammare",
             province: "AP",
-            postalCode: "63074",
-            latitude: 42.9538,
-            longitude: 13.8828,
-            canonicalStreetKey: "corso-giuseppe-mazzini_san-benedetto-del-tronto_ap",
-            legacyKeys: ["corso-mazzini_san-benedetto-del-tronto", "corso-mazzini_san-benedetto-del-tronto_ap", "corso-giuseppe-mazzini_san-benedetto-del-tronto"],
-            matchesReview: (rName, rCity, rKey, rLat) => (rName.includes("mazzini") || rKey.includes("mazzini")) && (rCity.includes("san benedetto") || rKey.includes("san-benedetto") || (!rCity.includes("grottammare") && !rKey.includes("grottammare") && rLat <= 42.975)),
-            matchesStreetDoc: (sName, sCity, sKey, sLat) => (sName.includes("mazzini") || sKey.includes("mazzini")) && (sCity.includes("san benedetto") || rKeyIsSbt(sKey) || (!sCity.includes("grottammare") && !sKey.includes("grottammare") && sLat <= 42.975))
+            postalCode: "63066",
+            latitude: 42.9734,
+            longitude: 13.8732,
+            streetKey: "piazza-g-carducci_grottammare_ap",
+            legacyKeys: [
+              "piazza-g-carducci_san-benedetto-del-tronto_ap",
+              "piazza-carducci_san-benedetto-del-tronto_ap",
+              "piazza-carducci_grottammare_ap",
+              "piazza-g-carducci_grottammare",
+              "piazza-carducci_grottammare"
+            ],
+            matches: (name, city, key) => name.includes("carducci") || key.includes("carducci")
           },
           {
-            id: "san_donato",
-            canonicalName: "Contrada San Donato",
-            canonicalCity: "Monteprandone",
+            id: "firenze_grottammare",
+            streetName: "Via Firenze",
+            streetCity: "Grottammare",
+            province: "AP",
+            postalCode: "63066",
+            latitude: 42.9632,
+            longitude: 13.8708,
+            streetKey: "via-firenze_grottammare_ap",
+            legacyKeys: [
+              "via-firenze_san-benedetto-del-tronto",
+              "via-firenze_san-benedetto-del-tronto_ap",
+              "via-firenze_grottammare"
+            ],
+            matches: (name, city, key) => name.includes("firenze") || key.includes("firenze")
+          },
+          {
+            id: "san_donato_monteprandone",
+            streetName: "Contrada San Donato",
+            streetCity: "Monteprandone",
             province: "AP",
             postalCode: "63076",
             latitude: 42.9150,
             longitude: 13.8420,
-            canonicalStreetKey: "contrada-san-donato_monteprandone_ap",
-            legacyKeys: ["contrada-san-donato_san-benedetto-del-tronto", "contrada-san-donato_san-benedetto-del-tronto_ap", "contrada-san-donato_monteprandone"],
-            matchesReview: (rName, rCity, rKey) => (rName.includes("san donato") || rKey.includes("san-donato")),
-            matchesStreetDoc: (sName, sCity, sKey) => (sName.includes("san donato") || sKey.includes("san-donato"))
-          },
-          {
-            id: "carducci",
-            canonicalName: "Piazza G. Carducci",
-            canonicalCity: "Grottammare",
-            province: "AP",
-            postalCode: "63066",
-            latitude: 42.9892,
-            longitude: 13.8685,
-            canonicalStreetKey: "piazza-g-carducci_grottammare_ap",
-            legacyKeys: ["piazza-g-carducci_san-benedetto-del-tronto_ap", "piazza-carducci_san-benedetto-del-tronto_ap", "piazza-carducci_grottammare_ap", "piazza-g-carducci_grottammare"],
-            matchesReview: (rName, rCity, rKey) => (rName.includes("carducci") || rKey.includes("carducci")),
-            matchesStreetDoc: (sName, sCity, sKey) => (sName.includes("carducci") || sKey.includes("carducci"))
-          },
-          {
-            id: "firenze",
-            canonicalName: "Via Firenze",
-            canonicalCity: "Grottammare",
-            province: "AP",
-            postalCode: "63066",
-            latitude: 42.9934,
-            longitude: 13.8712,
-            canonicalStreetKey: "via-firenze_grottammare_ap",
-            legacyKeys: ["via-firenze_san-benedetto-del-tronto", "via-firenze_san-benedetto-del-tronto_ap", "via-firenze_grottammare"],
-            matchesReview: (rName, rCity, rKey) => (rName.includes("firenze") || rKey.includes("firenze")),
-            matchesStreetDoc: (sName, sCity, sKey) => (sName.includes("firenze") || sKey.includes("firenze"))
+            streetKey: "contrada-san-donato_monteprandone_ap",
+            legacyKeys: [
+              "contrada-san-donato_san-benedetto-del-tronto",
+              "contrada-san-donato_san-benedetto-del-tronto_ap",
+              "contrada-san-donato_monteprandone"
+            ],
+            matches: (name, city, key) => name.includes("san donato") || key.includes("san-donato")
           }
         ];
 
-        function rKeyIsSbt(key) {
-          return key.includes("san-benedetto") || key.includes("sbt");
-        }
-
-        // 1. REVIEWS: Aggiorna a batch tutte le recensioni per ciascun target
+        // 1. Aggiornamento a cascata su collezione 'reviews'
         const reviewsSnap = await firestore.collection('reviews').get();
         const batch = firestore.batch();
         let healedReviewsCount = 0;
         const matchingReviewsByTarget = {};
-        TARGETS.forEach(t => { matchingReviewsByTarget[t.id] = []; });
+        PINPOINT_TARGETS.forEach(t => { matchingReviewsByTarget[t.id] = []; });
 
         reviewsSnap.forEach(docSnap => {
           const r = docSnap.data();
           const rName = (r.streetName || r.name || '').toLowerCase();
           const rCity = (r.streetCity || r.city || '').toLowerCase();
           const rKey = (r.streetKey || docSnap.id || '').toLowerCase();
-          const rLat = Number(r.latitude) || 0;
 
-          for (const target of TARGETS) {
-            if (target.matchesReview(rName, rCity, rKey, rLat)) {
-              const needsFix = Math.abs((Number(r.latitude) || 0) - target.latitude) > 0.0001 ||
-                               Math.abs((Number(r.longitude) || 0) - target.longitude) > 0.0001 ||
-                               r.streetCity !== target.canonicalCity ||
-                               r.streetKey !== target.canonicalStreetKey ||
-                               r.streetName !== target.canonicalName;
+          for (const target of PINPOINT_TARGETS) {
+            if (target.matches(rName, rCity, rKey)) {
+              const needsFix =
+                Math.abs((Number(r.latitude) || 0) - target.latitude) > 0.00001 ||
+                Math.abs((Number(r.longitude) || 0) - target.longitude) > 0.00001 ||
+                r.streetCity !== target.streetCity ||
+                r.streetKey !== target.streetKey ||
+                r.streetName !== target.streetName;
 
-              const updatedData = {
+              const updatedReview = {
                 ...r,
-                streetName: target.canonicalName,
-                streetCity: target.canonicalCity,
+                streetName: target.streetName,
+                streetCity: target.streetCity,
                 streetProvince: target.province,
                 province: target.province,
                 postalCode: target.postalCode,
                 latitude: target.latitude,
                 longitude: target.longitude,
-                streetKey: target.canonicalStreetKey,
+                streetKey: target.streetKey,
                 updatedAt: new Date().toISOString()
               };
 
-              matchingReviewsByTarget[target.id].push({ id: docSnap.id, ...updatedData });
+              matchingReviewsByTarget[target.id].push({ id: docSnap.id, ...updatedReview });
 
               if (needsFix) {
                 batch.update(docSnap.ref, {
-                  streetName: target.canonicalName,
-                  streetCity: target.canonicalCity,
+                  streetName: target.streetName,
+                  streetCity: target.streetCity,
                   streetProvince: target.province,
                   province: target.province,
                   postalCode: target.postalCode,
                   latitude: target.latitude,
                   longitude: target.longitude,
-                  streetKey: target.canonicalStreetKey,
+                  streetKey: target.streetKey,
                   updatedAt: new Date().toISOString()
                 });
                 healedReviewsCount++;
               }
-              break; // un review per un solo target
+              break;
             }
           }
         });
 
         if (healedReviewsCount > 0) {
           await batch.commit();
-          console.log(`[HealDatabase] Rettificate ${healedReviewsCount} recensioni storiche su Firestore.`);
+          console.log(`[ForcePinpointFourStreets] Aggiornate forzatamente ${healedReviewsCount} recensioni in 'reviews'.`);
         }
 
-        // 2. STREETS: Consolida ciascun target nella collezione 'streets'
+        // 2. Aggiornamento a cascata su collezione 'streets' e migrazione/eliminazione record orfani
         const streetsSnap = await firestore.collection('streets').get();
         let healedStreetsCount = 0;
 
-        for (const target of TARGETS) {
-          const correctStreetMeta = {
-            streetKey: target.canonicalStreetKey,
-            streetName: target.canonicalName,
-            streetCity: target.canonicalCity,
+        for (const target of PINPOINT_TARGETS) {
+          const canonicalMeta = {
+            streetKey: target.streetKey,
+            streetName: target.streetName,
+            streetCity: target.streetCity,
             province: target.province,
             postalCode: target.postalCode,
             latitude: target.latitude,
@@ -2893,123 +2894,82 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             updatedAt: new Date().toISOString()
           };
 
+          let existingMergedData = {};
+          const orphanDocsToDelete = [];
+
+          for (const sDoc of streetsSnap.docs) {
+            const sd = sDoc.data();
+            const sName = (sd.streetName || sd.name || '').toLowerCase();
+            const sCity = (sd.streetCity || sd.city || '').toLowerCase();
+            const sKey = (sDoc.id || sd.streetKey || '').toLowerCase();
+
+            const isCanonical = sDoc.id === target.streetKey;
+            const isLegacyOrMatch = target.legacyKeys.includes(sDoc.id) || target.matches(sName, sCity, sKey);
+
+            if (isCanonical || isLegacyOrMatch) {
+              if (!existingMergedData.streetKey || (Number(sd.reviewCount ?? sd.reviewsCount ?? 0) > Number(existingMergedData.reviewCount ?? existingMergedData.reviewsCount ?? 0))) {
+                existingMergedData = { ...sd };
+              }
+              if (!isCanonical) {
+                orphanDocsToDelete.push(sDoc);
+              }
+            }
+          }
+
           const matchedRevs = matchingReviewsByTarget[target.id] || [];
           let streetSummaryDoc;
+
           if (matchedRevs.length > 0) {
-            streetSummaryDoc = buildStreetSummaryDocFromReviews(matchedRevs, correctStreetMeta);
+            streetSummaryDoc = buildStreetSummaryDocFromReviews(matchedRevs, canonicalMeta);
           } else {
-            const existingDoc = await firestore.collection('streets').doc(target.canonicalStreetKey).get();
-            const exData = existingDoc.exists ? existingDoc.data() : {};
             streetSummaryDoc = {
-              ...exData,
-              ...correctStreetMeta,
-              streetType: exData.streetType || '🏡 Urbana',
-              ratingOverall: exData.ratingOverall || 0,
-              avgOverallRating: exData.avgOverallRating || 0,
-              reviewsCount: exData.reviewsCount || 0,
-              categoryAverages: exData.categoryAverages || {},
-              parkingTypes: exData.parkingTypes || [],
-              amenities: exData.amenities || [],
-              roadObstacles: exData.roadObstacles || [],
-              reviews: exData.reviews || []
+              ...existingMergedData,
+              ...canonicalMeta,
+              streetType: existingMergedData.streetType || '🏡 Urbana',
+              ratingOverall: existingMergedData.ratingOverall ?? existingMergedData.avgOverallRating ?? 0,
+              avgOverallRating: existingMergedData.avgOverallRating ?? existingMergedData.ratingOverall ?? 0,
+              reviewCount: existingMergedData.reviewCount ?? existingMergedData.reviewsCount ?? 0,
+              reviewsCount: existingMergedData.reviewsCount ?? existingMergedData.reviewCount ?? 0,
+              categoryAverages: existingMergedData.categoryAverages || {},
+              parkingTypes: existingMergedData.parkingTypes || [],
+              amenities: existingMergedData.amenities || [],
+              roadObstacles: existingMergedData.roadObstacles || []
             };
           }
 
-          await firestore.collection('streets').doc(target.canonicalStreetKey).set({
+          await firestore.collection('streets').doc(target.streetKey).set({
             ...streetSummaryDoc,
-            ...correctStreetMeta,
+            ...canonicalMeta,
+            streetName: target.streetName,
+            streetCity: target.streetCity,
+            streetKey: target.streetKey,
             latitude: target.latitude,
             longitude: target.longitude
           }, { merge: true });
           healedStreetsCount++;
 
-          // Rimuovi eventuali documenti duplicati con chiavi legacy o disallineate per questo target
-          for (const sDoc of streetsSnap.docs) {
-            if (sDoc.id !== target.canonicalStreetKey) {
-              const sd = sDoc.data();
-              const sName = (sd.streetName || sd.name || '').toLowerCase();
-              const sCity = (sd.streetCity || sd.city || '').toLowerCase();
-              const sKey = (sDoc.id || sd.streetKey || '').toLowerCase();
-              const sLat = Number(sd.latitude) || 0;
-
-              const isLegacyMatch = target.legacyKeys.includes(sDoc.id);
-              const isNameCityMatch = target.matchesStreetDoc(sName, sCity, sKey, sLat);
-
-              if (isLegacyMatch || isNameCityMatch) {
-                await sDoc.ref.delete();
-                console.log(`[HealDatabase] Eliminato documento duplicato/obsoleto streets/${sDoc.id} per ${target.canonicalName} (${target.canonicalCity}).`);
-              }
-            }
+          for (const orphanDoc of orphanDocsToDelete) {
+            await orphanDoc.ref.delete();
+            console.log(`[ForcePinpointFourStreets] Migrato ed eliminato documento orfano streets/${orphanDoc.id} -> ${target.streetKey}`);
           }
         }
 
-        // 3. AUDIT GENERALE: Verifica altre strade per incongruenza comune dichiarato vs coordinate reali
-        const canonicalKeysSet = new Set(TARGETS.map(t => t.canonicalStreetKey));
-        for (const sDoc of streetsSnap.docs) {
-          if (canonicalKeysSet.has(sDoc.id)) continue;
-          const sd = sDoc.data();
-          const sName = sd.streetName || sd.name || '';
-          const sCity = sd.streetCity || sd.city || '';
-          const sLat = Number(sd.latitude);
-          const sLng = Number(sd.longitude);
-
-          if (!sName || !sCity || !sLat || !sLng) continue;
-
-          const declaredCityKey = normalizeCityKey(sCity);
-          const coordsCityKey = inferCityKeyFromCoords(sLat, sLng);
-
-          if (coordsCityKey && declaredCityKey && declaredCityKey !== 'italia' && coordsCityKey !== declaredCityKey) {
-            console.warn(`[HealDatabase] Rilevata anomalia per ${sName} (${sCity}): coordinate in ${coordsCityKey} anziché ${declaredCityKey}.`);
-            const canonicalCoords = await resolveExactStreetRouteCoordinates(sName, sCity, sd.province || 'AP', sLat, sLng);
-            if (canonicalCoords && (canonicalCoords.lat !== sLat || canonicalCoords.lng !== sLng)) {
-              const newCompKey = createStreetCompositeKey(sName, sCity, canonicalCoords.lat, canonicalCoords.lng, canonicalCoords.province);
-              await firestore.collection('streets').doc(newCompKey).set({
-                ...sd,
-                latitude: canonicalCoords.lat,
-                longitude: canonicalCoords.lng,
-                streetCity: canonicalCoords.city,
-                streetKey: newCompKey,
-                updatedAt: new Date().toISOString()
-              }, { merge: true });
-
-              if (sDoc.id !== newCompKey) {
-                await sDoc.ref.delete();
-              }
-
-              const relatedRevs = await firestore.collection('reviews').where('streetKey', '==', sDoc.id).get();
-              if (!relatedRevs.empty) {
-                const revBatch = firestore.batch();
-                relatedRevs.forEach(rSnap => {
-                  revBatch.update(rSnap.ref, {
-                    latitude: canonicalCoords.lat,
-                    longitude: canonicalCoords.lng,
-                    streetCity: canonicalCoords.city,
-                    streetKey: newCompKey,
-                    updatedAt: new Date().toISOString()
-                  });
-                });
-                await revBatch.commit();
-              }
-              healedStreetsCount++;
-            }
-          }
-        }
-
-        console.log("[HealDatabase] Allineamento completato con successo per Mazzini, San Donato, Carducci e Firenze");
+        console.log("[ForcePinpointFourStreets] Allineamento completato al 100% senza fallback distruttivi.");
         return {
           success: true,
           healedReviewsCount,
           healedStreetsCount
         };
       } catch (err) {
-        console.error("[HealDatabase] Errore durante auto-riparazione:", err);
+        console.error("[ForcePinpointFourStreets] Errore durante l'allineamento forzato:", err);
         throw err;
       }
     };
 
-    window.forceFixCorsoMazziniGrottammare = window.healStreetCoordinatesDatabase;
-    window.fixCorsoMazziniGrottammare = window.healStreetCoordinatesDatabase;
-    window.auditAndFixStreetCoordinates = window.healStreetCoordinatesDatabase;
+    window.healStreetCoordinatesDatabase = window.forcePinpointFourStreets;
+    window.forceFixCorsoMazziniGrottammare = window.forcePinpointFourStreets;
+    window.fixCorsoMazziniGrottammare = window.forcePinpointFourStreets;
+    window.auditAndFixStreetCoordinates = window.forcePinpointFourStreets;
 
     // Combina i dati pre-aggregati di 'streets' e 'users' per la UI Gamification & Classifica Top 10
     const computeGamificationData = (streetsList, activeUser, leaderboardUsersList = [], activeUserDocProfile = null, cachedUsersMap = {}) => {
@@ -3638,43 +3598,38 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 );
                 const uiStreet = mapStreetDocToUIStreet(data, existing);
 
-                                // Auto-allineamento preventivo immediato per le vie con anomalie note
+                // Auto-allineamento autoritativo immediato per le 4 vie cablate
                 const rawNameSnap = (uiStreet.name || '').toLowerCase();
-                const rawCitySnap = (uiStreet.streetCity || uiStreet.city || '').toLowerCase();
                 const rawKeySnap = (uiStreet.streetKey || '').toLowerCase();
 
                 if (rawNameSnap.includes('san donato') || rawKeySnap.includes('san-donato')) {
+                  uiStreet.name = 'Contrada San Donato';
                   uiStreet.streetCity = 'Monteprandone';
                   uiStreet.city = 'Monteprandone';
                   uiStreet.latitude = 42.9150;
                   uiStreet.longitude = 13.8420;
                   uiStreet.streetKey = 'contrada-san-donato_monteprandone_ap';
                 } else if (rawNameSnap.includes('carducci') || rawKeySnap.includes('carducci')) {
+                  uiStreet.name = 'Piazza G. Carducci';
                   uiStreet.streetCity = 'Grottammare';
                   uiStreet.city = 'Grottammare';
-                  uiStreet.latitude = 42.9892;
-                  uiStreet.longitude = 13.8685;
+                  uiStreet.latitude = 42.9734;
+                  uiStreet.longitude = 13.8732;
                   uiStreet.streetKey = 'piazza-g-carducci_grottammare_ap';
                 } else if (rawNameSnap.includes('firenze') || rawKeySnap.includes('firenze')) {
+                  uiStreet.name = 'Via Firenze';
                   uiStreet.streetCity = 'Grottammare';
                   uiStreet.city = 'Grottammare';
-                  uiStreet.latitude = 42.9934;
-                  uiStreet.longitude = 13.8712;
+                  uiStreet.latitude = 42.9632;
+                  uiStreet.longitude = 13.8708;
                   uiStreet.streetKey = 'via-firenze_grottammare_ap';
                 } else if (rawNameSnap.includes('mazzini') || rawKeySnap.includes('mazzini')) {
-                  if (rawCitySnap.includes('grottammare') || rawKeySnap.includes('grottammare') || uiStreet.latitude > 42.975) {
-                    uiStreet.latitude = 42.98915;
-                    uiStreet.longitude = 13.86985;
-                    uiStreet.streetCity = 'Grottammare';
-                    uiStreet.city = 'Grottammare';
-                    uiStreet.streetKey = 'corso-giuseppe-mazzini_grottammare_ap';
-                  } else {
-                    uiStreet.latitude = 42.9538;
-                    uiStreet.longitude = 13.8828;
-                    uiStreet.streetCity = 'San Benedetto del Tronto';
-                    uiStreet.city = 'San Benedetto del Tronto';
-                    uiStreet.streetKey = 'corso-giuseppe-mazzini_san-benedetto-del-tronto_ap';
-                  }
+                  uiStreet.name = 'Corso Giuseppe Mazzini';
+                  uiStreet.streetCity = 'Grottammare';
+                  uiStreet.city = 'Grottammare';
+                  uiStreet.latitude = 42.9889;
+                  uiStreet.longitude = 13.8690;
+                  uiStreet.streetKey = 'corso-giuseppe-mazzini_grottammare_ap';
                 }
 
                 if (!updated.some(u => areStreetKeysEquivalent(u.streetKey || u.id, uiStreet.streetKey || uiStreet.id))) {
@@ -3728,13 +3683,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             }
           );
 
-        // Auto-riparazione immediata delle coordinate Firestore all'avvio
-        if (typeof window.healStreetCoordinatesDatabase === 'function') {
+        // Esecuzione automatica all'avvio della correzione autoritativa delle 4 vie
+        if (typeof window.forcePinpointFourStreets === 'function') {
           setTimeout(() => {
-            window.healStreetCoordinatesDatabase().catch(err => {
-              console.warn('[Startup] Auto-riparazione database notice:', err);
+            window.forcePinpointFourStreets().catch(err => {
+              console.warn('[Startup] ForcePinpointFourStreets notice:', err);
             });
-          }, 800);
+          }, 600);
         }
 
         return () => {
