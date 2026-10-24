@@ -276,8 +276,8 @@
         city: 'Monteprandone',
         province: 'AP',
         postalCode: '63076',
-        lat: 42.9150,
-        lng: 13.8420
+        lat: 42.91209543811305,
+        lng: 13.860065210654204
       },
       {
         streetKey: 'via-dei-piceni_grottammare_ap',
@@ -2157,8 +2157,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         baryLat = 42.9632;
         baryLng = 13.8708;
       } else if (normRawName.includes('san-donato')) {
-        baryLat = 42.9150;
-        baryLng = 13.8420;
+        baryLat = 42.91209543811305;
+        baryLng = 13.860065210654204;
       }
 
       const anchor = getCanonicalStreetAnchor(rawName, declaredCity, baryLat, baryLng, fallbackMeta.province || sample?.province);
@@ -2757,6 +2757,112 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       }
     };
 
+    // Routine Autoritaria di Riallineamento e Pulizia per Contrada San Donato (Monteprandone AP)
+    window.fixContradaSanDonatoMonteprandone = async () => {
+      const firestore = window.db;
+      if (!firestore) {
+        console.error("[FixSanDonato] Firestore non disponibile in window.db");
+        return { success: false, error: "Database not connected" };
+      }
+
+      console.log("[FixSanDonato] Avvio riallineamento definitivo per Contrada San Donato (Monteprandone AP)...");
+      try {
+        const canonicalLat = 42.91209543811305;
+        const canonicalLng = 13.860065210654204;
+        const canonicalStreetKey = "contrada-san-donato_monteprandone_ap";
+
+        // 1. Cerca e aggiorna tutte le recensioni relative a Contrada San Donato in 'reviews'
+        const reviewsSnap = await firestore.collection('reviews').get();
+        const batch = firestore.batch();
+        const matchingReviews = [];
+        let updatedReviewsCount = 0;
+
+        reviewsSnap.forEach(docSnap => {
+          const r = docSnap.data();
+          const rName = (r.streetName || r.name || '').toLowerCase();
+          const rKey = (r.streetKey || docSnap.id || '').toLowerCase();
+
+          if (rName.includes('san donato') || rKey.includes('san-donato')) {
+            const updatedReview = {
+              ...r,
+              streetName: "Contrada San Donato",
+              streetCity: "Monteprandone",
+              province: "AP",
+              streetProvince: "AP",
+              streetKey: canonicalStreetKey,
+              latitude: canonicalLat,
+              longitude: canonicalLng,
+              updatedAt: new Date().toISOString()
+            };
+            matchingReviews.push(updatedReview);
+            batch.update(docSnap.ref, {
+              streetName: "Contrada San Donato",
+              streetCity: "Monteprandone",
+              province: "AP",
+              streetProvince: "AP",
+              streetKey: canonicalStreetKey,
+              latitude: canonicalLat,
+              longitude: canonicalLng,
+              updatedAt: new Date().toISOString()
+            });
+            updatedReviewsCount++;
+          }
+        });
+
+        if (updatedReviewsCount > 0) {
+          await batch.commit();
+          console.log(`[FixSanDonato] Aggiornate ${updatedReviewsCount} recensioni su Firestore per Contrada San Donato.`);
+        }
+
+        // 2. Crea/Aggiorna il documento streets/contrada-san-donato_monteprandone_ap
+        const validScores = matchingReviews
+          .map(r => Number(r.ratingOverall))
+          .filter(n => !isNaN(n) && n >= 1 && n <= 5);
+        const avgRating = validScores.length > 0
+          ? Number((validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(1))
+          : 0;
+
+        const streetSummaryDoc = {
+          streetKey: canonicalStreetKey,
+          streetName: "Contrada San Donato",
+          streetCity: "Monteprandone",
+          province: "AP",
+          postalCode: "63076",
+          latitude: canonicalLat,
+          longitude: canonicalLng,
+          ratingOverall: avgRating,
+          avgOverallRating: avgRating,
+          reviewCount: matchingReviews.length,
+          reviewsCount: matchingReviews.length,
+          streetType: "🏡 Urbana",
+          reviews: matchingReviews,
+          updatedAt: new Date().toISOString()
+        };
+
+        await firestore.collection('streets').doc(canonicalStreetKey).set(streetSummaryDoc, { merge: true });
+        console.log(`[FixSanDonato] Scheda streets/${canonicalStreetKey} riallineata alle coordinate ${canonicalLat}, ${canonicalLng} (media: ${avgRating}, recensioni: ${matchingReviews.length}).`);
+
+        // 3. Eliminazione record obsoleti o orfani in 'streets'
+        const legacyKeys = [
+          "contrada-san-donato_san-benedetto-del-tronto_ap",
+          "contrada-san-donato_san-benedetto-del-tronto",
+          "contrada-san-donato_monteprandone"
+        ];
+        for (const lKey of legacyKeys) {
+          const lDoc = await firestore.collection('streets').doc(lKey).get();
+          if (lDoc.exists) {
+            await lDoc.ref.delete();
+            console.log(`[FixSanDonato] Eliminato documento orfano streets/${lKey}`);
+          }
+        }
+
+        return { success: true, updatedReviewsCount };
+      } catch (err) {
+        console.error("[FixSanDonato] Errore durante il riallineamento:", err);
+        throw err;
+      }
+    };
+
     // Routine Autoritaria di Disaccoppiamento Corso Giuseppe Mazzini (Grottammare AP) e Via Giuseppe Mazzini (Alba Adriatica TE)
     window.fixMazziniGrottammareAndAlbaAdriatica = async () => {
       const firestore = window.db;
@@ -3033,8 +3139,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             streetCity: "Monteprandone",
             province: "AP",
             postalCode: "63076",
-            latitude: 42.9150,
-            longitude: 13.8420,
+            latitude: 42.91209543811305,
+            longitude: 13.860065210654204,
             streetKey: "contrada-san-donato_monteprandone_ap",
             legacyKeys: [
               "contrada-san-donato_san-benedetto-del-tronto",
@@ -3834,8 +3940,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   uiStreet.name = 'Contrada San Donato';
                   uiStreet.streetCity = 'Monteprandone';
                   uiStreet.city = 'Monteprandone';
-                  uiStreet.latitude = 42.9150;
-                  uiStreet.longitude = 13.8420;
+                  uiStreet.latitude = 42.91209543811305;
+                  uiStreet.longitude = 13.860065210654204;
                   uiStreet.streetKey = 'contrada-san-donato_monteprandone_ap';
                 } else if (rawNameSnap.includes('carducci') || rawKeySnap.includes('carducci')) {
                   uiStreet.name = 'Piazza G. Carducci';
@@ -3923,19 +4029,24 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             }
           );
 
-        // Esecuzione automatica all'avvio del disaccoppiamento Mazzini (Grottammare vs Alba Adriatica)
-        if (typeof window.fixMazziniGrottammareAndAlbaAdriatica === 'function') {
-          setTimeout(() => {
+        // Esecuzione automatica all'avvio del riallineamento San Donato e disaccoppiamento Mazzini
+        setTimeout(() => {
+          if (typeof window.fixContradaSanDonatoMonteprandone === 'function') {
+            window.fixContradaSanDonatoMonteprandone().catch(err => {
+              console.warn('[Startup] FixSanDonato notice:', err);
+            });
+          }
+          if (typeof window.fixMazziniGrottammareAndAlbaAdriatica === 'function') {
             window.fixMazziniGrottammareAndAlbaAdriatica().catch(err => {
               console.warn('[Startup] FixMazzini notice:', err);
             });
-            if (typeof window.forcePinpointFourStreets === 'function') {
-              window.forcePinpointFourStreets().catch(err => {
-                console.warn('[Startup] ForcePinpoint notice:', err);
-              });
-            }
-          }, 600);
-        }
+          }
+          if (typeof window.forcePinpointFourStreets === 'function') {
+            window.forcePinpointFourStreets().catch(err => {
+              console.warn('[Startup] ForcePinpoint notice:', err);
+            });
+          }
+        }, 600);
 
         return () => {
           unsubscribeStreets();
