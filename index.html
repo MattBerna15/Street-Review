@@ -231,13 +231,23 @@
     const LOCAL_GAZETTEER = [
       {
         streetKey: 'corso-giuseppe-mazzini_grottammare_ap',
-        legacyKeys: ['corso-giuseppe-mazzini_grottammare', 'corso-mazzini_grottammare', 'corso-mazzini_grottammare_ap', 'corso-giuseppe-mazzini_san-benedetto-del-tronto_ap', 'corso-giuseppe-mazzini_san-benedetto-del-tronto'],
+        legacyKeys: ['corso-giuseppe-mazzini_grottammare', 'corso-mazzini_grottammare', 'corso-mazzini_grottammare_ap'],
         name: 'Corso Giuseppe Mazzini',
         city: 'Grottammare',
         province: 'AP',
         postalCode: '63066',
-        lat: 42.9889,
-        lng: 13.8690
+        lat: 42.990443190632796,
+        lng: 13.869663126569428
+      },
+      {
+        streetKey: 'via-giuseppe-mazzini_alba-adriatica_te',
+        legacyKeys: ['via-giuseppe-mazzini_alba-adriatica', 'via-mazzini_alba-adriatica', 'corso-giuseppe-mazzini_alba-adriatica_te'],
+        name: 'Via Giuseppe Mazzini',
+        city: 'Alba Adriatica',
+        province: 'TE',
+        postalCode: '64011',
+        lat: 42.83284835747221,
+        lng: 13.926373810644503
       },
       {
         streetKey: 'piazza-g-carducci_grottammare_ap',
@@ -574,6 +584,9 @@
         if (partsA.length >= 2 && partsB.length >= 2 && partsA[1] !== partsB[1]) {
           return false; // Comuni diversi nelle chiavi: MAI LA STESSA VIA!
         }
+        if (partsA.length >= 3 && partsB.length >= 3 && partsA[2] !== partsB[2]) {
+          return false; // Province diverse nelle chiavi: MAI LA STESSA VIA!
+        }
       }
 
       const sNormA = normalizeStreetName(a.name || a.streetName || a.canonicalName);
@@ -585,8 +598,13 @@
       const cKeyA = cityAStr ? normalizeCityKey(cityAStr) : '';
       const cKeyB = cityBStr ? normalizeCityKey(cityBStr) : '';
 
-      // VETO ASSOLUTO: Se i comuni sono specificati e diversi, sono TASSATIVAMENTE vie distinte!
+      // VETO ASSOLUTO: Se i comuni o le province sono specificati e diversi, sono TASSATIVAMENTE vie distinte!
       if (cKeyA && cKeyB && cKeyA !== 'italia' && cKeyB !== 'italia' && cKeyA !== cKeyB) {
+        return false;
+      }
+      const provA = String(a.province || a.streetProvince || '').trim().toLowerCase();
+      const provB = String(b.province || b.streetProvince || '').trim().toLowerCase();
+      if (provA && provB && provA !== 'italia' && provB !== 'italia' && provA !== provB) {
         return false;
       }
 
@@ -2122,11 +2140,16 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             ? Number((validCoords.reduce((acc, rev) => acc + Number(rev.longitude), 0) / validCoords.length).toFixed(6))
             : (Number(sample?.longitude) || 13.8690));
 
-      // CASI SPECIALI AUTORITATIVI (Mazzini Grottammare, Carducci, Firenze, San Donato):
+      // CASI SPECIALI AUTORITATIVI (Mazzini Grottammare, Mazzini Alba Adriatica, Carducci, Firenze, San Donato):
       const normRawName = normalizeStreetName(rawName);
       if (normRawName.includes('mazzini')) {
-        baryLat = 42.9889;
-        baryLng = 13.8690;
+        if (declaredCityKey === 'alba-adriatica' || String(fallbackMeta?.streetCity || '').toLowerCase().includes('alba')) {
+          baryLat = 42.83284835747221;
+          baryLng = 13.926373810644503;
+        } else {
+          baryLat = 42.990443190632796;
+          baryLng = 13.869663126569428;
+        }
       } else if (normRawName.includes('carducci')) {
         baryLat = 42.9734;
         baryLng = 13.8732;
@@ -2734,7 +2757,187 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       }
     };
 
-    // Tabella di Correzione Forzata Immediata e Autoritativa (streets e reviews) per le 4 vie fuori coordinate
+    // Routine Autoritaria di Disaccoppiamento Corso Giuseppe Mazzini (Grottammare AP) e Via Giuseppe Mazzini (Alba Adriatica TE)
+    window.fixMazziniGrottammareAndAlbaAdriatica = async () => {
+      const firestore = window.db;
+      if (!firestore) {
+        console.error("[FixMazzini] Firestore non disponibile in window.db");
+        return { success: false, error: "Database not connected" };
+      }
+
+      console.log("[FixMazzini] Avvio disaccoppiamento e separazione definitiva Mazzini Grottammare (AP) vs Alba Adriatica (TE)...");
+      try {
+        const reviewsSnap = await firestore.collection('reviews').get();
+        const batch = firestore.batch();
+
+        let simoneReviewDoc = null;
+        let gherardoReviews = [];
+        let otherGrottammareReviews = [];
+
+        reviewsSnap.forEach(docSnap => {
+          const r = docSnap.data();
+          const rAuthor = (r.authorName || r.name || r.author || '').toLowerCase();
+          const rComment = (r.comment || '').toLowerCase();
+          const rCity = (r.streetCity || r.city || '').toLowerCase();
+          const rKey = (r.streetKey || docSnap.id || '').toLowerCase();
+          const rName = (r.streetName || '').toLowerCase();
+
+          const isSimone = rAuthor.includes('simone') || rAuthor.includes('de gregoriis') || rComment.includes('alba adriatica') || rCity.includes('alba') || rKey.includes('alba');
+          const isMazzini = rName.includes('mazzini') || rKey.includes('mazzini');
+
+          if (isSimone) {
+            simoneReviewDoc = { id: docSnap.id, ref: docSnap.ref, data: r };
+          } else if (isMazzini) {
+            if (rAuthor.includes('gherardo') || rAuthor.includes('massimi')) {
+              gherardoReviews.push({ id: docSnap.id, ref: docSnap.ref, data: r });
+            } else {
+              otherGrottammareReviews.push({ id: docSnap.id, ref: docSnap.ref, data: r });
+            }
+          }
+        });
+
+        // 1. Aggiorna recensione di Simone De Gregoriis (Alba Adriatica)
+        let updatedSimoneData = null;
+        if (simoneReviewDoc) {
+          updatedSimoneData = {
+            ...simoneReviewDoc.data,
+            streetName: "Via Giuseppe Mazzini",
+            streetCity: "Alba Adriatica",
+            province: "TE",
+            streetProvince: "TE",
+            streetKey: "via-giuseppe-mazzini_alba-adriatica_te",
+            latitude: 42.83284835747221,
+            longitude: 13.926373810644503,
+            ratingOverall: 3.3,
+            updatedAt: new Date().toISOString()
+          };
+          batch.update(simoneReviewDoc.ref, {
+            streetName: "Via Giuseppe Mazzini",
+            streetCity: "Alba Adriatica",
+            province: "TE",
+            streetProvince: "TE",
+            streetKey: "via-giuseppe-mazzini_alba-adriatica_te",
+            latitude: 42.83284835747221,
+            longitude: 13.926373810644503,
+            ratingOverall: 3.3,
+            updatedAt: new Date().toISOString()
+          });
+          console.log("[FixMazzini] Recensione di Simone De Gregoriis riassegnata ad Alba Adriatica (TE).");
+        }
+
+        // 2. Aggiorna recensione di Gherardo Massimi (Grottammare)
+        const allGrottammareRevsData = [];
+        gherardoReviews.forEach(gr => {
+          const updatedGherardo = {
+            ...gr.data,
+            streetName: "Corso Giuseppe Mazzini",
+            streetCity: "Grottammare",
+            province: "AP",
+            streetProvince: "AP",
+            streetKey: "corso-giuseppe-mazzini_grottammare_ap",
+            latitude: 42.990443190632796,
+            longitude: 13.869663126569428,
+            ratingOverall: Number(gr.data.ratingOverall) || 3.2,
+            updatedAt: new Date().toISOString()
+          };
+          allGrottammareRevsData.push(updatedGherardo);
+          batch.update(gr.ref, {
+            streetName: "Corso Giuseppe Mazzini",
+            streetCity: "Grottammare",
+            province: "AP",
+            streetProvince: "AP",
+            streetKey: "corso-giuseppe-mazzini_grottammare_ap",
+            latitude: 42.990443190632796,
+            longitude: 13.869663126569428,
+            updatedAt: new Date().toISOString()
+          });
+        });
+
+        otherGrottammareReviews.forEach(ogr => {
+          const updatedOther = {
+            ...ogr.data,
+            streetName: "Corso Giuseppe Mazzini",
+            streetCity: "Grottammare",
+            province: "AP",
+            streetProvince: "AP",
+            streetKey: "corso-giuseppe-mazzini_grottammare_ap",
+            latitude: 42.990443190632796,
+            longitude: 13.869663126569428,
+            updatedAt: new Date().toISOString()
+          };
+          allGrottammareRevsData.push(updatedOther);
+          batch.update(ogr.ref, {
+            streetName: "Corso Giuseppe Mazzini",
+            streetCity: "Grottammare",
+            province: "AP",
+            streetProvince: "AP",
+            streetKey: "corso-giuseppe-mazzini_grottammare_ap",
+            latitude: 42.990443190632796,
+            longitude: 13.869663126569428,
+            updatedAt: new Date().toISOString()
+          });
+        });
+
+        await batch.commit();
+
+        // 3. Documento 'streets' per Alba Adriatica (TE)
+        const albaStreetMeta = {
+          streetKey: "via-giuseppe-mazzini_alba-adriatica_te",
+          streetName: "Via Giuseppe Mazzini",
+          streetCity: "Alba Adriatica",
+          province: "TE",
+          postalCode: "64011",
+          latitude: 42.83284835747221,
+          longitude: 13.926373810644503,
+          ratingOverall: 3.3,
+          avgOverallRating: 3.3,
+          reviewCount: 1,
+          reviewsCount: 1,
+          streetType: "🏡 Urbana",
+          reviews: updatedSimoneData ? [updatedSimoneData] : [],
+          updatedAt: new Date().toISOString()
+        };
+        await firestore.collection('streets').doc("via-giuseppe-mazzini_alba-adriatica_te").set(albaStreetMeta, { merge: true });
+        console.log("[FixMazzini] Creata/aggiornata scheda streets/via-giuseppe-mazzini_alba-adriatica_te (3.3 rating, 1 review).");
+
+        // 4. Documento 'streets' per Grottammare (AP)
+        const validScores = allGrottammareRevsData.map(r => Number(r.ratingOverall)).filter(n => !isNaN(n) && n > 0);
+        const grottammareAvg = validScores.length > 0 ? Number((validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(1)) : 3.2;
+
+        const grottammareStreetMeta = {
+          streetKey: "corso-giuseppe-mazzini_grottammare_ap",
+          streetName: "Corso Giuseppe Mazzini",
+          streetCity: "Grottammare",
+          province: "AP",
+          postalCode: "63066",
+          latitude: 42.990443190632796,
+          longitude: 13.869663126569428,
+          ratingOverall: grottammareAvg,
+          avgOverallRating: grottammareAvg,
+          reviewCount: allGrottammareRevsData.length || 1,
+          reviewsCount: allGrottammareRevsData.length || 1,
+          streetType: "🏡 Urbana",
+          reviews: allGrottammareRevsData,
+          updatedAt: new Date().toISOString()
+        };
+        await firestore.collection('streets').doc("corso-giuseppe-mazzini_grottammare_ap").set(grottammareStreetMeta, { merge: true });
+        console.log(`[FixMazzini] Scheda streets/corso-giuseppe-mazzini_grottammare_ap ripristinata con successo (rating: ${grottammareAvg}, coordinate reali: 42.990443, 13.869663).`);
+
+        // Pulizia eventuali documenti orfani con vecchie chiavi di Alba Adriatica
+        const legacyAlbaSnap = await firestore.collection('streets').doc("via-giuseppe-mazzini_alba-adriatica").get();
+        if (legacyAlbaSnap.exists) {
+          await legacyAlbaSnap.ref.delete();
+          console.log("[FixMazzini] Eliminato vecchio documento streets/via-giuseppe-mazzini_alba-adriatica.");
+        }
+
+        return { success: true };
+      } catch (err) {
+        console.error("[FixMazzini] Errore durante il disaccoppiamento:", err);
+        throw err;
+      }
+    };
+
+    // Tabella di Correzione Forzata Immediata e Autoritativa (streets e reviews) per le vie cablate
     window.forcePinpointFourStreets = async () => {
       const firestore = window.db;
       if (!firestore) {
@@ -2742,17 +2945,37 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         return { success: false, error: "Database not connected" };
       }
 
-      console.log("[ForcePinpointFourStreets] Avvio allineamento autoritativo per Mazzini (Grottammare), Carducci (Grottammare), Firenze (Grottammare) e San Donato (Monteprandone)...");
+      console.log("[ForcePinpointFourStreets] Avvio allineamento autoritativo per Mazzini (Grottammare), Mazzini (Alba Adriatica), Carducci (Grottammare), Firenze (Grottammare) e San Donato (Monteprandone)...");
       try {
         const PINPOINT_TARGETS = [
+          {
+            id: "mazzini_alba_adriatica",
+            streetName: "Via Giuseppe Mazzini",
+            streetCity: "Alba Adriatica",
+            province: "TE",
+            postalCode: "64011",
+            latitude: 42.83284835747221,
+            longitude: 13.926373810644503,
+            streetKey: "via-giuseppe-mazzini_alba-adriatica_te",
+            legacyKeys: [
+              "via-giuseppe-mazzini_alba-adriatica",
+              "via-mazzini_alba-adriatica",
+              "corso-giuseppe-mazzini_alba-adriatica_te"
+            ],
+            matches: (name, city, key, r) => {
+              const isSimone = (r?.authorName && r.authorName.toLowerCase().includes("simone")) || (r?.author && String(r.author).toLowerCase().includes("simone"));
+              const isAlba = (city && city.includes("alba")) || (key && key.includes("alba")) || (r?.comment && r.comment.toLowerCase().includes("alba adriatica"));
+              return isSimone || isAlba;
+            }
+          },
           {
             id: "mazzini_grottammare",
             streetName: "Corso Giuseppe Mazzini",
             streetCity: "Grottammare",
             province: "AP",
             postalCode: "63066",
-            latitude: 42.9889,
-            longitude: 13.8690,
+            latitude: 42.990443190632796,
+            longitude: 13.869663126569428,
             streetKey: "corso-giuseppe-mazzini_grottammare_ap",
             legacyKeys: [
               "corso-giuseppe-mazzini_grottammare",
@@ -2763,7 +2986,12 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               "corso-mazzini_san-benedetto-del-tronto",
               "corso-mazzini_san-benedetto-del-tronto_ap"
             ],
-            matches: (name, city, key) => name.includes("mazzini") || key.includes("mazzini")
+            matches: (name, city, key, r) => {
+              const isSimone = (r?.authorName && r.authorName.toLowerCase().includes("simone")) || (r?.author && String(r.author).toLowerCase().includes("simone"));
+              const isAlba = (city && city.includes("alba")) || (key && key.includes("alba")) || (r?.comment && r.comment.toLowerCase().includes("alba adriatica"));
+              if (isSimone || isAlba) return false;
+              return (name.includes("mazzini") || key.includes("mazzini")) && (city.includes("grottammare") || key.includes("grottammare") || (!city.includes("san benedetto") && !city.includes("alba")));
+            }
           },
           {
             id: "carducci_grottammare",
@@ -2831,7 +3059,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           const rKey = (r.streetKey || docSnap.id || '').toLowerCase();
 
           for (const target of PINPOINT_TARGETS) {
-            if (target.matches(rName, rCity, rKey)) {
+            if (target.matches(rName, rCity, rKey, r)) {
               const needsFix =
                 Math.abs((Number(r.latitude) || 0) - target.latitude) > 0.00001 ||
                 Math.abs((Number(r.longitude) || 0) - target.longitude) > 0.00001 ||
@@ -2904,7 +3132,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             const sKey = (sDoc.id || sd.streetKey || '').toLowerCase();
 
             const isCanonical = sDoc.id === target.streetKey;
-            const isLegacyOrMatch = target.legacyKeys.includes(sDoc.id) || target.matches(sName, sCity, sKey);
+            const isLegacyOrMatch = target.legacyKeys.includes(sDoc.id) || target.matches(sName, sCity, sKey, sd);
 
             if (isCanonical || isLegacyOrMatch) {
               if (!existingMergedData.streetKey || (Number(sd.reviewCount ?? sd.reviewsCount ?? 0) > Number(existingMergedData.reviewCount ?? existingMergedData.reviewsCount ?? 0))) {
@@ -2966,10 +3194,10 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       }
     };
 
-    window.healStreetCoordinatesDatabase = window.forcePinpointFourStreets;
-    window.forceFixCorsoMazziniGrottammare = window.forcePinpointFourStreets;
-    window.fixCorsoMazziniGrottammare = window.forcePinpointFourStreets;
-    window.auditAndFixStreetCoordinates = window.forcePinpointFourStreets;
+    window.healStreetCoordinatesDatabase = window.fixMazziniGrottammareAndAlbaAdriatica;
+    window.forceFixCorsoMazziniGrottammare = window.fixMazziniGrottammareAndAlbaAdriatica;
+    window.fixCorsoMazziniGrottammare = window.fixMazziniGrottammareAndAlbaAdriatica;
+    window.auditAndFixStreetCoordinates = window.fixMazziniGrottammareAndAlbaAdriatica;
 
     // Combina i dati pre-aggregati di 'streets' e 'users' per la UI Gamification & Classifica Top 10
     const computeGamificationData = (streetsList, activeUser, leaderboardUsersList = [], activeUserDocProfile = null, cachedUsersMap = {}) => {
@@ -3624,12 +3852,24 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   uiStreet.longitude = 13.8708;
                   uiStreet.streetKey = 'via-firenze_grottammare_ap';
                 } else if (rawNameSnap.includes('mazzini') || rawKeySnap.includes('mazzini')) {
-                  uiStreet.name = 'Corso Giuseppe Mazzini';
-                  uiStreet.streetCity = 'Grottammare';
-                  uiStreet.city = 'Grottammare';
-                  uiStreet.latitude = 42.9889;
-                  uiStreet.longitude = 13.8690;
-                  uiStreet.streetKey = 'corso-giuseppe-mazzini_grottammare_ap';
+                  const rawCitySnap = (uiStreet.streetCity || uiStreet.city || '').toLowerCase();
+                  if (rawCitySnap.includes('alba') || rawKeySnap.includes('alba-adriatica')) {
+                    uiStreet.name = 'Via Giuseppe Mazzini';
+                    uiStreet.streetCity = 'Alba Adriatica';
+                    uiStreet.city = 'Alba Adriatica';
+                    uiStreet.province = 'TE';
+                    uiStreet.latitude = 42.83284835747221;
+                    uiStreet.longitude = 13.926373810644503;
+                    uiStreet.streetKey = 'via-giuseppe-mazzini_alba-adriatica_te';
+                  } else {
+                    uiStreet.name = 'Corso Giuseppe Mazzini';
+                    uiStreet.streetCity = 'Grottammare';
+                    uiStreet.city = 'Grottammare';
+                    uiStreet.province = 'AP';
+                    uiStreet.latitude = 42.990443190632796;
+                    uiStreet.longitude = 13.869663126569428;
+                    uiStreet.streetKey = 'corso-giuseppe-mazzini_grottammare_ap';
+                  }
                 }
 
                 if (!updated.some(u => areStreetKeysEquivalent(u.streetKey || u.id, uiStreet.streetKey || uiStreet.id))) {
@@ -3683,12 +3923,17 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             }
           );
 
-        // Esecuzione automatica all'avvio della correzione autoritativa delle 4 vie
-        if (typeof window.forcePinpointFourStreets === 'function') {
+        // Esecuzione automatica all'avvio del disaccoppiamento Mazzini (Grottammare vs Alba Adriatica)
+        if (typeof window.fixMazziniGrottammareAndAlbaAdriatica === 'function') {
           setTimeout(() => {
-            window.forcePinpointFourStreets().catch(err => {
-              console.warn('[Startup] ForcePinpointFourStreets notice:', err);
+            window.fixMazziniGrottammareAndAlbaAdriatica().catch(err => {
+              console.warn('[Startup] FixMazzini notice:', err);
             });
+            if (typeof window.forcePinpointFourStreets === 'function') {
+              window.forcePinpointFourStreets().catch(err => {
+                console.warn('[Startup] ForcePinpoint notice:', err);
+              });
+            }
           }, 600);
         }
 
