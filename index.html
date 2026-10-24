@@ -266,8 +266,8 @@
         city: 'Grottammare',
         province: 'AP',
         postalCode: '63066',
-        lat: 42.9632,
-        lng: 13.8708
+        lat: 42.962981492069545,
+        lng: 13.87075809346326
       },
       {
         streetKey: 'contrada-san-donato_monteprandone_ap',
@@ -2154,8 +2154,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         baryLat = 42.9734;
         baryLng = 13.8732;
       } else if (normRawName.includes('firenze') && (!declaredCityKey || declaredCityKey === 'grottammare')) {
-        baryLat = 42.9632;
-        baryLng = 13.8708;
+        baryLat = 42.962981492069545;
+        baryLng = 13.87075809346326;
       } else if (normRawName.includes('san-donato')) {
         baryLat = 42.91209543811305;
         baryLng = 13.860065210654204;
@@ -2757,6 +2757,112 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       }
     };
 
+    // Routine Autoritaria di Riallineamento e Pulizia per Via Firenze (Grottammare AP)
+    window.fixViaFirenzeGrottammare = async () => {
+      const firestore = window.db;
+      if (!firestore) {
+        console.error("[FixViaFirenze] Firestore non disponibile in window.db");
+        return { success: false, error: "Database not connected" };
+      }
+
+      console.log("[FixViaFirenze] Avvio riallineamento autoritativo per Via Firenze (Grottammare AP)...");
+      try {
+        const canonicalLat = 42.962981492069545;
+        const canonicalLng = 13.87075809346326;
+        const canonicalStreetKey = "via-firenze_grottammare_ap";
+
+        // 1. Cerca e aggiorna tutte le recensioni relative a Via Firenze in 'reviews'
+        const reviewsSnap = await firestore.collection('reviews').get();
+        const batch = firestore.batch();
+        const matchingReviews = [];
+        let updatedReviewsCount = 0;
+
+        reviewsSnap.forEach(docSnap => {
+          const r = docSnap.data();
+          const rName = (r.streetName || r.name || '').toLowerCase();
+          const rKey = (r.streetKey || docSnap.id || '').toLowerCase();
+
+          if (rName.includes('firenze') || rKey.includes('firenze') || rKey.includes('via-firenze')) {
+            const updatedReview = {
+              ...r,
+              streetName: "Via Firenze",
+              streetCity: "Grottammare",
+              province: "AP",
+              streetProvince: "AP",
+              streetKey: canonicalStreetKey,
+              latitude: canonicalLat,
+              longitude: canonicalLng,
+              updatedAt: new Date().toISOString()
+            };
+            matchingReviews.push(updatedReview);
+            batch.update(docSnap.ref, {
+              streetName: "Via Firenze",
+              streetCity: "Grottammare",
+              province: "AP",
+              streetProvince: "AP",
+              streetKey: canonicalStreetKey,
+              latitude: canonicalLat,
+              longitude: canonicalLng,
+              updatedAt: new Date().toISOString()
+            });
+            updatedReviewsCount++;
+          }
+        });
+
+        if (updatedReviewsCount > 0) {
+          await batch.commit();
+          console.log(`[FixViaFirenze] Aggiornate ${updatedReviewsCount} recensioni su Firestore per Via Firenze.`);
+        }
+
+        // 2. Crea/Aggiorna il documento streets/via-firenze_grottammare_ap
+        const validScores = matchingReviews
+          .map(r => Number(r.ratingOverall))
+          .filter(n => !isNaN(n) && n >= 1 && n <= 5);
+        const avgRating = validScores.length > 0
+          ? Number((validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(1))
+          : 0;
+
+        const streetSummaryDoc = {
+          streetKey: canonicalStreetKey,
+          streetName: "Via Firenze",
+          streetCity: "Grottammare",
+          province: "AP",
+          postalCode: "63066",
+          latitude: canonicalLat,
+          longitude: canonicalLng,
+          ratingOverall: avgRating,
+          avgOverallRating: avgRating,
+          reviewCount: matchingReviews.length,
+          reviewsCount: matchingReviews.length,
+          streetType: "🏡 Urbana",
+          reviews: matchingReviews,
+          updatedAt: new Date().toISOString()
+        };
+
+        await firestore.collection('streets').doc(canonicalStreetKey).set(streetSummaryDoc, { merge: true });
+        console.log(`[FixViaFirenze] Scheda streets/${canonicalStreetKey} riallineata alle coordinate ${canonicalLat}, ${canonicalLng} (media: ${avgRating}, recensioni: ${matchingReviews.length}).`);
+
+        // 3. Eliminazione record obsoleti o orfani in 'streets'
+        const legacyKeys = [
+          "via-firenze_san-benedetto-del-tronto_ap",
+          "via-firenze_san-benedetto-del-tronto",
+          "via-firenze_grottammare"
+        ];
+        for (const lKey of legacyKeys) {
+          const lDoc = await firestore.collection('streets').doc(lKey).get();
+          if (lDoc.exists) {
+            await lDoc.ref.delete();
+            console.log(`[FixViaFirenze] Eliminato documento orfano streets/${lKey}`);
+          }
+        }
+
+        return { success: true, updatedReviewsCount };
+      } catch (err) {
+        console.error("[FixViaFirenze] Errore durante il riallineamento:", err);
+        throw err;
+      }
+    };
+
     // Routine Autoritaria di Riallineamento e Pulizia per Contrada San Donato (Monteprandone AP)
     window.fixContradaSanDonatoMonteprandone = async () => {
       const firestore = window.db;
@@ -3123,8 +3229,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             streetCity: "Grottammare",
             province: "AP",
             postalCode: "63066",
-            latitude: 42.9632,
-            longitude: 13.8708,
+            latitude: 42.962981492069545,
+            longitude: 13.87075809346326,
             streetKey: "via-firenze_grottammare_ap",
             legacyKeys: [
               "via-firenze_san-benedetto-del-tronto",
@@ -3954,8 +4060,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   uiStreet.name = 'Via Firenze';
                   uiStreet.streetCity = 'Grottammare';
                   uiStreet.city = 'Grottammare';
-                  uiStreet.latitude = 42.9632;
-                  uiStreet.longitude = 13.8708;
+                  uiStreet.latitude = 42.962981492069545;
+                  uiStreet.longitude = 13.87075809346326;
                   uiStreet.streetKey = 'via-firenze_grottammare_ap';
                 } else if (rawNameSnap.includes('mazzini') || rawKeySnap.includes('mazzini')) {
                   const rawCitySnap = (uiStreet.streetCity || uiStreet.city || '').toLowerCase();
@@ -4029,8 +4135,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             }
           );
 
-        // Esecuzione automatica all'avvio del riallineamento San Donato e disaccoppiamento Mazzini
+        // Esecuzione automatica all'avvio del riallineamento Via Firenze, San Donato e disaccoppiamento Mazzini
         setTimeout(() => {
+          if (typeof window.fixViaFirenzeGrottammare === 'function') {
+            window.fixViaFirenzeGrottammare().catch(err => {
+              console.warn('[Startup] FixViaFirenze notice:', err);
+            });
+          }
           if (typeof window.fixContradaSanDonatoMonteprandone === 'function') {
             window.fixContradaSanDonatoMonteprandone().catch(err => {
               console.warn('[Startup] FixSanDonato notice:', err);
