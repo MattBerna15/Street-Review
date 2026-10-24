@@ -240,6 +240,16 @@
         lng: 13.869663126569428
       },
       {
+        streetKey: 'viale-della-vittoria_alba-adriatica_te',
+        legacyKeys: ['viale-della-vittoria_alba-adriatica', 'viale-vittoria_alba-adriatica'],
+        name: 'Viale della Vittoria',
+        city: 'Alba Adriatica',
+        province: 'TE',
+        postalCode: '64011',
+        lat: 42.83605895341866,
+        lng: 13.926245266469673
+      },
+      {
         streetKey: 'via-giuseppe-mazzini_alba-adriatica_te',
         legacyKeys: ['via-giuseppe-mazzini_alba-adriatica', 'via-mazzini_alba-adriatica', 'corso-giuseppe-mazzini_alba-adriatica_te'],
         name: 'Via Giuseppe Mazzini',
@@ -2140,9 +2150,12 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             ? Number((validCoords.reduce((acc, rev) => acc + Number(rev.longitude), 0) / validCoords.length).toFixed(6))
             : (Number(sample?.longitude) || 13.8690));
 
-      // CASI SPECIALI AUTORITATIVI (Mazzini Grottammare, Mazzini Alba Adriatica, Carducci, Firenze, San Donato):
+      // CASI SPECIALI AUTORITATIVI (Viale della Vittoria, Mazzini Grottammare, Mazzini Alba Adriatica, Carducci, Firenze, San Donato):
       const normRawName = normalizeStreetName(rawName);
-      if (normRawName.includes('mazzini')) {
+      if (normRawName.includes('vittoria')) {
+        baryLat = 42.83605895341866;
+        baryLng = 13.926245266469673;
+      } else if (normRawName.includes('mazzini')) {
         if (declaredCityKey === 'alba-adriatica' || String(fallbackMeta?.streetCity || '').toLowerCase().includes('alba')) {
           baryLat = 42.83284835747221;
           baryLng = 13.926373810644503;
@@ -2757,6 +2770,163 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       }
     };
 
+    // Routine Autoritaria di Disaccoppiamento Viale della Vittoria e Via Giuseppe Mazzini ad Alba Adriatica (TE)
+    window.fixVialeDellaVittoriaAlbaAdriatica = async () => {
+      const firestore = window.db;
+      if (!firestore) {
+        console.error("[FixVittoria] Firestore non disponibile in window.db");
+        return { success: false, error: "Database not connected" };
+      }
+
+      console.log("[FixVittoria] Avvio separazione e ripristino Viale della Vittoria e Via Giuseppe Mazzini ad Alba Adriatica...");
+      try {
+        const reviewsSnap = await firestore.collection('reviews').get();
+        const batch = firestore.batch();
+
+        let vittoriaReview = null;
+        const mazziniAlbaReviews = [];
+
+        reviewsSnap.forEach(docSnap => {
+          const r = docSnap.data();
+          const rComment = (r.comment || '').toLowerCase();
+          const rName = (r.streetName || r.name || '').toLowerCase();
+          const rCity = (r.streetCity || r.city || '').toLowerCase();
+          const rKey = (r.streetKey || docSnap.id || '').toLowerCase();
+
+          // 1. Identifica la recensione con "Assolutamente una strada da rifare da cima a fondo"
+          if (rComment.includes('rifare da cima a fondo') || rComment.includes('assolutamente una strada da rifare') || rName.includes('vittoria') || rKey.includes('vittoria')) {
+            vittoriaReview = { id: docSnap.id, ref: docSnap.ref, data: r };
+          } else if (
+            (rName.includes('mazzini') || rKey.includes('mazzini')) &&
+            (rCity.includes('alba') || rKey.includes('alba') || rComment.includes('alba adriatica'))
+          ) {
+            mazziniAlbaReviews.push({ id: docSnap.id, ref: docSnap.ref, data: r });
+          }
+        });
+
+        // 1. Migra la recensione di Viale della Vittoria
+        let updatedVittoriaData = null;
+        if (vittoriaReview) {
+          updatedVittoriaData = {
+            ...vittoriaReview.data,
+            streetName: "Viale della Vittoria",
+            streetCity: "Alba Adriatica",
+            province: "TE",
+            streetProvince: "TE",
+            streetKey: "viale-della-vittoria_alba-adriatica_te",
+            latitude: 42.83605895341866,
+            longitude: 13.926245266469673,
+            ratingOverall: 3.3,
+            updatedAt: new Date().toISOString()
+          };
+          batch.update(vittoriaReview.ref, {
+            streetName: "Viale della Vittoria",
+            streetCity: "Alba Adriatica",
+            province: "TE",
+            streetProvince: "TE",
+            streetKey: "viale-della-vittoria_alba-adriatica_te",
+            latitude: 42.83605895341866,
+            longitude: 13.926245266469673,
+            ratingOverall: 3.3,
+            updatedAt: new Date().toISOString()
+          });
+          console.log("[FixVittoria] Recensione di Viale della Vittoria migrata con successo su Firestore.");
+        }
+
+        // 2. Assicura che le recensioni di Via Mazzini Alba Adriatica abbiano i campi corretti
+        const updatedMazziniAlbaData = [];
+        mazziniAlbaReviews.forEach(mr => {
+          const updatedMazzini = {
+            ...mr.data,
+            streetName: "Via Giuseppe Mazzini",
+            streetCity: "Alba Adriatica",
+            province: "TE",
+            streetProvince: "TE",
+            streetKey: "via-giuseppe-mazzini_alba-adriatica_te",
+            latitude: 42.83284835747221,
+            longitude: 13.926373810644503,
+            updatedAt: new Date().toISOString()
+          };
+          updatedMazziniAlbaData.push(updatedMazzini);
+          batch.update(mr.ref, {
+            streetName: "Via Giuseppe Mazzini",
+            streetCity: "Alba Adriatica",
+            province: "TE",
+            streetProvince: "TE",
+            streetKey: "via-giuseppe-mazzini_alba-adriatica_te",
+            latitude: 42.83284835747221,
+            longitude: 13.926373810644503,
+            updatedAt: new Date().toISOString()
+          });
+        });
+
+        await batch.commit();
+
+        // 3. Documento 'streets' per Viale della Vittoria (Alba Adriatica)
+        const vittoriaStreetDoc = {
+          streetKey: "viale-della-vittoria_alba-adriatica_te",
+          streetName: "Viale della Vittoria",
+          streetCity: "Alba Adriatica",
+          province: "TE",
+          postalCode: "64011",
+          latitude: 42.83605895341866,
+          longitude: 13.926245266469673,
+          ratingOverall: 3.3,
+          avgOverallRating: 3.3,
+          reviewCount: 1,
+          reviewsCount: 1,
+          streetType: "🏡 Urbana",
+          reviews: updatedVittoriaData ? [updatedVittoriaData] : [],
+          updatedAt: new Date().toISOString()
+        };
+        await firestore.collection('streets').doc("viale-della-vittoria_alba-adriatica_te").set(vittoriaStreetDoc, { merge: true });
+        console.log("[FixVittoria] Documento streets/viale-della-vittoria_alba-adriatica_te creato/aggiornato con voto 3.3.");
+
+        // 4. Documento 'streets' per Via Giuseppe Mazzini (Alba Adriatica)
+        // Media aggregata: (3.5 + 3.3) / 2 = 3.4
+        const mazziniValidScores = updatedMazziniAlbaData
+          .map(r => Number(r.ratingOverall))
+          .filter(n => !isNaN(n) && n >= 1 && n <= 5);
+        const mazziniAvg = mazziniValidScores.length > 0
+          ? Number((mazziniValidScores.reduce((a, b) => a + b, 0) / mazziniValidScores.length).toFixed(1))
+          : 3.4;
+
+        const mazziniStreetDoc = {
+          streetKey: "via-giuseppe-mazzini_alba-adriatica_te",
+          streetName: "Via Giuseppe Mazzini",
+          streetCity: "Alba Adriatica",
+          province: "TE",
+          postalCode: "64011",
+          latitude: 42.83284835747221,
+          longitude: 13.926373810644503,
+          ratingOverall: mazziniAvg,
+          avgOverallRating: mazziniAvg,
+          reviewCount: updatedMazziniAlbaData.length || 2,
+          reviewsCount: updatedMazziniAlbaData.length || 2,
+          streetType: "🏡 Urbana",
+          reviews: updatedMazziniAlbaData,
+          updatedAt: new Date().toISOString()
+        };
+        await firestore.collection('streets').doc("via-giuseppe-mazzini_alba-adriatica_te").set(mazziniStreetDoc, { merge: true });
+        console.log(`[FixVittoria] Documento streets/via-giuseppe-mazzini_alba-adriatica_te riallineato (media: ${mazziniAvg}, recensioni: ${mazziniStreetDoc.reviewCount}).`);
+
+        // Pulizia eventuali vecchi documenti orfani di Viale della Vittoria
+        const legacyVittoriaKeys = ["viale-della-vittoria_alba-adriatica", "viale-vittoria_alba-adriatica"];
+        for (const lKey of legacyVittoriaKeys) {
+          const lDoc = await firestore.collection('streets').doc(lKey).get();
+          if (lDoc.exists) {
+            await lDoc.ref.delete();
+            console.log(`[FixVittoria] Eliminato vecchio documento streets/${lKey}`);
+          }
+        }
+
+        return { success: true };
+      } catch (err) {
+        console.error("[FixVittoria] Errore durante la separazione:", err);
+        throw err;
+      }
+    };
+
     // Routine Autoritaria di Riallineamento e Pulizia per Piazza G. Carducci (Grottammare AP)
     window.fixPiazzaCarducciGrottammare = async () => {
       const firestore = window.db;
@@ -3106,11 +3276,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           const rKey = (r.streetKey || docSnap.id || '').toLowerCase();
           const rName = (r.streetName || '').toLowerCase();
 
-          const isSimone = rAuthor.includes('simone') || rAuthor.includes('de gregoriis') || rComment.includes('alba adriatica') || rCity.includes('alba') || rKey.includes('alba');
-          const isMazzini = rName.includes('mazzini') || rKey.includes('mazzini');
+          const isVittoria = rComment.includes('rifare da cima a fondo') || rName.includes('vittoria') || rKey.includes('vittoria');
+          const isMazzini = (rName.includes('mazzini') || rKey.includes('mazzini')) && !isVittoria;
 
-          if (isSimone) {
-            simoneReviewDoc = { id: docSnap.id, ref: docSnap.ref, data: r };
+          if (isVittoria) {
+            // Gestito autonomamente da fixVialeDellaVittoriaAlbaAdriatica
           } else if (isMazzini) {
             if (rAuthor.includes('gherardo') || rAuthor.includes('massimi')) {
               gherardoReviews.push({ id: docSnap.id, ref: docSnap.ref, data: r });
@@ -3204,25 +3374,10 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
         await batch.commit();
 
-        // 3. Documento 'streets' per Alba Adriatica (TE)
-        const albaStreetMeta = {
-          streetKey: "via-giuseppe-mazzini_alba-adriatica_te",
-          streetName: "Via Giuseppe Mazzini",
-          streetCity: "Alba Adriatica",
-          province: "TE",
-          postalCode: "64011",
-          latitude: 42.83284835747221,
-          longitude: 13.926373810644503,
-          ratingOverall: 3.3,
-          avgOverallRating: 3.3,
-          reviewCount: 1,
-          reviewsCount: 1,
-          streetType: "🏡 Urbana",
-          reviews: updatedSimoneData ? [updatedSimoneData] : [],
-          updatedAt: new Date().toISOString()
-        };
-        await firestore.collection('streets').doc("via-giuseppe-mazzini_alba-adriatica_te").set(albaStreetMeta, { merge: true });
-        console.log("[FixMazzini] Creata/aggiornata scheda streets/via-giuseppe-mazzini_alba-adriatica_te (3.3 rating, 1 review).");
+        // 3. Riallineamento Viale della Vittoria e Via Mazzini ad Alba Adriatica
+        if (typeof window.fixVialeDellaVittoriaAlbaAdriatica === 'function') {
+          await window.fixVialeDellaVittoriaAlbaAdriatica();
+        }
 
         // 4. Documento 'streets' per Grottammare (AP)
         const validScores = allGrottammareRevsData.map(r => Number(r.ratingOverall)).filter(n => !isNaN(n) && n > 0);
@@ -3273,6 +3428,24 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       try {
         const PINPOINT_TARGETS = [
           {
+            id: "viale_della_vittoria_alba_adriatica",
+            streetName: "Viale della Vittoria",
+            streetCity: "Alba Adriatica",
+            province: "TE",
+            postalCode: "64011",
+            latitude: 42.83605895341866,
+            longitude: 13.926245266469673,
+            streetKey: "viale-della-vittoria_alba-adriatica_te",
+            legacyKeys: [
+              "viale-della-vittoria_alba-adriatica",
+              "viale-vittoria_alba-adriatica"
+            ],
+            matches: (name, city, key, r) => {
+              const rComment = (r?.comment || '').toLowerCase();
+              return name.includes("vittoria") || key.includes("vittoria") || rComment.includes("rifare da cima a fondo");
+            }
+          },
+          {
             id: "mazzini_alba_adriatica",
             streetName: "Via Giuseppe Mazzini",
             streetCity: "Alba Adriatica",
@@ -3287,9 +3460,12 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               "corso-giuseppe-mazzini_alba-adriatica_te"
             ],
             matches: (name, city, key, r) => {
-              const isSimone = (r?.authorName && r.authorName.toLowerCase().includes("simone")) || (r?.author && String(r.author).toLowerCase().includes("simone"));
-              const isAlba = (city && city.includes("alba")) || (key && key.includes("alba")) || (r?.comment && r.comment.toLowerCase().includes("alba adriatica"));
-              return isSimone || isAlba;
+              const rComment = (r?.comment || '').toLowerCase();
+              if (rComment.includes("rifare da cima a fondo") || name.includes("vittoria") || key.includes("vittoria")) {
+                return false;
+              }
+              const isAlba = (city && city.includes("alba")) || (key && key.includes("alba")) || rComment.includes("alba adriatica");
+              return (name.includes("mazzini") || key.includes("mazzini")) && isAlba;
             }
           },
           {
@@ -4175,6 +4351,14 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   uiStreet.latitude = 42.962981492069545;
                   uiStreet.longitude = 13.87075809346326;
                   uiStreet.streetKey = 'via-firenze_grottammare_ap';
+                } else if (rawNameSnap.includes('vittoria') || rawKeySnap.includes('vittoria')) {
+                  uiStreet.name = 'Viale della Vittoria';
+                  uiStreet.streetCity = 'Alba Adriatica';
+                  uiStreet.city = 'Alba Adriatica';
+                  uiStreet.province = 'TE';
+                  uiStreet.latitude = 42.83605895341866;
+                  uiStreet.longitude = 13.926245266469673;
+                  uiStreet.streetKey = 'viale-della-vittoria_alba-adriatica_te';
                 } else if (rawNameSnap.includes('mazzini') || rawKeySnap.includes('mazzini')) {
                   const rawCitySnap = (uiStreet.streetCity || uiStreet.city || '').toLowerCase();
                   if (rawCitySnap.includes('alba') || rawKeySnap.includes('alba-adriatica')) {
@@ -4247,8 +4431,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             }
           );
 
-        // Esecuzione automatica all'avvio del riallineamento Piazza Carducci, Via Firenze, San Donato e disaccoppiamento Mazzini
+        // Esecuzione automatica all'avvio del riallineamento Viale della Vittoria, Piazza Carducci, Via Firenze, San Donato e disaccoppiamento Mazzini
         setTimeout(() => {
+          if (typeof window.fixVialeDellaVittoriaAlbaAdriatica === 'function') {
+            window.fixVialeDellaVittoriaAlbaAdriatica().catch(err => {
+              console.warn('[Startup] FixVittoria notice:', err);
+            });
+          }
           if (typeof window.fixPiazzaCarducciGrottammare === 'function') {
             window.fixPiazzaCarducciGrottammare().catch(err => {
               console.warn('[Startup] FixPiazzaCarducci notice:', err);
