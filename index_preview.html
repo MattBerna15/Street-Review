@@ -256,8 +256,8 @@
         city: 'Grottammare',
         province: 'AP',
         postalCode: '63066',
-        lat: 42.9734,
-        lng: 13.8732
+        lat: 42.96336244509739,
+        lng: 13.875948479968113
       },
       {
         streetKey: 'via-firenze_grottammare_ap',
@@ -2151,8 +2151,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           baryLng = 13.869663126569428;
         }
       } else if (normRawName.includes('carducci')) {
-        baryLat = 42.9734;
-        baryLng = 13.8732;
+        baryLat = 42.96336244509739;
+        baryLng = 13.875948479968113;
       } else if (normRawName.includes('firenze') && (!declaredCityKey || declaredCityKey === 'grottammare')) {
         baryLat = 42.962981492069545;
         baryLng = 13.87075809346326;
@@ -2757,6 +2757,118 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       }
     };
 
+    // Routine Autoritaria di Riallineamento e Pulizia per Piazza G. Carducci (Grottammare AP)
+    window.fixPiazzaCarducciGrottammare = async () => {
+      const firestore = window.db;
+      if (!firestore) {
+        console.error("[FixPiazzaCarducci] Firestore non disponibile in window.db");
+        return { success: false, error: "Database not connected" };
+      }
+
+      console.log("[FixPiazzaCarducci] Avvio riallineamento autoritativo per Piazza G. Carducci (Grottammare AP)...");
+      try {
+        const canonicalLat = 42.96336244509739;
+        const canonicalLng = 13.875948479968113;
+        const canonicalStreetKey = "piazza-g-carducci_grottammare_ap";
+        const canonicalName = "Piazza G. Carducci";
+        const canonicalCity = "Grottammare";
+
+        // 1. Cerca e aggiorna tutte le recensioni relative a Piazza Carducci in 'reviews'
+        const reviewsSnap = await firestore.collection('reviews').get();
+        const batch = firestore.batch();
+        const matchingReviews = [];
+        let updatedReviewsCount = 0;
+
+        reviewsSnap.forEach(docSnap => {
+          const r = docSnap.data();
+          const rName = (r.streetName || r.name || '').toLowerCase();
+          const rKey = (r.streetKey || docSnap.id || '').toLowerCase();
+
+          if (rName.includes('carducci') || rKey.includes('carducci')) {
+            const updatedReview = {
+              ...r,
+              streetName: canonicalName,
+              streetCity: canonicalCity,
+              province: "AP",
+              streetProvince: "AP",
+              streetKey: canonicalStreetKey,
+              latitude: canonicalLat,
+              longitude: canonicalLng,
+              updatedAt: new Date().toISOString()
+            };
+            matchingReviews.push(updatedReview);
+            batch.update(docSnap.ref, {
+              streetName: canonicalName,
+              streetCity: canonicalCity,
+              province: "AP",
+              streetProvince: "AP",
+              streetKey: canonicalStreetKey,
+              latitude: canonicalLat,
+              longitude: canonicalLng,
+              updatedAt: new Date().toISOString()
+            });
+            updatedReviewsCount++;
+          }
+        });
+
+        if (updatedReviewsCount > 0) {
+          await batch.commit();
+          console.log(`[FixPiazzaCarducci] Aggiornate ${updatedReviewsCount} recensioni su Firestore per Piazza Carducci.`);
+        }
+
+        // 2. Crea/Aggiorna il documento streets/piazza-g-carducci_grottammare_ap
+        const validScores = matchingReviews
+          .map(r => Number(r.ratingOverall))
+          .filter(n => !isNaN(n) && n >= 1 && n <= 5);
+        const avgRating = validScores.length > 0
+          ? Number((validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(1))
+          : 0;
+
+        const streetSummaryDoc = {
+          streetKey: canonicalStreetKey,
+          streetName: canonicalName,
+          streetCity: canonicalCity,
+          province: "AP",
+          postalCode: "63066",
+          latitude: canonicalLat,
+          longitude: canonicalLng,
+          ratingOverall: avgRating,
+          avgOverallRating: avgRating,
+          reviewCount: matchingReviews.length,
+          reviewsCount: matchingReviews.length,
+          streetType: "🏡 Urbana",
+          reviews: matchingReviews,
+          updatedAt: new Date().toISOString()
+        };
+
+        await firestore.collection('streets').doc(canonicalStreetKey).set(streetSummaryDoc, { merge: true });
+        console.log(`[FixPiazzaCarducci] Scheda streets/${canonicalStreetKey} riallineata alle coordinate ${canonicalLat}, ${canonicalLng} (media: ${avgRating}, recensioni: ${matchingReviews.length}).`);
+
+        // 3. Eliminazione record obsoleti, duplicati o orfani in 'streets'
+        const legacyKeys = [
+          "piazza-g-carducci_san-benedetto-del-tronto_ap",
+          "piazza-carducci_san-benedetto-del-tronto_ap",
+          "piazza-carducci_grottammare_ap",
+          "piazza-g-carducci_grottammare",
+          "piazza-carducci_grottammare"
+        ];
+        for (const lKey of legacyKeys) {
+          if (lKey !== canonicalStreetKey) {
+            const lDoc = await firestore.collection('streets').doc(lKey).get();
+            if (lDoc.exists) {
+              await lDoc.ref.delete();
+              console.log(`[FixPiazzaCarducci] Eliminato documento orfano/duplicato streets/${lKey}`);
+            }
+          }
+        }
+
+        return { success: true, updatedReviewsCount };
+      } catch (err) {
+        console.error("[FixPiazzaCarducci] Errore durante il riallineamento:", err);
+        throw err;
+      }
+    };
+
     // Routine Autoritaria di Riallineamento e Pulizia per Via Firenze (Grottammare AP)
     window.fixViaFirenzeGrottammare = async () => {
       const firestore = window.db;
@@ -3211,8 +3323,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             streetCity: "Grottammare",
             province: "AP",
             postalCode: "63066",
-            latitude: 42.9734,
-            longitude: 13.8732,
+            latitude: 42.96336244509739,
+            longitude: 13.875948479968113,
             streetKey: "piazza-g-carducci_grottammare_ap",
             legacyKeys: [
               "piazza-g-carducci_san-benedetto-del-tronto_ap",
@@ -4053,8 +4165,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   uiStreet.name = 'Piazza G. Carducci';
                   uiStreet.streetCity = 'Grottammare';
                   uiStreet.city = 'Grottammare';
-                  uiStreet.latitude = 42.9734;
-                  uiStreet.longitude = 13.8732;
+                  uiStreet.latitude = 42.96336244509739;
+                  uiStreet.longitude = 13.875948479968113;
                   uiStreet.streetKey = 'piazza-g-carducci_grottammare_ap';
                 } else if (rawNameSnap.includes('firenze') || rawKeySnap.includes('firenze')) {
                   uiStreet.name = 'Via Firenze';
@@ -4135,8 +4247,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             }
           );
 
-        // Esecuzione automatica all'avvio del riallineamento Via Firenze, San Donato e disaccoppiamento Mazzini
+        // Esecuzione automatica all'avvio del riallineamento Piazza Carducci, Via Firenze, San Donato e disaccoppiamento Mazzini
         setTimeout(() => {
+          if (typeof window.fixPiazzaCarducciGrottammare === 'function') {
+            window.fixPiazzaCarducciGrottammare().catch(err => {
+              console.warn('[Startup] FixPiazzaCarducci notice:', err);
+            });
+          }
           if (typeof window.fixViaFirenzeGrottammare === 'function') {
             window.fixViaFirenzeGrottammare().catch(err => {
               console.warn('[Startup] FixViaFirenze notice:', err);
