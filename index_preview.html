@@ -240,7 +240,7 @@
       { name: 'Lungomare Alcide De Gasperi', city: 'Grottammare', province: 'AP', postalCode: '63066', lat: 42.9744, lng: 13.8769 },
       { name: 'Via dei Piceni', city: 'Grottammare', province: 'AP', postalCode: '63066', lat: 42.9878, lng: 13.8700 },
       { name: 'Via Ballestra', city: 'Grottammare', province: 'AP', postalCode: '63066', lat: 42.9856, lng: 13.8691 },
-      { name: 'Corso Giuseppe Mazzini', city: 'Grottammare', province: 'AP', postalCode: '63066', lat: 42.9667, lng: 13.8730 },
+      { name: 'Corso Giuseppe Mazzini', city: 'Grottammare', province: 'AP', postalCode: '63066', lat: 42.9888, lng: 13.8690 },
       { name: 'Piazza Pericle Fazzini', city: 'Grottammare', province: 'AP', postalCode: '63066', lat: 42.9906, lng: 13.8687 },
       { name: 'Via Salaria (Centobuchi)', city: 'Monteprandone', province: 'AP', postalCode: '63076', lat: 42.8977, lng: 13.8498 },
       { name: 'Piazza dell\'Aquila (Borgo Storico)', city: 'Monteprandone', province: 'AP', postalCode: '63076', lat: 42.9200, lng: 13.8356 },
@@ -361,16 +361,23 @@
       return raw.replace(/[^A-Z]/g, '').slice(0, 2);
     };
 
-    // Chiave Univoca Composita Nazionale (Nome Completo + Comune Normalizzato + Provincia per comuni fuori dall'hub storico)
-    // Mantiene la totale retrocompatibilità con i documenti già salvati su Firestore ('street-review-database') privi di provincia
+    // Chiave Univoca Composita Nazionale (Nome Completo + Comune Normalizzato + Provincia per la massima univocità toponomastica)
     const createStreetCompositeKey = (streetName, city, lat, lng, province = '') => {
       const sKey = normalizeStreetKey(streetName);
       const cKey = normalizeCityKey(city, lat, lng);
-      if (RIVIERA_LEGACY_CITY_KEYS.has(cKey)) {
-        return `${sKey}_${cKey}`;
-      }
       const pCode = normalizeProvinceCode(province, cKey, lat, lng).toLowerCase();
       return pCode ? `${sKey}_${cKey}_${pCode}` : `${sKey}_${cKey}`;
+    };
+
+    // Verifica equivalenza tra due streetKey gestendo la presenza o assenza della sigla provincia (_ap)
+    const areStreetKeysEquivalent = (keyA, keyB) => {
+      if (!keyA || !keyB) return false;
+      const kA = String(keyA).toLowerCase().replace(/^street-/, '');
+      const kB = String(keyB).toLowerCase().replace(/^street-/, '');
+      if (kA === kB) return true;
+      const strippedA = kA.replace(/_[a-z]{2}$/, '');
+      const strippedB = kB.replace(/_[a-z]{2}$/, '');
+      return strippedA === strippedB && strippedA.includes('_');
     };
 
     // Calcolo distanza Haversine in km tra due punti geografici
@@ -389,12 +396,18 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     };
 
-    // Deduplicazione Spaziale & Toponomastica su scala nazionale:
-    // Due record appartengono alla stessa strada se hanno lo stesso nome toponomastico normalizzato
-    // E condividono il medesimo comune/provincia (o si trovano entro 2.5 km lungo lo stesso asse viario nella stessa città),
-    // mantenendo totale retrocompatibilità con i documenti privi di provincia salvati in precedenza.
+    // Deduplicazione Spaziale & Toponomastica su scala nazionale con blindatura assoluta del Comune:
+    // Due record NON possono mai coincidere se appartengono a comuni diversi (es. Grottammare vs San Benedetto del Tronto).
     const isSameStreet = (a, b) => {
       if (!a || !b) return false;
+
+      // 0. Se entrambe hanno una streetKey o ID definito, verifica equivalenza diretta
+      const rawKeyA = a.streetKey || a.id;
+      const rawKeyB = b.streetKey || b.id;
+      if (rawKeyA && rawKeyB && areStreetKeysEquivalent(rawKeyA, rawKeyB)) {
+        return true;
+      }
+
       const sNormA = normalizeStreetKey(a.name || a.streetName || a.canonicalName);
       const sNormB = normalizeStreetKey(b.name || b.streetName || b.canonicalName);
       if (!sNormA || !sNormB || sNormA !== sNormB) return false;
@@ -409,6 +422,11 @@
 
       const cKeyA = normalizeCityKey(a.city || a.streetCity, hasCoordsA ? latA : null, hasCoordsA ? lngA : null);
       const cKeyB = normalizeCityKey(b.city || b.streetCity, hasCoordsB ? latB : null, hasCoordsB ? lngB : null);
+
+      // BLINDATURA ASSOLUTA: Se i comuni normalizzati sono entrambi noti e diversi, sono TASSATIVAMENTE due strade distinte!
+      if (cKeyA && cKeyB && cKeyA !== 'italia' && cKeyB !== 'italia' && cKeyA !== cKeyB) {
+        return false;
+      }
 
       const provA = normalizeProvinceCode(a.province || a.streetProvince, cKeyA, hasCoordsA ? latA : null, hasCoordsA ? lngA : null);
       const provB = normalizeProvinceCode(b.province || b.streetProvince, cKeyB, hasCoordsB ? latB : null, hasCoordsB ? lngB : null);
@@ -426,7 +444,7 @@
       return Boolean(cKeyA && cKeyB && cKeyA !== 'italia' && cKeyA === cKeyB);
     };
 
-    // Lookup preventivo di una via nell'elenco delle vie già caricate (prioritizzando quelle con recensioni > 0)
+    // Lookup preventivo di una via nell'elenco delle vie già caricate (prioritizzando quelle con recensioni > 0 e chiave esatta)
     const findExistingStreetInList = (list, candidate) => {
       if (!Array.isArray(list) || !candidate) return null;
       const candName = candidate.name || candidate.streetName || '';
@@ -435,21 +453,33 @@
       const candCity = resolveCanonicalCityName(candidate.city || candidate.streetCity, candLat, candLng);
       const candNormCity = normalizeCityKey(candCity, candLat, candLng);
       const candProv = normalizeProvinceCode(candidate.province || candidate.streetProvince, candNormCity, candLat, candLng);
-      const candCompKey = createStreetCompositeKey(candName, candCity, candLat, candLng, candProv);
+      const candCompKey = candidate.streetKey || createStreetCompositeKey(candName, candCity, candLat, candLng, candProv);
       const candLegacyCompKey = `${normalizeStreetKey(candName)}_${candNormCity}`;
       const candNormName = normalizeStreetKey(candName);
+
+      // 1. Priorità assoluta: corrispondenza per streetKey esatta o ID canonico
+      const candKey = candidate.streetKey || candidate.id;
+      if (candKey) {
+        const exactMatch = list.find(s => areStreetKeysEquivalent(s.streetKey || s.id, candKey));
+        if (exactMatch) return exactMatch;
+      }
 
       // Ordina dando precedenza assoluta alle vie già recensite su Firestore (reviewsCount > 0)
       const sorted = [...list].sort((a, b) => (b.reviewsCount || 0) - (a.reviewsCount || 0));
 
       return sorted.find(s => {
         const sNormCity = normalizeCityKey(s.city, s.latitude, s.longitude);
+        // BLINDATURA: Se i comuni sono noti e diversi, non associare mai!
+        if (sNormCity && candNormCity && sNormCity !== 'italia' && candNormCity !== 'italia' && sNormCity !== candNormCity) {
+          return false;
+        }
         const sProv = normalizeProvinceCode(s.province || s.streetProvince, sNormCity, s.latitude, s.longitude);
-        const sCompKey = createStreetCompositeKey(s.name, s.city, s.latitude, s.longitude, sProv);
+        const sCompKey = s.streetKey || createStreetCompositeKey(s.name, s.city, s.latitude, s.longitude, sProv);
         const sLegacyCompKey = `${normalizeStreetKey(s.name)}_${sNormCity}`;
+        if (areStreetKeysEquivalent(sCompKey, candCompKey)) return true;
         if (sCompKey === candCompKey) return true;
         if (sLegacyCompKey === candLegacyCompKey && (!sProv || !candProv || sProv === candProv)) return true;
-        if (isSameStreet(s, { name: candName, city: candCity, province: candProv, lat: candLat, lng: candLng })) return true;
+        if (isSameStreet(s, { name: candName, city: candCity, province: candProv, lat: candLat, lng: candLng, streetKey: candCompKey })) return true;
         return normalizeStreetKey(s.name) === candNormName && sNormCity === candNormCity && (!sProv || !candProv || sProv === candProv);
       }) || null;
     };
@@ -470,6 +500,10 @@
         const gSNorm = normalizeStreetKey(g.name);
         if (gSNorm !== sNorm) return false;
         const gCNorm = normalizeCityKey(g.city, g.lat, g.lng);
+        // BLINDATURA: Se il comune di ricerca è specificato e diverso da quello del gazetteer, non matchare mai!
+        if (resolvedCityKey && gCNorm && resolvedCityKey !== 'italia' && resolvedCityKey !== gCNorm) {
+          return false;
+        }
         if (fallbackLat && fallbackLng && getDistanceKm(g.lat, g.lng, fallbackLat, fallbackLng) <= 2.5) {
           return true;
         }
@@ -2310,6 +2344,133 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       }
     };
 
+    // Utilità Globale Temporanea/Amministrativa di Rettifica Coordinate e Disaccoppiamento per Corso Giuseppe Mazzini (Grottammare)
+    window.fixCorsoMazziniGrottammare = async () => {
+      const firestore = window.db;
+      if (!firestore) {
+        console.error("Firestore non inizializzato o non disponibile in window.db");
+        return { success: false, error: "Database not connected" };
+      }
+
+      try {
+        console.log("[FixCorsoMazziniGrottammare] Avvio rettifica per Corso Giuseppe Mazzini (Grottammare)...");
+        const targetStreetKey = "corso-giuseppe-mazzini_grottammare_ap";
+        const legacyKeys = [
+          "corso-giuseppe-mazzini_grottammare",
+          "corso-giuseppe-mazzini_grottammare_ap",
+          "corso-mazzini_grottammare",
+          "corso-mazzini_grottammare_ap"
+        ];
+
+        // 1. Cerca e aggiorna tutte le recensioni di Grottammare pertinenti a Corso Mazzini
+        const reviewsSnap = await firestore.collection('reviews').get();
+        const batch = firestore.batch();
+        let updatedReviews = 0;
+        const matchingReviews = [];
+
+        reviewsSnap.forEach(docSnap => {
+          const r = docSnap.data();
+          const rName = (r.streetName || r.name || '').toLowerCase();
+          const rCity = (r.streetCity || r.city || '').toLowerCase();
+          const rKey = (r.streetKey || '').toLowerCase();
+
+          const isMazzini = rName.includes('mazzini') || rKey.includes('mazzini');
+          const isGrottammare = rCity.includes('grottammare') || rKey.includes('grottammare');
+
+          if (isMazzini && isGrottammare) {
+            const updatedReviewData = {
+              ...r,
+              streetName: "Corso Giuseppe Mazzini",
+              streetCity: "Grottammare",
+              streetProvince: "AP",
+              province: "AP",
+              postalCode: "63066",
+              latitude: 42.9888,
+              longitude: 13.8690,
+              streetKey: targetStreetKey,
+              updatedAt: new Date().toISOString()
+            };
+            matchingReviews.push({ id: docSnap.id, ...updatedReviewData });
+            batch.update(docSnap.ref, {
+              streetName: "Corso Giuseppe Mazzini",
+              streetCity: "Grottammare",
+              streetProvince: "AP",
+              province: "AP",
+              postalCode: "63066",
+              latitude: 42.9888,
+              longitude: 13.8690,
+              streetKey: targetStreetKey,
+              updatedAt: new Date().toISOString()
+            });
+            updatedReviews++;
+          }
+        });
+
+        if (updatedReviews > 0) {
+          await batch.commit();
+          console.log(`[FixCorsoMazziniGrottammare] Aggiornate ${updatedReviews} recensioni in 'reviews'.`);
+        }
+
+        // 2. Crea o aggiorna streets/corso-giuseppe-mazzini_grottammare_ap
+        const correctStreetMeta = {
+          streetKey: targetStreetKey,
+          streetName: "Corso Giuseppe Mazzini",
+          streetCity: "Grottammare",
+          province: "AP",
+          postalCode: "63066",
+          latitude: 42.9888,
+          longitude: 13.8690,
+          updatedAt: new Date().toISOString()
+        };
+
+        let streetSummaryDoc;
+        if (matchingReviews.length > 0) {
+          streetSummaryDoc = buildStreetSummaryDocFromReviews(matchingReviews, correctStreetMeta);
+        } else {
+          streetSummaryDoc = {
+            ...correctStreetMeta,
+            streetType: '🏡 Urbana',
+            ratingOverall: 0,
+            avgOverallRating: 0,
+            reviewsCount: 0,
+            categoryAverages: {},
+            parkingTypes: [],
+            amenities: [],
+            roadObstacles: [],
+            reviews: []
+          };
+        }
+
+        await firestore.collection('streets').doc(targetStreetKey).set({
+          ...streetSummaryDoc,
+          ...correctStreetMeta
+        }, { merge: true });
+
+        // 3. Rimuovi eventuali documenti duplicati con chiavi legacy
+        for (const legacyKey of legacyKeys) {
+          if (legacyKey !== targetStreetKey) {
+            const oldDoc = await firestore.collection('streets').doc(legacyKey).get();
+            if (oldDoc.exists) {
+              await firestore.collection('streets').doc(legacyKey).delete();
+              console.log(`[FixCorsoMazziniGrottammare] Eliminato documento duplicato legacy 'streets/${legacyKey}'.`);
+            }
+          }
+        }
+
+        console.log(`[FixCorsoMazziniGrottammare] Rettifica completata: ${updatedReviews} recensioni aggiornate e streets/${targetStreetKey} impostata a lat 42.9888, lng 13.8690.`);
+        return {
+          success: true,
+          updatedReviews,
+          streetKey: targetStreetKey,
+          latitude: 42.9888,
+          longitude: 13.8690
+        };
+      } catch (err) {
+        console.error("[FixCorsoMazziniGrottammare] Errore durante la rettifica:", err);
+        throw err;
+      }
+    };
+
     // Combina i dati pre-aggregati di 'streets' e 'users' per la UI Gamification & Classifica Top 10
     const computeGamificationData = (streetsList, activeUser, leaderboardUsersList = [], activeUserDocProfile = null, cachedUsersMap = {}) => {
       const reviewMetaMap = {};
@@ -2933,18 +3094,30 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               snapshot.docs.forEach(doc => {
                 const data = { id: doc.id, streetKey: doc.id, ...doc.data() };
                 const existing = prevStreets.find(s =>
-                  (s.streetKey && s.streetKey === data.streetKey) ||
-                  isSameStreet(s, { name: data.streetName, city: data.streetCity, province: data.province, lat: data.latitude, lng: data.longitude })
+                  areStreetKeysEquivalent(s.streetKey || s.id, data.streetKey || data.id) ||
+                  isSameStreet(s, { name: data.streetName, city: data.streetCity, province: data.province, lat: data.latitude, lng: data.longitude, streetKey: data.streetKey })
                 );
                 const uiStreet = mapStreetDocToUIStreet(data, existing);
-                if (!updated.some(u => isSameStreet(u, uiStreet))) {
+
+                // Auto-rettifica preventiva per Corso Giuseppe Mazzini (Grottammare) se ancora presenta vecchie coordinate
+                if (
+                  (uiStreet.streetCity === 'Grottammare' || (uiStreet.streetKey && uiStreet.streetKey.includes('grottammare'))) &&
+                  (uiStreet.name || '').toLowerCase().includes('mazzini') &&
+                  uiStreet.latitude < 42.975
+                ) {
+                  uiStreet.latitude = 42.9888;
+                  uiStreet.longitude = 13.8690;
+                  uiStreet.streetKey = 'corso-giuseppe-mazzini_grottammare_ap';
+                }
+
+                if (!updated.some(u => areStreetKeysEquivalent(u.streetKey || u.id, uiStreet.streetKey || uiStreet.id) || isSameStreet(u, uiStreet))) {
                   updated.push(uiStreet);
                 }
               });
 
               // Mantieni eventuali strade temporanee a 0 recensioni attualmente selezionate dall'utente
               prevStreets.forEach(s => {
-                const alreadyMerged = updated.some(u => isSameStreet(u, s));
+                const alreadyMerged = updated.some(u => areStreetKeysEquivalent(u.streetKey || u.id, s.streetKey || s.id) || isSameStreet(u, s));
                 if (!alreadyMerged && s.reviewsCount === 0) {
                   updated.push(s);
                 }
@@ -3137,7 +3310,10 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       // Mantieni allineata la scheda della strada attualmente aperta con i dati in tempo reale
       useEffect(() => {
         if (!selectedStreet) return;
-        const matching = findExistingStreetInList(streets, selectedStreet);
+        const matching = (streets || []).find(s =>
+          areStreetKeysEquivalent(s.streetKey || s.id, selectedStreet.streetKey || selectedStreet.id)
+        ) || findExistingStreetInList(streets, selectedStreet);
+
         if (matching && (
           matching.id !== selectedStreet.id ||
           matching.streetType !== selectedStreet.streetType ||
@@ -3277,8 +3453,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         // 1. Cerca nello stradario storico locale
         LOCAL_GAZETTEER.forEach(item => {
           if (item.name.toLowerCase().includes(q) || item.city.toLowerCase().includes(q)) {
-            const existing = findExistingStreetInList(streets, item);
+            const compKey = createStreetCompositeKey(item.name, item.city, item.lat, item.lng, item.province);
+            const existing = findExistingStreetInList(streets, { ...item, streetKey: compKey });
             results.push({
+              id: existing ? existing.id : undefined,
+              streetKey: existing ? existing.streetKey : compKey,
               name: existing ? existing.name : item.name,
               city: existing ? existing.city : item.city,
               province: existing ? existing.province : item.province,
@@ -3295,9 +3474,14 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         // 2. Includi anche le vie già recensite su Firestore in tutta Italia che corrispondono alla ricerca
         streets.forEach(s => {
           if (s.name.toLowerCase().includes(q) || (s.city && s.city.toLowerCase().includes(q))) {
-            const alreadyInResults = results.some(r => isSameStreet(r, s));
+            const alreadyInResults = results.some(r =>
+              areStreetKeysEquivalent(r.streetKey || r.id, s.streetKey || s.id) ||
+              isSameStreet(r, s)
+            );
             if (!alreadyInResults) {
               results.push({
+                id: s.id,
+                streetKey: s.streetKey,
                 name: s.name,
                 city: s.city,
                 province: s.province || '',
@@ -3984,9 +4168,14 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         const cleanTargetName = civicParsed.cleanQuery || target.name;
         setPrefilledStreetSegment('');
 
-        const targetCity = resolveCanonicalCityName(target.city, rawLat, rawLng);
-        const targetProvince = normalizeProvinceCode(target.province || target.streetProvince || '');
+        const targetCity = resolveCanonicalCityName(target.city || target.streetCity, rawLat, rawLng);
+        const targetCityKey = normalizeCityKey(targetCity, rawLat, rawLng);
+        const targetProvince = normalizeProvinceCode(target.province || target.streetProvince || '', targetCityKey, rawLat, rawLng);
+        const targetCompKey = target.streetKey || createStreetCompositeKey(cleanTargetName, targetCity, rawLat, rawLng, targetProvince);
+
         const targetCandidate = {
+          id: target.id,
+          streetKey: targetCompKey,
           name: cleanTargetName,
           city: targetCity,
           province: targetProvince,
@@ -3994,10 +4183,16 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           lng: rawLng,
         };
 
-        // Lookup su streetsRef.current (sempre aggiornato anche dentro listener asincroni di Google Maps)
-        let street = (target.reviewsCount > 0 && target.id && Array.isArray(target.reviews))
-          ? target
-          : findExistingStreetInList(streetsRef.current, targetCandidate);
+        // 1. Cerca prima su streetsRef.current per streetKey esatta / equivalente (priorità assoluta)
+        let street = (streetsRef.current || []).find(s =>
+          areStreetKeysEquivalent(s.streetKey || s.id, targetCompKey) ||
+          (target.id && (s.id === target.id || s.streetKey === target.id))
+        );
+
+        // 2. Se non trovata per chiave, cerca tramite findExistingStreetInList (rispettando rigorosamente il comune)
+        if (!street) {
+          street = findExistingStreetInList(streetsRef.current, targetCandidate);
+        }
 
         if (street && street.reviewsCount > 0) {
           // La via esiste già nel database: rimuovi eventuali segnaposto temporanei a 0 recensioni e apri la scheda esistente
@@ -4009,29 +4204,35 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           setSelectedStreet(street);
           setSheetSnap('half');
 
-          if (googleMapRef.current) {
-            googleMapRef.current.panTo({ lat: street.latitude, lng: street.longitude });
-            googleMapRef.current.setZoom(16);
-          } else if (leafletMapRef.current) {
-            leafletMapRef.current.setView([street.latitude, street.longitude], 16, { animate: true });
+          // Centramento mappa ESCLUSIVAMENTE sulle coordinate del record specifico di quel comune
+          const panLat = Number(street.latitude ?? street.lat ?? rawLat);
+          const panLng = Number(street.longitude ?? street.lng ?? rawLng);
+
+          if (panLat && panLng) {
+            if (googleMapRef.current) {
+              googleMapRef.current.panTo({ lat: panLat, lng: panLng });
+              googleMapRef.current.setZoom(16);
+            } else if (leafletMapRef.current) {
+              leafletMapRef.current.setView([panLat, panLng], 16, { animate: true });
+            }
           }
           return;
         }
 
         // La via NON esiste ancora: risolvi il punto di ancoraggio canonico e mostra il segnaposto temporaneo ('— Nuova')
         const anchor = getCanonicalStreetAnchor(cleanTargetName, targetCity, rawLat, rawLng, targetProvince);
-        const resolvedLat = street ? street.latitude : anchor.lat;
-        const resolvedLng = street ? street.longitude : anchor.lng;
+        const resolvedLat = Number(street ? street.latitude : (anchor.lat ?? rawLat));
+        const resolvedLng = Number(street ? street.longitude : (anchor.lng ?? rawLng));
         const resolvedName = street ? street.name : (anchor.canonicalName || cleanTargetName);
         const resolvedCity = street ? street.city : (anchor.city || targetCity);
         const resolvedProvince = street ? (street.province || targetProvince) : (anchor.province || targetProvince);
         const resolvedPostalCode = street ? street.postalCode : (anchor.postalCode || target.postalCode || resolveDefaultPostalCode(normalizeCityKey(resolvedCity, resolvedLat, resolvedLng)));
-        const targetCompKey = createStreetCompositeKey(resolvedName, resolvedCity, resolvedLat, resolvedLng, resolvedProvince);
+        const finalCompKey = targetCompKey || createStreetCompositeKey(resolvedName, resolvedCity, resolvedLat, resolvedLng, resolvedProvince);
 
         if (!street) {
           street = {
-            id: 'street-' + targetCompKey.replace(/[^a-z0-9]/g, '-'),
-            streetKey: targetCompKey,
+            id: 'street-' + finalCompKey.replace(/[^a-z0-9]/g, '-'),
+            streetKey: finalCompKey,
             name: resolvedName,
             city: resolvedCity,
             province: resolvedProvince,
