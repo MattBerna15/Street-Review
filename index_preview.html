@@ -361,23 +361,34 @@
       return raw.replace(/[^A-Z]/g, '').slice(0, 2);
     };
 
-    // Chiave Univoca Composita Nazionale (Nome Completo + Comune Normalizzato + Provincia per la massima univocità toponomastica)
+    const normalizeStreetName = normalizeStreetKey;
+    const normalizeCity = normalizeCityKey;
+    const normalizeProvince = (province, cityKey = '', lat = null, lng = null) => {
+      const p = normalizeProvinceCode(province, cityKey, lat, lng);
+      return (p && p.trim()) ? p.trim().toLowerCase() : 'italia';
+    };
+
+    // Schema Chiave Composita Universale Rigorosa:
+    // ${normalizeStreetName(streetName)}_${normalizeCity(streetCity)}_${normalizeProvince(province || 'italia')}
     const createStreetCompositeKey = (streetName, city, lat, lng, province = '') => {
-      const sKey = normalizeStreetKey(streetName);
-      const cKey = normalizeCityKey(city, lat, lng);
-      const pCode = normalizeProvinceCode(province, cKey, lat, lng).toLowerCase();
-      return pCode ? `${sKey}_${cKey}_${pCode}` : `${sKey}_${cKey}`;
+      const sKey = normalizeStreetName(streetName);
+      const cKey = normalizeCity(city, lat, lng);
+      const pKey = normalizeProvince(province, cKey, lat, lng);
+      return `${sKey}_${cKey}_${pKey}`;
     };
 
     // Verifica equivalenza tra due streetKey gestendo la presenza o assenza della sigla provincia (_ap)
     const areStreetKeysEquivalent = (keyA, keyB) => {
       if (!keyA || !keyB) return false;
-      const kA = String(keyA).toLowerCase().replace(/^street-/, '');
-      const kB = String(keyB).toLowerCase().replace(/^street-/, '');
+      const kA = String(keyA).toLowerCase().replace(/^street-/, '').trim();
+      const kB = String(keyB).toLowerCase().replace(/^street-/, '').trim();
       if (kA === kB) return true;
       const strippedA = kA.replace(/_[a-z]{2}$/, '');
       const strippedB = kB.replace(/_[a-z]{2}$/, '');
-      return strippedA === strippedB && strippedA.includes('_');
+      if (strippedA === strippedB && strippedA.includes('_')) {
+        return true;
+      }
+      return false;
     };
 
     // Calcolo distanza Haversine in km tra due punti geografici
@@ -404,12 +415,15 @@
       // 0. Se entrambe hanno una streetKey o ID definito, verifica equivalenza diretta
       const rawKeyA = a.streetKey || a.id;
       const rawKeyB = b.streetKey || b.id;
-      if (rawKeyA && rawKeyB && areStreetKeysEquivalent(rawKeyA, rawKeyB)) {
-        return true;
+      if (rawKeyA && rawKeyB) {
+        if (areStreetKeysEquivalent(rawKeyA, rawKeyB)) return true;
+        const cityA = (String(rawKeyA).replace(/^street-/, '').split('_')[1] || '').replace(/_[a-z]{2}$/, '');
+        const cityB = (String(rawKeyB).replace(/^street-/, '').split('_')[1] || '').replace(/_[a-z]{2}$/, '');
+        if (cityA && cityB && cityA !== cityB) return false;
       }
 
-      const sNormA = normalizeStreetKey(a.name || a.streetName || a.canonicalName);
-      const sNormB = normalizeStreetKey(b.name || b.streetName || b.canonicalName);
+      const sNormA = normalizeStreetName(a.name || a.streetName || a.canonicalName);
+      const sNormB = normalizeStreetName(b.name || b.streetName || b.canonicalName);
       if (!sNormA || !sNormB || sNormA !== sNormB) return false;
 
       const latA = Number(a.lat ?? a.latitude);
@@ -420,18 +434,20 @@
       const hasCoordsA = !isNaN(latA) && !isNaN(lngA) && latA !== 0 && lngA !== 0;
       const hasCoordsB = !isNaN(latB) && !isNaN(lngB) && latB !== 0 && lngB !== 0;
 
-      const cKeyA = normalizeCityKey(a.city || a.streetCity, hasCoordsA ? latA : null, hasCoordsA ? lngA : null);
-      const cKeyB = normalizeCityKey(b.city || b.streetCity, hasCoordsB ? latB : null, hasCoordsB ? lngB : null);
+      const cKeyA = normalizeCity(a.city || a.streetCity, hasCoordsA ? latA : null, hasCoordsA ? lngA : null);
+      const cKeyB = normalizeCity(b.city || b.streetCity, hasCoordsB ? latB : null, hasCoordsB ? lngB : null);
 
       // BLINDATURA ASSOLUTA: Se i comuni normalizzati sono entrambi noti e diversi, sono TASSATIVAMENTE due strade distinte!
       if (cKeyA && cKeyB && cKeyA !== 'italia' && cKeyB !== 'italia' && cKeyA !== cKeyB) {
         return false;
       }
 
-      const provA = normalizeProvinceCode(a.province || a.streetProvince, cKeyA, hasCoordsA ? latA : null, hasCoordsA ? lngA : null);
-      const provB = normalizeProvinceCode(b.province || b.streetProvince, cKeyB, hasCoordsB ? latB : null, hasCoordsB ? lngB : null);
+      const provA = normalizeProvince(a.province || a.streetProvince, cKeyA, hasCoordsA ? latA : null, hasCoordsA ? lngA : null);
+      const provB = normalizeProvince(b.province || b.streetProvince, cKeyB, hasCoordsB ? latB : null, hasCoordsB ? lngB : null);
 
-      if (provA && provB && provA !== provB) return false;
+      if (provA && provB && provA !== 'italia' && provB !== 'italia' && provA !== provB) {
+        return false;
+      }
 
       if (hasCoordsA && hasCoordsB) {
         const distKm = getDistanceKm(latA, lngA, latB, lngB);
@@ -451,11 +467,10 @@
       const candLat = candidate.lat ?? candidate.latitude;
       const candLng = candidate.lng ?? candidate.longitude;
       const candCity = resolveCanonicalCityName(candidate.city || candidate.streetCity, candLat, candLng);
-      const candNormCity = normalizeCityKey(candCity, candLat, candLng);
-      const candProv = normalizeProvinceCode(candidate.province || candidate.streetProvince, candNormCity, candLat, candLng);
+      const candNormCity = normalizeCity(candCity, candLat, candLng);
+      const candProv = normalizeProvince(candidate.province || candidate.streetProvince, candNormCity, candLat, candLng);
       const candCompKey = candidate.streetKey || createStreetCompositeKey(candName, candCity, candLat, candLng, candProv);
-      const candLegacyCompKey = `${normalizeStreetKey(candName)}_${candNormCity}`;
-      const candNormName = normalizeStreetKey(candName);
+      const candNormName = normalizeStreetName(candName);
 
       // 1. Priorità assoluta: corrispondenza per streetKey esatta o ID canonico
       const candKey = candidate.streetKey || candidate.id;
@@ -464,56 +479,72 @@
         if (exactMatch) return exactMatch;
       }
 
-      // Ordina dando precedenza assoluta alle vie già recensite su Firestore (reviewsCount > 0)
+      // 2. Ricerca toponomastica con VINCOLO CATEGORICO sul Comune
       const sorted = [...list].sort((a, b) => (b.reviewsCount || 0) - (a.reviewsCount || 0));
 
       return sorted.find(s => {
-        const sNormCity = normalizeCityKey(s.city, s.latitude, s.longitude);
-        // BLINDATURA: Se i comuni sono noti e diversi, non associare mai!
+        const sNormCity = normalizeCity(s.city, s.latitude, s.longitude);
+        // BLINDATURA CATEGORICA: Se i comuni sono noti e diversi, non associare mai!
         if (sNormCity && candNormCity && sNormCity !== 'italia' && candNormCity !== 'italia' && sNormCity !== candNormCity) {
           return false;
         }
-        const sProv = normalizeProvinceCode(s.province || s.streetProvince, sNormCity, s.latitude, s.longitude);
+        const sProv = normalizeProvince(s.province || s.streetProvince, sNormCity, s.latitude, s.longitude);
         const sCompKey = s.streetKey || createStreetCompositeKey(s.name, s.city, s.latitude, s.longitude, sProv);
-        const sLegacyCompKey = `${normalizeStreetKey(s.name)}_${sNormCity}`;
         if (areStreetKeysEquivalent(sCompKey, candCompKey)) return true;
-        if (sCompKey === candCompKey) return true;
-        if (sLegacyCompKey === candLegacyCompKey && (!sProv || !candProv || sProv === candProv)) return true;
         if (isSameStreet(s, { name: candName, city: candCity, province: candProv, lat: candLat, lng: candLng, streetKey: candCompKey })) return true;
-        return normalizeStreetKey(s.name) === candNormName && sNormCity === candNormCity && (!sProv || !candProv || sProv === candProv);
+        return normalizeStreetName(s.name) === candNormName && sNormCity === candNormCity;
       }) || null;
     };
 
-    // Ricerca punto di ancoraggio canonico dal gazetteer rispettando nome, comune e prossimità
+    // Ricerca punto di ancoraggio canonico dal gazetteer con vincolo territoriale rigido
     const getCanonicalStreetAnchor = (streetName, streetCity, fallbackLat, fallbackLng, fallbackProvince = '') => {
       const resolvedCity = resolveCanonicalCityName(streetCity, fallbackLat, fallbackLng);
-      const resolvedCityKey = normalizeCityKey(resolvedCity, fallbackLat, fallbackLng);
-      const resolvedProvince = normalizeProvinceCode(fallbackProvince, resolvedCityKey, fallbackLat, fallbackLng);
+      const resolvedCityKey = normalizeCity(resolvedCity, fallbackLat, fallbackLng);
+      const resolvedProvince = normalizeProvince(fallbackProvince, resolvedCityKey, fallbackLat, fallbackLng);
       const defaultPostal = resolveDefaultPostalCode(resolvedCityKey);
 
       if (!streetName) {
-        return { lat: fallbackLat, lng: fallbackLng, city: resolvedCity, province: resolvedProvince, postalCode: defaultPostal, canonicalName: streetName };
+        return {
+          lat: fallbackLat,
+          lng: fallbackLng,
+          city: resolvedCity,
+          province: resolvedProvince,
+          postalCode: defaultPostal,
+          canonicalName: streetName
+        };
       }
 
-      const sNorm = normalizeStreetKey(streetName);
+      const sNorm = normalizeStreetName(streetName);
+
+      // Vincolo Territoriale Rigido sul Gazetteer Locale:
+      // Solo se il nome toponomastico coincide e il comune dichiarato coincide ESATTAMENTE
       const match = LOCAL_GAZETTEER.find(g => {
-        const gSNorm = normalizeStreetKey(g.name);
+        const gSNorm = normalizeStreetName(g.name);
         if (gSNorm !== sNorm) return false;
-        const gCNorm = normalizeCityKey(g.city, g.lat, g.lng);
-        // BLINDATURA: Se il comune di ricerca è specificato e diverso da quello del gazetteer, non matchare mai!
-        if (resolvedCityKey && gCNorm && resolvedCityKey !== 'italia' && resolvedCityKey !== gCNorm) {
-          return false;
-        }
-        if (fallbackLat && fallbackLng && getDistanceKm(g.lat, g.lng, fallbackLat, fallbackLng) <= 2.5) {
-          return true;
-        }
-        return gCNorm === resolvedCityKey && (!resolvedProvince || resolvedProvince === 'AP');
+        const gCNorm = normalizeCity(g.city, g.lat, g.lng);
+        return gCNorm === resolvedCityKey;
       });
 
       if (match) {
-        return { lat: match.lat, lng: match.lng, city: match.city, province: match.province || 'AP', postalCode: match.postalCode, canonicalName: match.name };
+        return {
+          lat: match.lat,
+          lng: match.lng,
+          city: match.city,
+          province: match.province || 'AP',
+          postalCode: match.postalCode,
+          canonicalName: match.name
+        };
       }
-      return { lat: fallbackLat, lng: fallbackLng, city: resolvedCity, province: resolvedProvince, postalCode: defaultPostal, canonicalName: streetName };
+
+      // Se la strada non appartiene al LOCAL_GAZETTEER, preserva intatte al 100% le coordinate originali di Google Maps / Geocoder
+      return {
+        lat: fallbackLat,
+        lng: fallbackLng,
+        city: resolvedCity,
+        province: resolvedProvince,
+        postalCode: defaultPostal,
+        canonicalName: streetName
+      };
     };
 
     // Helper per estrarre comune, provincia (sigla), cap, via e numero civico (street_number) da address_components di Google Places o Geocoder
@@ -2471,6 +2502,153 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       }
     };
 
+    // Routine Globale di Verifica, Pulizia e Normalizzazione Coordinate e Chiavi Stradali (Anti-Collisione e Disallineamento)
+    window.auditAndFixStreetCoordinates = async () => {
+      const firestore = window.db;
+      if (!firestore) {
+        console.error("[Audit] Firestore non inizializzato o non disponibile in window.db");
+        return { success: false, error: "Database not connected" };
+      }
+
+      console.log("[Audit] Avvio audit e normalizzazione coordinate e chiavi stradali su Firestore...");
+      try {
+        const streetsSnap = await firestore.collection('streets').get();
+        const geocoder = (window.google && window.google.maps) ? new window.google.maps.Geocoder() : null;
+
+        let auditedCount = 0;
+        let fixedCount = 0;
+        const fixes = [];
+
+        for (const docSnap of streetsSnap.docs) {
+          auditedCount++;
+          const s = docSnap.data();
+          const docId = docSnap.id;
+          const streetName = s.streetName || s.name || '';
+          const streetCity = s.streetCity || s.city || '';
+          const lat = Number(s.latitude);
+          const lng = Number(s.longitude);
+
+          if (!streetName || !streetCity) continue;
+
+          const declaredCityKey = normalizeCity(streetCity, lat, lng);
+          const inferredCityKey = inferCityKeyFromCoords(lat, lng);
+
+          let isMismatched = false;
+          let targetLat = lat;
+          let targetLng = lng;
+
+          // 1. Controllo Grottammare: se comune dichiarato è Grottammare ma coordinate dentro San Benedetto (lat < 42.9720)
+          if (declaredCityKey === 'grottammare' && lat < 42.9720) {
+            isMismatched = true;
+            if (normalizeStreetName(streetName).includes('mazzini')) {
+              targetLat = 42.9888;
+              targetLng = 13.8690;
+            } else {
+              targetLat = 42.9880;
+              targetLng = 13.8690;
+            }
+          }
+          // 2. Controllo San Benedetto del Tronto: se dichiarato San Benedetto ma coordinate dentro Grottammare (lat > 42.9680)
+          else if (declaredCityKey === 'san-benedetto-del-tronto' && lat > 42.9680) {
+            isMismatched = true;
+            targetLat = 42.9520;
+            targetLng = 13.8820;
+          }
+          // 3. Controllo incoerenza territoriale Riviera
+          else if (inferredCityKey && declaredCityKey !== 'italia' && inferredCityKey !== declaredCityKey) {
+            isMismatched = true;
+          }
+
+          // Se rilevata anomalia e il geocoder di Google Maps è disponibile, richiedi le coordinate ufficiali
+          if (isMismatched && geocoder && !(declaredCityKey === 'grottammare' && normalizeStreetName(streetName).includes('mazzini'))) {
+            try {
+              const geoRes = await new Promise((resolve) => {
+                geocoder.geocode({ address: `${streetName}, ${streetCity}, Italia` }, (results, status) => {
+                  if (status === 'OK' && results && results.length > 0) {
+                    resolve(results[0]);
+                  } else {
+                    resolve(null);
+                  }
+                });
+              });
+              if (geoRes && geoRes.geometry && geoRes.geometry.location) {
+                targetLat = Number(geoRes.geometry.location.lat().toFixed(6));
+                targetLng = Number(geoRes.geometry.location.lng().toFixed(6));
+              }
+            } catch (err) {
+              console.warn(`[Audit] Geocoding remoto fallito per ${streetName}, ${streetCity}:`, err);
+            }
+          }
+
+          // Genera la chiave composita universale rigorosa
+          const canonicalCompKey = createStreetCompositeKey(streetName, streetCity, targetLat, targetLng, s.province || s.streetProvince || '');
+
+          if (isMismatched || docId !== canonicalCompKey || s.streetKey !== canonicalCompKey) {
+            fixes.push({
+              oldDocRef: docSnap.ref,
+              oldId: docId,
+              canonicalCompKey,
+              streetName,
+              streetCity,
+              targetLat,
+              targetLng,
+              docData: s,
+            });
+          }
+        }
+
+        // Applica le rettifiche a batch su Firestore
+        for (const fix of fixes) {
+          console.log(`[Audit] Rettifica via '${fix.streetName}' (${fix.streetCity}): lat ${fix.targetLat}, lng ${fix.targetLng}, chiave: ${fix.canonicalCompKey}`);
+
+          // A. Scrivi documento corretto in streets
+          const newDocRef = firestore.collection('streets').doc(fix.canonicalCompKey);
+          await newDocRef.set({
+            ...fix.docData,
+            latitude: fix.targetLat,
+            longitude: fix.targetLng,
+            streetKey: fix.canonicalCompKey,
+            streetCity: fix.streetCity,
+            streetName: fix.streetName,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+
+          // Se la vecchia chiave era diversa, elimina il vecchio documento obsoleto
+          if (fix.oldId !== fix.canonicalCompKey) {
+            await fix.oldDocRef.delete();
+          }
+
+          // B. Allinea le recensioni corrispondenti in reviews
+          const revsSnap = await firestore.collection('reviews')
+            .where('streetKey', '==', fix.oldId)
+            .get();
+
+          if (!revsSnap.empty) {
+            const batch = firestore.batch();
+            revsSnap.forEach(rDoc => {
+              batch.update(rDoc.ref, {
+                latitude: fix.targetLat,
+                longitude: fix.targetLng,
+                streetKey: fix.canonicalCompKey,
+                streetCity: fix.streetCity,
+                streetName: fix.streetName,
+                updatedAt: new Date().toISOString()
+              });
+            });
+            await batch.commit();
+          }
+
+          fixedCount++;
+        }
+
+        console.log(`[Audit] Audit completato: ${auditedCount} strade verificate, ${fixedCount} rettificate.`);
+        return { success: true, auditedCount, fixedCount, fixes };
+      } catch (err) {
+        console.error("[Audit] Errore durante l'audit delle coordinate:", err);
+        throw err;
+      }
+    };
+
     // Combina i dati pre-aggregati di 'streets' e 'users' per la UI Gamification & Classifica Top 10
     const computeGamificationData = (streetsList, activeUser, leaderboardUsersList = [], activeUserDocProfile = null, cachedUsersMap = {}) => {
       const reviewMetaMap = {};
@@ -3160,6 +3338,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               console.error('Errore lettura Firestore (users top 10):', err);
             }
           );
+
+        // Controllo e normalizzazione automatica delle coordinate all'avvio (anti-collisione toponomastica)
+        if (typeof window.auditAndFixStreetCoordinates === 'function') {
+          setTimeout(() => {
+            window.auditAndFixStreetCoordinates().catch(() => {});
+          }, 3500);
+        }
 
         return () => {
           unsubscribeStreets();
@@ -5576,6 +5761,31 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                         {isRecalculatingRatings && (
                           <span className="inline-block w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full animate-spin shrink-0"></span>
                         )}
+                      </button>
+                    )}
+
+                    {/* 4.3 Pulsante "🗺️ Normalizza Coordinate & Chiavi" (solo Admin) */}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setIsUserMenuOpen(false);
+                          const ok = window.confirm("Avviare la verifica e correzione automatica delle coordinate e chiavi stradali su Firestore?");
+                          if (!ok) return;
+                          try {
+                            const res = await window.auditAndFixStreetCoordinates();
+                            alert(`Audit completato!\n\nStrade verificate: ${res.auditedCount}\nStrade rettificate: ${res.fixedCount}`);
+                          } catch (err) {
+                            alert("Errore durante l'audit: " + (err.message || err));
+                          }
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs font-bold text-sky-800 bg-sky-50 hover:bg-sky-100/80 rounded-xl flex items-center justify-between border border-sky-200/80 transition-colors cursor-pointer my-1"
+                        title="Verifica che nessuna strada abbia coordinate disallineate rispetto al comune dichiarato"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span>🗺️</span>
+                          <span>Normalizza Coordinate &amp; Chiavi</span>
+                        </span>
                       </button>
                     )}
 
