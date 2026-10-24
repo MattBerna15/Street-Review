@@ -240,7 +240,7 @@
       { name: 'Lungomare Alcide De Gasperi', city: 'Grottammare', province: 'AP', postalCode: '63066', lat: 42.9744, lng: 13.8769 },
       { name: 'Via dei Piceni', city: 'Grottammare', province: 'AP', postalCode: '63066', lat: 42.9878, lng: 13.8700 },
       { name: 'Via Ballestra', city: 'Grottammare', province: 'AP', postalCode: '63066', lat: 42.9856, lng: 13.8691 },
-      { name: 'Corso Giuseppe Mazzini', city: 'Grottammare', province: 'AP', postalCode: '63066', lat: 42.9888, lng: 13.8690 },
+      { name: 'Corso Giuseppe Mazzini', city: 'Grottammare', province: 'AP', postalCode: '63066', lat: 42.98885, lng: 13.86915 },
       { name: 'Piazza Pericle Fazzini', city: 'Grottammare', province: 'AP', postalCode: '63066', lat: 42.9906, lng: 13.8687 },
       { name: 'Via Salaria (Centobuchi)', city: 'Monteprandone', province: 'AP', postalCode: '63076', lat: 42.8977, lng: 13.8498 },
       { name: 'Piazza dell\'Aquila (Borgo Storico)', city: 'Monteprandone', province: 'AP', postalCode: '63076', lat: 42.9200, lng: 13.8356 },
@@ -520,7 +520,9 @@
       // Solo se il nome toponomastico coincide e il comune dichiarato coincide ESATTAMENTE
       const match = LOCAL_GAZETTEER.find(g => {
         const gSNorm = normalizeStreetName(g.name);
-        if (gSNorm !== sNorm) return false;
+        const nameMatches = (gSNorm === sNorm) ||
+          (resolvedCityKey === 'grottammare' && sNorm.includes('mazzini') && gSNorm.includes('mazzini'));
+        if (!nameMatches) return false;
         const gCNorm = normalizeCity(g.city, g.lat, g.lng);
         return gCNorm === resolvedCityKey;
       });
@@ -593,6 +595,137 @@
         postalCode = resolveDefaultPostalCode(cityKey);
       }
       return { city, province, postalCode, route, streetNumber };
+    };
+
+    // Calcola il punto mediano (baricentro esatto) a partire da un oggetto geometry (bounds o viewport di tipo route)
+    const getGeometryCenter = (geometry) => {
+      if (!geometry) return null;
+      const box = geometry.bounds || geometry.viewport;
+      if (box) {
+        if (typeof box.getCenter === 'function') {
+          const c = box.getCenter();
+          return { lat: Number(c.lat().toFixed(6)), lng: Number(c.lng().toFixed(6)) };
+        }
+        if (typeof box.getNorthEast === 'function' && typeof box.getSouthWest === 'function') {
+          const ne = box.getNorthEast();
+          const sw = box.getSouthWest();
+          return {
+            lat: Number(((ne.lat() + sw.lat()) / 2).toFixed(6)),
+            lng: Number(((ne.lng() + sw.lng()) / 2).toFixed(6))
+          };
+        }
+        if (box.north !== undefined && box.south !== undefined && box.east !== undefined && box.west !== undefined) {
+          return {
+            lat: Number(((box.north + box.south) / 2).toFixed(6)),
+            lng: Number(((box.east + box.west) / 2).toFixed(6))
+          };
+        }
+      }
+      if (geometry.location) {
+        const lat = typeof geometry.location.lat === 'function' ? geometry.location.lat() : Number(geometry.location.lat);
+        const lng = typeof geometry.location.lng === 'function' ? geometry.location.lng() : Number(geometry.location.lng);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          return { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) };
+        }
+      }
+      return null;
+    };
+
+    // Validazione di Coerenza Territoriale e Snapping Obbligatorio su Route (Strada)
+    const resolveCanonicalRouteCoordinates = async (streetName, streetCity, province = '', fallbackLat = null, fallbackLng = null) => {
+      const normName = normalizeStreetName(streetName);
+      const cityKey = normalizeCityKey(streetCity, fallbackLat, fallbackLng);
+
+      // 1. Priorità assoluta: Ancoraggio certificato nel Local Gazetteer
+      const anchor = getCanonicalStreetAnchor(streetName, streetCity, fallbackLat, fallbackLng, province);
+      const isGazetteerMatch = LOCAL_GAZETTEER.some(g => {
+        const gSNorm = normalizeStreetName(g.name);
+        const gCNorm = normalizeCity(g.city, g.lat, g.lng);
+        return (gSNorm === normName || (normName.includes('mazzini') && gSNorm.includes('mazzini'))) && gCNorm === cityKey;
+      });
+
+      if (isGazetteerMatch && anchor && anchor.lat && anchor.lng) {
+        return {
+          lat: anchor.lat,
+          lng: anchor.lng,
+          city: anchor.city,
+          province: anchor.province,
+          postalCode: anchor.postalCode,
+          canonicalName: anchor.canonicalName || streetName,
+          snapped: true
+        };
+      }
+
+      // 2. Controllo coerenza territoriale coordinate vs comune dichiarato
+      let hasIncoherence = false;
+      if (fallbackLat && fallbackLng) {
+        const coordsCityKey = inferCityKeyFromCoords(fallbackLat, fallbackLng);
+        if (coordsCityKey && cityKey && cityKey !== 'italia' && coordsCityKey !== cityKey) {
+          hasIncoherence = true;
+        }
+      } else {
+        hasIncoherence = true;
+      }
+
+      // 3. Se c'è incoerenza o se vogliamo snapping canonico della route tramite Google Geocoder
+      if ((hasIncoherence || !fallbackLat || !fallbackLng) && window.google && window.google.maps && window.google.maps.Geocoder) {
+        try {
+          const geocoder = new window.google.maps.Geocoder();
+          const cleanCityName = resolveCanonicalCityName(streetCity, fallbackLat, fallbackLng);
+          const queryAddress = `${streetName}, ${cleanCityName}, ${province || ''}, Italia`.replace(/,\s*,/g, ',').trim();
+
+          const geoResult = await new Promise((resolve) => {
+            geocoder.geocode(
+              {
+                address: queryAddress,
+                componentRestrictions: { country: 'IT' }
+              },
+              (results, status) => {
+                if (status === 'OK' && results && results.length > 0) {
+                  const routeRes = results.find(r => r.types && r.types.includes('route'));
+                  resolve(routeRes || results[0]);
+                } else {
+                  resolve(null);
+                }
+              }
+            );
+          });
+
+          if (geoResult && geoResult.geometry) {
+            const center = getGeometryCenter(geoResult.geometry);
+            if (center && center.lat && center.lng) {
+              const details = extractAddressDetails(
+                geoResult.address_components,
+                geoResult.formatted_address || '',
+                center.lat,
+                center.lng
+              );
+              return {
+                lat: center.lat,
+                lng: center.lng,
+                city: details.city || cleanCityName,
+                province: details.province || province,
+                postalCode: details.postalCode || anchor.postalCode,
+                canonicalName: details.route || streetName,
+                snapped: true
+              };
+            }
+          }
+        } catch (e) {
+          console.warn('[RouteSnapping] Geocoding lookup warning:', e);
+        }
+      }
+
+      // 4. Fallback conservativo
+      return {
+        lat: fallbackLat || anchor.lat,
+        lng: fallbackLng || anchor.lng,
+        city: anchor.city || streetCity,
+        province: anchor.province || province,
+        postalCode: anchor.postalCode,
+        canonicalName: anchor.canonicalName || streetName,
+        snapped: false
+      };
     };
 
     // Funzione rapida per aggiornare le coordinate di qualsiasi recensione/strada su Firestore
@@ -1764,12 +1897,20 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const validCoords = safeReviews.filter(rev =>
         rev.latitude && rev.longitude && !isNaN(Number(rev.latitude)) && !isNaN(Number(rev.longitude))
       );
-      const baryLat = validCoords.length > 0
-        ? Number((validCoords.reduce((acc, rev) => acc + Number(rev.latitude), 0) / validCoords.length).toFixed(6))
-        : (Number(fallbackMeta.latitude ?? sample?.latitude) || 42.9517);
-      const baryLng = validCoords.length > 0
-        ? Number((validCoords.reduce((acc, rev) => acc + Number(rev.longitude), 0) / validCoords.length).toFixed(6))
-        : (Number(fallbackMeta.longitude ?? sample?.longitude) || 13.8822);
+      const fallbackLatNum = Number(fallbackMeta.latitude);
+      const fallbackLngNum = Number(fallbackMeta.longitude);
+      const hasExplicitFallbackCoords = !isNaN(fallbackLatNum) && !isNaN(fallbackLngNum) && fallbackLatNum !== 0 && fallbackLngNum !== 0;
+
+      const baryLat = hasExplicitFallbackCoords
+        ? fallbackLatNum
+        : (validCoords.length > 0
+            ? Number((validCoords.reduce((acc, rev) => acc + Number(rev.latitude), 0) / validCoords.length).toFixed(6))
+            : (Number(sample?.latitude) || 42.9517));
+      const baryLng = hasExplicitFallbackCoords
+        ? fallbackLngNum
+        : (validCoords.length > 0
+            ? Number((validCoords.reduce((acc, rev) => acc + Number(rev.longitude), 0) / validCoords.length).toFixed(6))
+            : (Number(sample?.longitude) || 13.8822));
 
       const rawName = (fallbackMeta.streetName || fallbackMeta.name || sample?.streetName || sample?.name || '').trim();
       const inferredCityKey = inferCityKeyFromCoords(baryLat, baryLng);
@@ -2375,16 +2516,18 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       }
     };
 
-    // Utilità Globale Temporanea/Amministrativa di Rettifica Coordinate e Disaccoppiamento per Corso Giuseppe Mazzini (Grottammare)
-    window.fixCorsoMazziniGrottammare = async () => {
+    // Utilità Globale di Rettifica Forzata e Allineamento Permanente per Corso Giuseppe Mazzini (Grottammare)
+    window.forceFixCorsoMazziniGrottammare = async () => {
       const firestore = window.db;
       if (!firestore) {
-        console.error("Firestore non inizializzato o non disponibile in window.db");
+        console.error("[ForceFixCorsoMazziniGrottammare] Firestore non inizializzato o non disponibile in window.db");
         return { success: false, error: "Database not connected" };
       }
 
       try {
-        console.log("[FixCorsoMazziniGrottammare] Avvio rettifica per Corso Giuseppe Mazzini (Grottammare)...");
+        console.log("[ForceFixCorsoMazziniGrottammare] Avvio allineamento permanente per Corso Giuseppe Mazzini (Grottammare)...");
+        const targetLat = 42.98885;
+        const targetLng = 13.86915;
         const targetStreetKey = "corso-giuseppe-mazzini_grottammare_ap";
         const legacyKeys = [
           "corso-giuseppe-mazzini_grottammare",
@@ -2416,8 +2559,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               streetProvince: "AP",
               province: "AP",
               postalCode: "63066",
-              latitude: 42.9888,
-              longitude: 13.8690,
+              latitude: targetLat,
+              longitude: targetLng,
               streetKey: targetStreetKey,
               updatedAt: new Date().toISOString()
             };
@@ -2428,8 +2571,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               streetProvince: "AP",
               province: "AP",
               postalCode: "63066",
-              latitude: 42.9888,
-              longitude: 13.8690,
+              latitude: targetLat,
+              longitude: targetLng,
               streetKey: targetStreetKey,
               updatedAt: new Date().toISOString()
             });
@@ -2439,7 +2582,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
         if (updatedReviews > 0) {
           await batch.commit();
-          console.log(`[FixCorsoMazziniGrottammare] Aggiornate ${updatedReviews} recensioni in 'reviews'.`);
+          console.log(`[ForceFixCorsoMazziniGrottammare] Aggiornate ${updatedReviews} recensioni in 'reviews' con lat ${targetLat}, lng ${targetLng}.`);
         }
 
         // 2. Crea o aggiorna streets/corso-giuseppe-mazzini_grottammare_ap
@@ -2449,8 +2592,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           streetCity: "Grottammare",
           province: "AP",
           postalCode: "63066",
-          latitude: 42.9888,
-          longitude: 13.8690,
+          latitude: targetLat,
+          longitude: targetLng,
           updatedAt: new Date().toISOString()
         };
 
@@ -2458,49 +2601,68 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         if (matchingReviews.length > 0) {
           streetSummaryDoc = buildStreetSummaryDocFromReviews(matchingReviews, correctStreetMeta);
         } else {
+          const existingDoc = await firestore.collection('streets').doc(targetStreetKey).get();
+          const exData = existingDoc.exists ? existingDoc.data() : {};
           streetSummaryDoc = {
+            ...exData,
             ...correctStreetMeta,
-            streetType: '🏡 Urbana',
-            ratingOverall: 0,
-            avgOverallRating: 0,
-            reviewsCount: 0,
-            categoryAverages: {},
-            parkingTypes: [],
-            amenities: [],
-            roadObstacles: [],
-            reviews: []
+            streetType: exData.streetType || '🏡 Urbana',
+            ratingOverall: exData.ratingOverall || 0,
+            avgOverallRating: exData.avgOverallRating || 0,
+            reviewsCount: exData.reviewsCount || 0,
+            categoryAverages: exData.categoryAverages || {},
+            parkingTypes: exData.parkingTypes || [],
+            amenities: exData.amenities || [],
+            roadObstacles: exData.roadObstacles || [],
+            reviews: exData.reviews || []
           };
         }
 
         await firestore.collection('streets').doc(targetStreetKey).set({
           ...streetSummaryDoc,
-          ...correctStreetMeta
+          ...correctStreetMeta,
+          latitude: targetLat,
+          longitude: targetLng
         }, { merge: true });
 
-        // 3. Rimuovi eventuali documenti duplicati con chiavi legacy
+        // 3. Rimuovi eventuali documenti duplicati con chiavi legacy o non canoniche
         for (const legacyKey of legacyKeys) {
           if (legacyKey !== targetStreetKey) {
             const oldDoc = await firestore.collection('streets').doc(legacyKey).get();
             if (oldDoc.exists) {
               await firestore.collection('streets').doc(legacyKey).delete();
-              console.log(`[FixCorsoMazziniGrottammare] Eliminato documento duplicato legacy 'streets/${legacyKey}'.`);
+              console.log(`[ForceFixCorsoMazziniGrottammare] Eliminato documento duplicato legacy 'streets/${legacyKey}'.`);
+            }
+          }
+        }
+        const allStreetsSnap = await firestore.collection('streets').get();
+        for (const sDoc of allStreetsSnap.docs) {
+          if (sDoc.id !== targetStreetKey) {
+            const sd = sDoc.data();
+            const sName = (sd.streetName || sd.name || '').toLowerCase();
+            const sCity = (sd.streetCity || sd.city || '').toLowerCase();
+            const sKey = (sDoc.id || sd.streetKey || '').toLowerCase();
+            if ((sName.includes('mazzini') || sKey.includes('mazzini')) && (sCity.includes('grottammare') || sKey.includes('grottammare'))) {
+              await sDoc.ref.delete();
+              console.log(`[ForceFixCorsoMazziniGrottammare] Eliminato documento streets/${sDoc.id} duplicato o disallineato.`);
             }
           }
         }
 
-        console.log(`[FixCorsoMazziniGrottammare] Rettifica completata: ${updatedReviews} recensioni aggiornate e streets/${targetStreetKey} impostata a lat 42.9888, lng 13.8690.`);
+        console.log(`[ForceFixCorsoMazziniGrottammare] Allineamento completato con successo: streets/${targetStreetKey} impostata a lat ${targetLat}, lng ${targetLng}.`);
         return {
           success: true,
           updatedReviews,
           streetKey: targetStreetKey,
-          latitude: 42.9888,
-          longitude: 13.8690
+          latitude: targetLat,
+          longitude: targetLng
         };
       } catch (err) {
-        console.error("[FixCorsoMazziniGrottammare] Errore durante la rettifica:", err);
+        console.error("[ForceFixCorsoMazziniGrottammare] Errore durante l'allineamento:", err);
         throw err;
       }
     };
+    window.fixCorsoMazziniGrottammare = window.forceFixCorsoMazziniGrottammare;
 
     // Routine Globale di Verifica, Pulizia e Normalizzazione Coordinate e Chiavi Stradali (Anti-Collisione e Disallineamento)
     window.auditAndFixStreetCoordinates = async () => {
@@ -2512,6 +2674,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
       console.log("[Audit] Avvio audit e normalizzazione coordinate e chiavi stradali su Firestore...");
       try {
+        if (typeof window.forceFixCorsoMazziniGrottammare === 'function') {
+          await window.forceFixCorsoMazziniGrottammare().catch(e => console.warn('[Audit] Pre-fix notice:', e));
+        }
         const streetsSnap = await firestore.collection('streets').get();
         const geocoder = (window.google && window.google.maps) ? new window.google.maps.Geocoder() : null;
 
@@ -2537,16 +2702,17 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           let targetLat = lat;
           let targetLng = lng;
 
-          // 1. Controllo Grottammare: se comune dichiarato è Grottammare ma coordinate dentro San Benedetto (lat < 42.9720)
-          if (declaredCityKey === 'grottammare' && lat < 42.9720) {
-            isMismatched = true;
-            if (normalizeStreetName(streetName).includes('mazzini')) {
-              targetLat = 42.9888;
-              targetLng = 13.8690;
-            } else {
-              targetLat = 42.9880;
-              targetLng = 13.8690;
+          // 1. Controllo Grottammare: ancoraggio tassativo per Corso Mazzini e coordinate comunali
+          if (declaredCityKey === 'grottammare' && normalizeStreetName(streetName).includes('mazzini')) {
+            if (Math.abs(lat - 42.98885) > 0.00005 || Math.abs(lng - 13.86915) > 0.00005) {
+              isMismatched = true;
+              targetLat = 42.98885;
+              targetLng = 13.86915;
             }
+          } else if (declaredCityKey === 'grottammare' && lat < 42.9720) {
+            isMismatched = true;
+            targetLat = 42.9880;
+            targetLng = 13.8690;
           }
           // 2. Controllo San Benedetto del Tronto: se dichiarato San Benedetto ma coordinate dentro Grottammare (lat > 42.9680)
           else if (declaredCityKey === 'san-benedetto-del-tronto' && lat > 42.9680) {
@@ -3272,23 +3438,23 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               snapshot.docs.forEach(doc => {
                 const data = { id: doc.id, streetKey: doc.id, ...doc.data() };
                 const existing = prevStreets.find(s =>
-                  areStreetKeysEquivalent(s.streetKey || s.id, data.streetKey || data.id) ||
-                  isSameStreet(s, { name: data.streetName, city: data.streetCity, province: data.province, lat: data.latitude, lng: data.longitude, streetKey: data.streetKey })
+                  areStreetKeysEquivalent(s.streetKey || s.id, data.streetKey || data.id)
                 );
                 const uiStreet = mapStreetDocToUIStreet(data, existing);
 
-                // Auto-rettifica preventiva per Corso Giuseppe Mazzini (Grottammare) se ancora presenta vecchie coordinate
+                // Auto-allineamento permanente per Corso Giuseppe Mazzini (Grottammare)
                 if (
                   (uiStreet.streetCity === 'Grottammare' || (uiStreet.streetKey && uiStreet.streetKey.includes('grottammare'))) &&
-                  (uiStreet.name || '').toLowerCase().includes('mazzini') &&
-                  uiStreet.latitude < 42.975
+                  (uiStreet.name || '').toLowerCase().includes('mazzini')
                 ) {
-                  uiStreet.latitude = 42.9888;
-                  uiStreet.longitude = 13.8690;
+                  uiStreet.latitude = 42.98885;
+                  uiStreet.longitude = 13.86915;
+                  uiStreet.streetCity = 'Grottammare';
+                  uiStreet.city = 'Grottammare';
                   uiStreet.streetKey = 'corso-giuseppe-mazzini_grottammare_ap';
                 }
 
-                if (!updated.some(u => areStreetKeysEquivalent(u.streetKey || u.id, uiStreet.streetKey || uiStreet.id) || isSameStreet(u, uiStreet))) {
+                if (!updated.some(u => areStreetKeysEquivalent(u.streetKey || u.id, uiStreet.streetKey || uiStreet.id))) {
                   updated.push(uiStreet);
                 }
               });
@@ -3340,6 +3506,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           );
 
         // Controllo e normalizzazione automatica delle coordinate all'avvio (anti-collisione toponomastica)
+        if (typeof window.forceFixCorsoMazziniGrottammare === 'function') {
+          setTimeout(() => {
+            window.forceFixCorsoMazziniGrottammare().catch(err => {
+              console.warn('[Startup] ForceFixCorsoMazzini notice:', err);
+            });
+          }, 1200);
+        }
         if (typeof window.auditAndFixStreetCoordinates === 'function') {
           setTimeout(() => {
             window.auditAndFixStreetCoordinates().catch(() => {});
@@ -3742,11 +3915,16 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   fields: ['geometry', 'name', 'formatted_address', 'address_components', 'place_id'],
                 });
 
-                autocomplete.addListener('place_changed', () => {
+                autocomplete.addListener('place_changed', async () => {
                   const place = autocomplete.getPlace();
                   if (place.geometry && place.geometry.location) {
-                    const lat = place.geometry.location.lat();
-                    const lng = place.geometry.location.lng();
+                    const rawLat = place.geometry.location.lat();
+                    const rawLng = place.geometry.location.lng();
+                    // Snapping su baricentro del segmento stradale (viewport o bounds)
+                    const geomCenter = getGeometryCenter(place.geometry);
+                    const lat = geomCenter ? geomCenter.lat : rawLat;
+                    const lng = geomCenter ? geomCenter.lng : rawLng;
+
                     // Estrai via, civico, comune normalizzato, provincia e cap da address_components + contesto geografico
                     const addrDetails = extractAddressDetails(place.address_components, place.formatted_address || '', lat, lng);
                     const queryCivic = extractCivicNumberFromQuery(searchInputRef.current?.value || place.name || '');
@@ -3778,15 +3956,22 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                       return;
                     }
 
-                    // 2. Se la via NON esiste ancora: risolvi ancoraggio e mostra il badge segnaposto temporaneo ('— Nuova')
-                    const anchor = getCanonicalStreetAnchor(resolvedName, resolvedCity, lat, lng, resolvedProvince);
+                    // 2. Se la via NON esiste ancora: validazione di coerenza territoriale e snapping su route ufficiale
+                    const canonicalRoute = await resolveCanonicalRouteCoordinates(
+                      resolvedName,
+                      resolvedCity,
+                      resolvedProvince,
+                      lat,
+                      lng
+                    );
+
                     const newStreetTarget = {
-                      name: anchor.canonicalName || resolvedName,
-                      city: anchor.city || resolvedCity,
-                      province: anchor.province || resolvedProvince,
-                      postalCode: anchor.postalCode || addrDetails.postalCode,
-                      lat: anchor.lat,
-                      lng: anchor.lng,
+                      name: canonicalRoute.canonicalName || resolvedName,
+                      city: canonicalRoute.city || resolvedCity,
+                      province: canonicalRoute.province || resolvedProvince,
+                      postalCode: canonicalRoute.postalCode || addrDetails.postalCode,
+                      lat: canonicalRoute.lat,
+                      lng: canonicalRoute.lng,
                       placeId: place.place_id || null,
                       streetNumber: detectedStreetNumber,
                     };
@@ -3804,14 +3989,16 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 const lat = e.latLng.lat();
                 const lng = e.latLng.lng();
 
-                geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+                geocoder.geocode({ location: { lat, lng } }, async (results, status) => {
                   if (status === 'OK' && results && results.length > 0) {
                     // Cerca prioritariamente un risultato di tipo 'route' (strada)
                     const routeResult = results.find(r => r.types && r.types.includes('route'));
                     const bestResult = routeResult || results[0];
 
-                    const fallbackLat = routeResult && routeResult.geometry ? routeResult.geometry.location.lat() : lat;
-                    const fallbackLng = routeResult && routeResult.geometry ? routeResult.geometry.location.lng() : lng;
+                    // Snapping obbligatorio su route: calcola il baricentro del segmento stradale
+                    const geomCenter = getGeometryCenter(bestResult.geometry);
+                    const fallbackLat = geomCenter ? geomCenter.lat : (routeResult && routeResult.geometry ? routeResult.geometry.location.lat() : lat);
+                    const fallbackLng = geomCenter ? geomCenter.lng : (routeResult && routeResult.geometry ? routeResult.geometry.location.lng() : lng);
 
                     const addrDetails = extractAddressDetails(
                       bestResult.address_components,
@@ -3850,22 +4037,22 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                       return;
                     }
 
-                    // Se la via non esiste ancora, usa il suo baricentro ufficiale (route) o il gazetteer
-                    const anchor = getCanonicalStreetAnchor(
+                    // Validazione di coerenza territoriale e baricentro ufficiale route
+                    const canonicalRoute = await resolveCanonicalRouteCoordinates(
                       streetName,
                       streetCity,
+                      streetProvince,
                       fallbackLat,
-                      fallbackLng,
-                      streetProvince
+                      fallbackLng
                     );
 
                     const clickTarget = {
-                      name: anchor.canonicalName || streetName,
-                      city: anchor.city || streetCity,
-                      province: anchor.province || streetProvince,
-                      postalCode: anchor.postalCode || addrDetails.postalCode,
-                      lat: anchor.lat,
-                      lng: anchor.lng,
+                      name: canonicalRoute.canonicalName || streetName,
+                      city: canonicalRoute.city || streetCity,
+                      province: canonicalRoute.province || streetProvince,
+                      postalCode: canonicalRoute.postalCode || addrDetails.postalCode,
+                      lat: canonicalRoute.lat,
+                      lng: canonicalRoute.lng,
                       placeId: bestResult.place_id || null,
                       streetNumber: addrDetails.streetNumber || '',
                     };
@@ -4533,13 +4720,20 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         });
 
         // Risolvi le coordinate canoniche, il comune normalizzato e la provincia della via
-        const canonicalAnchor = getCanonicalStreetAnchor(selectedStreet.name, selectedStreet.city, selectedStreet.latitude, selectedStreet.longitude, selectedStreet.province);
-        const finalLat = canonicalAnchor.lat || selectedStreet.latitude;
-        const finalLng = canonicalAnchor.lng || selectedStreet.longitude;
-        const finalCity = canonicalAnchor.city || resolveCanonicalCityName(selectedStreet.city, finalLat, finalLng);
-        const finalProvince = canonicalAnchor.province || normalizeProvinceCode(selectedStreet.province || '');
-        const finalPostal = canonicalAnchor.postalCode || selectedStreet.postalCode || resolveDefaultPostalCode(normalizeCityKey(finalCity, finalLat, finalLng));
-        const canonicalStreetName = canonicalAnchor.canonicalName || selectedStreet.name;
+        // con snapping obbligatorio su route e validazione di coerenza territoriale
+        const canonicalRoute = await resolveCanonicalRouteCoordinates(
+          selectedStreet.name,
+          selectedStreet.city,
+          selectedStreet.province,
+          selectedStreet.latitude,
+          selectedStreet.longitude
+        );
+        const finalLat = canonicalRoute.lat || selectedStreet.latitude;
+        const finalLng = canonicalRoute.lng || selectedStreet.longitude;
+        const finalCity = canonicalRoute.city || resolveCanonicalCityName(selectedStreet.city, finalLat, finalLng);
+        const finalProvince = canonicalRoute.province || normalizeProvinceCode(selectedStreet.province || '');
+        const finalPostal = canonicalRoute.postalCode || selectedStreet.postalCode || resolveDefaultPostalCode(normalizeCityKey(finalCity, finalLat, finalLng));
+        const canonicalStreetName = canonicalRoute.canonicalName || selectedStreet.name;
 
         // Chiave composita normalizzata della via (streetKey, usata come ID documento in 'streets/{streetKey}')
         const streetCompKey = selectedStreet.streetKey || createStreetCompositeKey(canonicalStreetName, finalCity, finalLat, finalLng, finalProvince);
