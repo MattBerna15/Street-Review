@@ -547,18 +547,25 @@
       return `${sKey}_${cKey}_${pKey}`;
     };
 
-    // Verifica equivalenza tra due streetKey gestendo la presenza o assenza della sigla provincia (_ap)
+    // Verifica equivalenza tra due streetKey con isolamento rigoroso di via, comune e provincia
     const areStreetKeysEquivalent = (keyA, keyB) => {
       if (!keyA || !keyB) return false;
       const kA = String(keyA).toLowerCase().replace(/^street-/, '').trim();
       const kB = String(keyB).toLowerCase().replace(/^street-/, '').trim();
       if (kA === kB) return true;
-      const strippedA = kA.replace(/_[a-z]{2}$/, '');
-      const strippedB = kB.replace(/_[a-z]{2}$/, '');
-      if (strippedA === strippedB && strippedA.includes('_')) {
-        return true;
+
+      const partsA = kA.split('_');
+      const partsB = kB.split('_');
+      // Nome via e comune (prime due parti) devono coincidere tassativamente
+      if (partsA.length < 2 || partsB.length < 2) return false;
+      if (partsA[0] !== partsB[0] || partsA[1] !== partsB[1]) return false;
+
+      // Se entrambe specificano la provincia (3 parti), devono coincidere anche nella provincia
+      if (partsA.length >= 3 && partsB.length >= 3) {
+        return partsA[2] === partsB[2];
       }
-      return false;
+      // Retrocompatibilità solo se una delle due chiavi è legacy a 2 parti (senza provincia)
+      return true;
     };
 
     // Calcolo distanza Haversine in km tra due punti geografici
@@ -618,29 +625,9 @@
         return false;
       }
 
-      // Se entrambi hanno il comune normalizzato e coincidono:
-      if (cKeyA && cKeyB && cKeyA !== 'italia' && cKeyA === cKeyB) {
+      // Due vie sono la stessa via SOLO se hanno lo stesso nome normalizzato E lo stesso comune normalizzato
+      if (cKeyA && cKeyB && cKeyA !== 'italia' && cKeyB !== 'italia' && cKeyA === cKeyB) {
         return true;
-      }
-
-      // Fallback geografico SOLO se il comune NON è specificato in uno dei due:
-      const latA = Number(a.lat ?? a.latitude);
-      const lngA = Number(a.lng ?? a.longitude);
-      const latB = Number(b.lat ?? b.latitude);
-      const lngB = Number(b.lng ?? b.longitude);
-      const hasCoordsA = !isNaN(latA) && !isNaN(lngA) && latA !== 0 && lngA !== 0;
-      const hasCoordsB = !isNaN(latB) && !isNaN(lngB) && latB !== 0 && lngB !== 0;
-
-      if (hasCoordsA && hasCoordsB) {
-        const geoCityA = inferCityKeyFromCoords(latA, lngA);
-        const geoCityB = inferCityKeyFromCoords(latB, lngB);
-        if (geoCityA && geoCityB && geoCityA !== geoCityB) {
-          return false; // Coordinate in comuni diversi: MAI LA STESSA VIA!
-        }
-        const distKm = getDistanceKm(latA, lngA, latB, lngB);
-        if (distKm <= 0.8 && (!cKeyA || !cKeyB || cKeyA === cKeyB)) {
-          return true;
-        }
       }
 
       return false;
@@ -811,58 +798,59 @@
       return { city, province, postalCode, route, streetNumber };
     };
 
-    // Calcola il punto mediano (baricentro esatto) a partire da un oggetto geometry (bounds o viewport di tipo route)
+    // Restituisce le coordinate principali ufficiali di Google Maps (geometry.location, ovvero il punto esatto del Pin di Google Maps)
     const getGeometryCenter = (geometry) => {
       if (!geometry) return null;
+      // 1. PRIORITÀ ASSOLUTA: geometry.location è la coordinata esatta del Pin di Google Maps sulla sede stradale
+      if (geometry.location) {
+        const lat = typeof geometry.location.lat === 'function' ? geometry.location.lat() : Number(geometry.location.lat);
+        const lng = typeof geometry.location.lng === 'function' ? geometry.location.lng() : Number(geometry.location.lng);
+        if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+          return { lat: Number(lat), lng: Number(lng) };
+        }
+      }
+      // 2. Fallback su bounds/viewport solo se geometry.location è assente
       const box = geometry.bounds || geometry.viewport;
       if (box) {
         if (typeof box.getCenter === 'function') {
           const c = box.getCenter();
-          return { lat: Number(c.lat().toFixed(6)), lng: Number(c.lng().toFixed(6)) };
+          return { lat: Number(c.lat()), lng: Number(c.lng()) };
         }
         if (typeof box.getNorthEast === 'function' && typeof box.getSouthWest === 'function') {
           const ne = box.getNorthEast();
           const sw = box.getSouthWest();
           return {
-            lat: Number(((ne.lat() + sw.lat()) / 2).toFixed(6)),
-            lng: Number(((ne.lng() + sw.lng()) / 2).toFixed(6))
+            lat: Number((ne.lat() + sw.lat()) / 2),
+            lng: Number((ne.lng() + sw.lng()) / 2)
           };
         }
         if (box.north !== undefined && box.south !== undefined && box.east !== undefined && box.west !== undefined) {
           return {
-            lat: Number(((box.north + box.south) / 2).toFixed(6)),
-            lng: Number(((box.east + box.west) / 2).toFixed(6))
+            lat: Number((box.north + box.south) / 2),
+            lng: Number((box.east + box.west) / 2)
           };
-        }
-      }
-      if (geometry.location) {
-        const lat = typeof geometry.location.lat === 'function' ? geometry.location.lat() : Number(geometry.location.lat);
-        const lng = typeof geometry.location.lng === 'function' ? geometry.location.lng() : Number(geometry.location.lng);
-        if (!isNaN(lat) && !isNaN(lng)) {
-          return { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) };
         }
       }
       return null;
     };
 
-            // Geocoding Canonico Rigoroso con Vincolo Territoriale Rigido sul Comune (locality)
+    // Geocoding Canonico Rigoroso con Vincolo Territoriale Rigido sul Comune (locality) e Pin Ufficiale Google Maps (geometry.location)
     const resolveExactStreetRouteCoordinates = async (streetName, streetCity, province = '', fallbackLat = null, fallbackLng = null) => {
       const normName = normalizeStreetName(streetName);
       const cleanCity = resolveCanonicalCityName(streetCity, fallbackLat, fallbackLng);
       const cityKey = normalizeCityKey(cleanCity);
 
-      // 1. Priorità assoluta: Ancoraggio certificato nel LOCAL_GAZETTEER
+      // 1. Priorità assoluta: Ancoraggio certificato nel LOCAL_GAZETTEER (solo se Comune e Nome Via coincidono)
       const anchor = getCanonicalStreetAnchor(streetName, cleanCity, fallbackLat, fallbackLng, province);
       const isGazetteerMatch = LOCAL_GAZETTEER.some(g => {
         const gSNorm = normalizeStreetName(g.name);
         const gCNorm = normalizeCityKey(g.city);
-        const nameMatches = (gSNorm === normName) ||
+        if (gCNorm !== cityKey) return false;
+        return (gSNorm === normName) ||
           (cityKey === 'grottammare' && normName.includes('mazzini') && gSNorm.includes('mazzini')) ||
-          (cityKey === 'san-benedetto-del-tronto' && normName.includes('mazzini') && gSNorm.includes('mazzini')) ||
-          (normName.includes('carducci') && gSNorm.includes('carducci')) ||
-          (normName.includes('san donato') && gSNorm.includes('san donato')) ||
-          (normName.includes('firenze') && gSNorm.includes('firenze'));
-        return nameMatches && gCNorm === cityKey;
+          (cityKey === 'grottammare' && normName.includes('carducci') && gSNorm.includes('carducci')) ||
+          (cityKey === 'grottammare' && normName.includes('firenze') && gSNorm.includes('firenze')) ||
+          (cityKey === 'monteprandone' && normName.includes('san-donato') && gSNorm.includes('san-donato'));
       });
 
       if (isGazetteerMatch && anchor && anchor.lat && anchor.lng) {
@@ -870,7 +858,7 @@
           lat: Number(anchor.lat),
           lng: Number(anchor.lng),
           city: anchor.city,
-          province: anchor.province || 'AP',
+          province: anchor.province || province || 'AP',
           postalCode: anchor.postalCode || resolveDefaultPostalCode(cityKey),
           canonicalName: anchor.canonicalName || streetName,
           placeId: anchor.streetKey || null,
@@ -878,40 +866,50 @@
         };
       }
 
-      // 2. Query obbligatoria a Google Geocoding per route o street_address nel comune indicato (mai salvare coordinate grezze di click errati)
+      // 2. Query a Google Geocoding per l'intera via ('route') nel Comune e Provincia specifici:
+      //    restituisce ESATTAMENTE il geometry.location principale di Google Maps (lo stesso punto di quando si cerca la via su Google Maps)
       if (window.google && window.google.maps && window.google.maps.Geocoder) {
         try {
           const geocoder = new window.google.maps.Geocoder();
-          const requestPayload = {
-            address: `${streetName}, ${cleanCity}, Italia`,
-            componentRestrictions: {
-              country: 'it'
-            }
-          };
+          const cleanStreetQuery = extractCivicNumberFromQuery(streetName).cleanQuery || streetName;
+          const addressQuery = province
+            ? `${cleanStreetQuery}, ${cleanCity}, ${province}, Italia`
+            : `${cleanStreetQuery}, ${cleanCity}, Italia`;
 
           const geoResult = await new Promise((resolve) => {
-            geocoder.geocode(requestPayload, (results, status) => {
+            geocoder.geocode({ address: addressQuery, componentRestrictions: { country: 'it' } }, (results, status) => {
               if (status === 'OK' && results && results.length > 0) {
-                // Cerca risultato route o street_address appartenente al comune indicato
+                // Priorità 1: risultato di tipo 'route' (la via intera) nello stesso Comune
+                const matchingRoute = results.find(r => {
+                  const isRoute = r.types && r.types.includes('route');
+                  const details = extractAddressDetails(r.address_components, r.formatted_address || '');
+                  const rCityKey = normalizeCityKey(details.city);
+                  return isRoute && (!cityKey || cityKey === 'italia' || rCityKey === cityKey);
+                });
+                if (matchingRoute) return resolve(matchingRoute);
+
+                // Priorità 2: risultato route o street_address nello stesso Comune
                 const matchingLocality = results.find(r => {
                   const isRouteOrAddress = r.types && (r.types.includes('route') || r.types.includes('street_address'));
                   const details = extractAddressDetails(r.address_components, r.formatted_address || '');
                   const rCityKey = normalizeCityKey(details.city);
                   return isRouteOrAddress && (!cityKey || cityKey === 'italia' || rCityKey === cityKey);
                 });
-                const anyRouteOrAddress = results.find(r => r.types && (r.types.includes('route') || r.types.includes('street_address')));
-                resolve(matchingLocality || anyRouteOrAddress || results[0]);
+                resolve(matchingLocality || null);
               } else {
                 resolve(null);
               }
             });
           });
 
-          if (geoResult && geoResult.geometry) {
-            // Imposta come latitudine e longitudine ufficiali il baricentro (location) o il punto mediano della viewport
-            const center = getGeometryCenter(geoResult.geometry);
-            const resLat = center ? center.lat : (geoResult.geometry.location ? geoResult.geometry.location.lat() : fallbackLat);
-            const resLng = center ? center.lng : (geoResult.geometry.location ? geoResult.geometry.location.lng() : fallbackLng);
+          if (geoResult && geoResult.geometry && geoResult.geometry.location) {
+            // Usa ESCLUSIVAMENTE geometry.location (il Pin ufficiale di Google Maps per quella via)
+            const resLat = typeof geoResult.geometry.location.lat === 'function'
+              ? geoResult.geometry.location.lat()
+              : Number(geoResult.geometry.location.lat);
+            const resLng = typeof geoResult.geometry.location.lng === 'function'
+              ? geoResult.geometry.location.lng()
+              : Number(geoResult.geometry.location.lng);
             const details = extractAddressDetails(
               geoResult.address_components,
               geoResult.formatted_address || '',
@@ -919,12 +917,12 @@
               resLng
             );
             return {
-              lat: Number(resLat.toFixed(6)),
-              lng: Number(resLng.toFixed(6)),
+              lat: Number(resLat),
+              lng: Number(resLng),
               city: details.city || cleanCity,
               province: details.province || province || 'AP',
               postalCode: details.postalCode || anchor.postalCode || resolveDefaultPostalCode(cityKey),
-              canonicalName: details.route || streetName,
+              canonicalName: details.route || cleanStreetQuery,
               placeId: geoResult.place_id || null,
               snapped: true
             };
@@ -2150,26 +2148,24 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             ? Number((validCoords.reduce((acc, rev) => acc + Number(rev.longitude), 0) / validCoords.length).toFixed(6))
             : (Number(sample?.longitude) || 13.8690));
 
-      // CASI SPECIALI AUTORITATIVI (Viale della Vittoria, Mazzini Grottammare, Mazzini Alba Adriatica, Carducci, Firenze, San Donato):
+      // CASI SPECIALI AUTORITATIVI (applicati ESCLUSIVAMENTE se il comune corrisponde):
       const normRawName = normalizeStreetName(rawName);
-      if (normRawName.includes('vittoria')) {
+      if (normRawName.includes('vittoria') && declaredCityKey === 'alba-adriatica') {
         baryLat = 42.83605895341866;
         baryLng = 13.926245266469673;
-      } else if (normRawName.includes('mazzini')) {
-        if (declaredCityKey === 'alba-adriatica' || String(fallbackMeta?.streetCity || '').toLowerCase().includes('alba')) {
-          baryLat = 42.83284835747221;
-          baryLng = 13.926373810644503;
-        } else {
-          baryLat = 42.990443190632796;
-          baryLng = 13.869663126569428;
-        }
-      } else if (normRawName.includes('carducci')) {
+      } else if (normRawName.includes('mazzini') && declaredCityKey === 'alba-adriatica') {
+        baryLat = 42.83284835747221;
+        baryLng = 13.926373810644503;
+      } else if (normRawName.includes('mazzini') && declaredCityKey === 'grottammare') {
+        baryLat = 42.990443190632796;
+        baryLng = 13.869663126569428;
+      } else if (normRawName.includes('carducci') && declaredCityKey === 'grottammare') {
         baryLat = 42.96336244509739;
         baryLng = 13.875948479968113;
-      } else if (normRawName.includes('firenze') && (!declaredCityKey || declaredCityKey === 'grottammare')) {
+      } else if (normRawName.includes('firenze') && declaredCityKey === 'grottammare') {
         baryLat = 42.962981492069545;
         baryLng = 13.87075809346326;
-      } else if (normRawName.includes('san-donato')) {
+      } else if (normRawName.includes('san-donato') && declaredCityKey === 'monteprandone') {
         baryLat = 42.91209543811305;
         baryLng = 13.860065210654204;
       }
@@ -4326,32 +4322,33 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 );
                 const uiStreet = mapStreetDocToUIStreet(data, existing);
 
-                // Auto-allineamento autoritativo immediato per le 4 vie cablate
+                // Auto-allineamento autoritativo immediato strettamente vincolato per chiave/comune
                 const rawNameSnap = (uiStreet.name || '').toLowerCase();
+                const rawCitySnap = (uiStreet.streetCity || uiStreet.city || '').toLowerCase();
                 const rawKeySnap = (uiStreet.streetKey || '').toLowerCase();
 
-                if (rawNameSnap.includes('san donato') || rawKeySnap.includes('san-donato')) {
+                if ((rawNameSnap.includes('san donato') || rawKeySnap.includes('san-donato')) && (rawCitySnap.includes('monteprandone') || rawCitySnap.includes('san benedetto') || rawKeySnap.includes('monteprandone'))) {
                   uiStreet.name = 'Contrada San Donato';
                   uiStreet.streetCity = 'Monteprandone';
                   uiStreet.city = 'Monteprandone';
                   uiStreet.latitude = 42.91209543811305;
                   uiStreet.longitude = 13.860065210654204;
                   uiStreet.streetKey = 'contrada-san-donato_monteprandone_ap';
-                } else if (rawNameSnap.includes('carducci') || rawKeySnap.includes('carducci')) {
+                } else if ((rawNameSnap.includes('carducci') || rawKeySnap.includes('carducci')) && (rawCitySnap.includes('grottammare') || rawKeySnap.includes('grottammare'))) {
                   uiStreet.name = 'Piazza G. Carducci';
                   uiStreet.streetCity = 'Grottammare';
                   uiStreet.city = 'Grottammare';
                   uiStreet.latitude = 42.96336244509739;
                   uiStreet.longitude = 13.875948479968113;
                   uiStreet.streetKey = 'piazza-g-carducci_grottammare_ap';
-                } else if (rawNameSnap.includes('firenze') || rawKeySnap.includes('firenze')) {
+                } else if ((rawNameSnap.includes('firenze') || rawKeySnap.includes('firenze')) && (rawCitySnap.includes('grottammare') || rawKeySnap.includes('grottammare'))) {
                   uiStreet.name = 'Via Firenze';
                   uiStreet.streetCity = 'Grottammare';
                   uiStreet.city = 'Grottammare';
                   uiStreet.latitude = 42.962981492069545;
                   uiStreet.longitude = 13.87075809346326;
                   uiStreet.streetKey = 'via-firenze_grottammare_ap';
-                } else if (rawNameSnap.includes('vittoria') || rawKeySnap.includes('vittoria')) {
+                } else if ((rawNameSnap.includes('vittoria') || rawKeySnap.includes('vittoria')) && (rawCitySnap.includes('alba') || rawKeySnap.includes('alba-adriatica'))) {
                   uiStreet.name = 'Viale della Vittoria';
                   uiStreet.streetCity = 'Alba Adriatica';
                   uiStreet.city = 'Alba Adriatica';
@@ -4359,25 +4356,22 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   uiStreet.latitude = 42.83605895341866;
                   uiStreet.longitude = 13.926245266469673;
                   uiStreet.streetKey = 'viale-della-vittoria_alba-adriatica_te';
-                } else if (rawNameSnap.includes('mazzini') || rawKeySnap.includes('mazzini')) {
-                  const rawCitySnap = (uiStreet.streetCity || uiStreet.city || '').toLowerCase();
-                  if (rawCitySnap.includes('alba') || rawKeySnap.includes('alba-adriatica')) {
-                    uiStreet.name = 'Via Giuseppe Mazzini';
-                    uiStreet.streetCity = 'Alba Adriatica';
-                    uiStreet.city = 'Alba Adriatica';
-                    uiStreet.province = 'TE';
-                    uiStreet.latitude = 42.83284835747221;
-                    uiStreet.longitude = 13.926373810644503;
-                    uiStreet.streetKey = 'via-giuseppe-mazzini_alba-adriatica_te';
-                  } else {
-                    uiStreet.name = 'Corso Giuseppe Mazzini';
-                    uiStreet.streetCity = 'Grottammare';
-                    uiStreet.city = 'Grottammare';
-                    uiStreet.province = 'AP';
-                    uiStreet.latitude = 42.990443190632796;
-                    uiStreet.longitude = 13.869663126569428;
-                    uiStreet.streetKey = 'corso-giuseppe-mazzini_grottammare_ap';
-                  }
+                } else if ((rawNameSnap.includes('mazzini') || rawKeySnap.includes('mazzini')) && (rawCitySnap.includes('alba') || rawKeySnap.includes('alba-adriatica'))) {
+                  uiStreet.name = 'Via Giuseppe Mazzini';
+                  uiStreet.streetCity = 'Alba Adriatica';
+                  uiStreet.city = 'Alba Adriatica';
+                  uiStreet.province = 'TE';
+                  uiStreet.latitude = 42.83284835747221;
+                  uiStreet.longitude = 13.926373810644503;
+                  uiStreet.streetKey = 'via-giuseppe-mazzini_alba-adriatica_te';
+                } else if ((rawNameSnap.includes('mazzini') || rawKeySnap.includes('mazzini')) && (rawCitySnap.includes('grottammare') || rawKeySnap.includes('grottammare'))) {
+                  uiStreet.name = 'Corso Giuseppe Mazzini';
+                  uiStreet.streetCity = 'Grottammare';
+                  uiStreet.city = 'Grottammare';
+                  uiStreet.province = 'AP';
+                  uiStreet.latitude = 42.990443190632796;
+                  uiStreet.longitude = 13.869663126569428;
+                  uiStreet.streetKey = 'corso-giuseppe-mazzini_grottammare_ap';
                 }
 
                 if (!updated.some(u => areStreetKeysEquivalent(u.streetKey || u.id, uiStreet.streetKey || uiStreet.id))) {
@@ -4864,15 +4858,12 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 autocomplete.addListener('place_changed', async () => {
                   const place = autocomplete.getPlace();
                   if (place.geometry && place.geometry.location) {
-                    const rawLat = place.geometry.location.lat();
-                    const rawLng = place.geometry.location.lng();
-                    // Snapping su baricentro del segmento stradale (viewport o bounds)
-                    const geomCenter = getGeometryCenter(place.geometry);
-                    const lat = geomCenter ? geomCenter.lat : rawLat;
-                    const lng = geomCenter ? geomCenter.lng : rawLng;
+                    // PUNTO 1: Coordinate esatte del Pin di Google Maps quando si cerca la via (place.geometry.location)
+                    const exactPinLat = typeof place.geometry.location.lat === 'function' ? place.geometry.location.lat() : Number(place.geometry.location.lat);
+                    const exactPinLng = typeof place.geometry.location.lng === 'function' ? place.geometry.location.lng() : Number(place.geometry.location.lng);
 
-                    // Estrai via, civico, comune normalizzato, provincia e cap da address_components + contesto geografico
-                    const addrDetails = extractAddressDetails(place.address_components, place.formatted_address || '', lat, lng);
+                    // Estrai via, civico, comune ufficiale, provincia e cap da address_components di Google Maps
+                    const addrDetails = extractAddressDetails(place.address_components, place.formatted_address || '', exactPinLat, exactPinLng);
                     const queryCivic = extractCivicNumberFromQuery(searchInputRef.current?.value || place.name || '');
                     const detectedStreetNumber = addrDetails.streetNumber || queryCivic.streetNumber || '';
                     const rawFallbackName = place.name || (place.formatted_address ? place.formatted_address.split(',')[0] : 'Via Sconosciuta');
@@ -4880,18 +4871,19 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     const resolvedName = addrDetails.route || cleanedFallbackName;
                     const resolvedCity = addrDetails.city;
                     const resolvedProvince = addrDetails.province;
+                    const compKey = createStreetCompositeKey(resolvedName, resolvedCity, exactPinLat, exactPinLng, resolvedProvince);
 
-                    // 1. LOOKUP PREVENTIVO SUI DATI ESISTENTI (tramite streetsRef sempre sincronizzato con Firestore)
+                    // 1. LOOKUP PREVENTIVO SUI DATI ESISTENTI (strettamente per Nome Via + Comune + Provincia)
                     const existingStreet = findExistingStreetInList(streetsRef.current, {
+                      streetKey: compKey,
                       name: resolvedName,
                       city: resolvedCity,
                       province: resolvedProvince,
-                      lat,
-                      lng,
+                      lat: exactPinLat,
+                      lng: exactPinLng,
                     });
 
                     if (existingStreet && existingStreet.reviewsCount > 0) {
-                      // La via esiste già nel database: NON creare un badge 'Nuova', centra la mappa sul marker esistente e apri la sua scheda
                       setSearchQuery(existingStreet.name);
                       if (handleSelectStreetRef.current) {
                         handleSelectStreetRef.current({
@@ -4902,22 +4894,46 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                       return;
                     }
 
-                    // 2. Se la via NON esiste ancora: validazione di coerenza territoriale e snapping su route ufficiale
-                    const canonicalRoute = await resolveCanonicalRouteCoordinates(
-                      resolvedName,
-                      resolvedCity,
-                      resolvedProvince,
-                      lat,
-                      lng
-                    );
+                    // 2. Se l'utente ha cercato un numero civico specifico, risali alle coordinate principali della via intera su Google Maps;
+                    //    se invece ha cercato direttamente la via, usa esattamente le coordinate del Pin di Google Maps (exactPinLat, exactPinLng).
+                    let targetLat = exactPinLat;
+                    let targetLng = exactPinLng;
+                    let targetName = resolvedName;
+                    let targetCity = resolvedCity;
+                    let targetProvince = resolvedProvince;
+                    let targetPostal = addrDetails.postalCode;
+
+                    if (detectedStreetNumber) {
+                      const canonicalRoute = await resolveCanonicalRouteCoordinates(
+                        resolvedName,
+                        resolvedCity,
+                        resolvedProvince,
+                        exactPinLat,
+                        exactPinLng
+                      );
+                      targetLat = canonicalRoute.lat || exactPinLat;
+                      targetLng = canonicalRoute.lng || exactPinLng;
+                      targetName = canonicalRoute.canonicalName || resolvedName;
+                      targetCity = canonicalRoute.city || resolvedCity;
+                      targetProvince = canonicalRoute.province || resolvedProvince;
+                      targetPostal = canonicalRoute.postalCode || addrDetails.postalCode;
+                    } else {
+                      // Controlla solo se è una delle vie storiche cablate nel LOCAL_GAZETTEER per quello specifico comune
+                      const anchor = getCanonicalStreetAnchor(resolvedName, resolvedCity, exactPinLat, exactPinLng, resolvedProvince);
+                      if (anchor && anchor.streetKey) {
+                        targetLat = anchor.lat;
+                        targetLng = anchor.lng;
+                      }
+                    }
 
                     const newStreetTarget = {
-                      name: canonicalRoute.canonicalName || resolvedName,
-                      city: canonicalRoute.city || resolvedCity,
-                      province: canonicalRoute.province || resolvedProvince,
-                      postalCode: canonicalRoute.postalCode || addrDetails.postalCode,
-                      lat: canonicalRoute.lat,
-                      lng: canonicalRoute.lng,
+                      streetKey: createStreetCompositeKey(targetName, targetCity, targetLat, targetLng, targetProvince),
+                      name: targetName,
+                      city: targetCity,
+                      province: targetProvince,
+                      postalCode: targetPostal,
+                      lat: targetLat,
+                      lng: targetLng,
                       placeId: place.place_id || null,
                       streetNumber: detectedStreetNumber,
                     };
@@ -5665,17 +5681,31 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           awardedMilestonesSet.add(`badge_${bId}`);
         });
 
-        // Risolvi le coordinate canoniche, il comune normalizzato e la provincia della via
-        // con snapping obbligatorio su route e validazione di coerenza territoriale
-        const canonicalRoute = await resolveCanonicalRouteCoordinates(
-          selectedStreet.name,
-          selectedStreet.city,
-          selectedStreet.province,
-          selectedStreet.latitude,
-          selectedStreet.longitude
+        // PUNTO 1 & 3: Mantieni esattamente le coordinate principali di Google Maps assegnate al badge della via (immutabili se la via esiste già)
+        const hasValidSelectedCoords = Boolean(
+          selectedStreet.latitude &&
+          selectedStreet.longitude &&
+          !isNaN(Number(selectedStreet.latitude)) &&
+          !isNaN(Number(selectedStreet.longitude))
         );
-        const finalLat = canonicalRoute.lat || selectedStreet.latitude;
-        const finalLng = canonicalRoute.lng || selectedStreet.longitude;
+        const canonicalRoute = hasValidSelectedCoords
+          ? {
+              lat: Number(selectedStreet.latitude),
+              lng: Number(selectedStreet.longitude),
+              city: selectedStreet.city,
+              province: selectedStreet.province,
+              postalCode: selectedStreet.postalCode,
+              canonicalName: selectedStreet.name,
+            }
+          : await resolveCanonicalRouteCoordinates(
+              selectedStreet.name,
+              selectedStreet.city,
+              selectedStreet.province,
+              selectedStreet.latitude,
+              selectedStreet.longitude
+            );
+        const finalLat = Number(canonicalRoute.lat || selectedStreet.latitude);
+        const finalLng = Number(canonicalRoute.lng || selectedStreet.longitude);
         const finalCity = canonicalRoute.city || resolveCanonicalCityName(selectedStreet.city, finalLat, finalLng);
         const finalProvince = canonicalRoute.province || normalizeProvinceCode(selectedStreet.province || '');
         const finalPostal = canonicalRoute.postalCode || selectedStreet.postalCode || resolveDefaultPostalCode(normalizeCityKey(finalCity, finalLat, finalLng));
