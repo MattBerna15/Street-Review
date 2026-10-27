@@ -750,6 +750,16 @@
       };
     };
 
+    // Helper per verificare se una stringa è un Plus Code di Google (Open Location Code, es. XW8G+6P)
+    const isPlusCode = (text) => {
+      if (!text || typeof text !== 'string') return false;
+      const trimmed = text.trim();
+      if (/^[A-Z0-9]{2,8}\+[A-Z0-9]{2,}/i.test(trimmed)) return true;
+      if (/\b[A-Z0-9]{4,8}\+[A-Z0-9]{2,}\b/i.test(trimmed)) return true;
+      if (trimmed.includes('+') && /\+[A-Z0-9]{2,}\b/i.test(trimmed)) return true;
+      return false;
+    };
+
     // Helper per estrarre comune, provincia (sigla), cap, via e numero civico (street_number) da address_components di Google Places o Geocoder
     const extractAddressDetails = (addressComponents, formattedAddress = '', lat = null, lng = null) => {
       let rawCity = '';
@@ -4466,6 +4476,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const [deleteToast, setDeleteToast] = useState(null);
       const [shareToast, setShareToast] = useState(null);
       const [reportToast, setReportToast] = useState(null);
+      const [geoWarnToast, setGeoWarnToast] = useState(null);
       const [adminReports, setAdminReports] = useState([]);
       const [isAdminReportsOpen, setIsAdminReportsOpen] = useState(false);
       const [isRecalculatingRatings, setIsRecalculatingRatings] = useState(false);
@@ -4474,6 +4485,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const deleteToastTimerRef = useRef(null);
       const shareToastTimerRef = useRef(null);
       const reportToastTimerRef = useRef(null);
+      const geoWarnToastTimerRef = useRef(null);
+      const triggerGeoWarnToastRef = useRef(null);
       const userMenuRef = useRef(null);
       const cachedUsersRef = useRef({});
       cachedUsersRef.current = cachedUsersById;
@@ -4559,6 +4572,15 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           setReportToast(null);
         }, 5500);
       };
+
+      const triggerGeoWarnToast = (message = "⚠️ Nessuna strada rilevata in questo punto. Clicca direttamente su una via o piazza per recensirla.") => {
+        if (geoWarnToastTimerRef.current) clearTimeout(geoWarnToastTimerRef.current);
+        setGeoWarnToast(message);
+        geoWarnToastTimerRef.current = setTimeout(() => {
+          setGeoWarnToast(null);
+        }, 5000);
+      };
+      triggerGeoWarnToastRef.current = triggerGeoWarnToast;
 
       const fallbackCopyShareText = (text) => {
         try {
@@ -5683,76 +5705,99 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 const lng = e.latLng.lng();
 
                 geocoder.geocode({ location: { lat, lng } }, async (results, status) => {
-                  if (status === 'OK' && results && results.length > 0) {
-                    // Cerca prioritariamente un risultato di tipo 'route' (strada)
-                    const routeResult = results.find(r => r.types && r.types.includes('route'));
-                    const bestResult = routeResult || results[0];
+                  if (status !== 'OK' || !results || results.length === 0) {
+                    if (triggerGeoWarnToastRef.current) triggerGeoWarnToastRef.current();
+                    return;
+                  }
 
-                    // Snapping obbligatorio su route: calcola il baricentro del segmento stradale
-                    const geomCenter = getGeometryCenter(bestResult.geometry);
-                    const fallbackLat = geomCenter ? geomCenter.lat : (routeResult && routeResult.geometry ? routeResult.geometry.location.lat() : lat);
-                    const fallbackLng = geomCenter ? geomCenter.lng : (routeResult && routeResult.geometry ? routeResult.geometry.location.lng() : lng);
+                  // 1. FILTRO ESCLUSIVO SU ASSE STRADALE: Cerca un risultato di tipo 'route' o 'street_address'
+                  const routeResult = results.find(r => r.types && (r.types.includes('route') || r.types.includes('street_address')));
+                  if (!routeResult) {
+                    if (triggerGeoWarnToastRef.current) triggerGeoWarnToastRef.current();
+                    return;
+                  }
 
-                    const addrDetails = extractAddressDetails(
-                      bestResult.address_components,
-                      bestResult.formatted_address || '',
-                      fallbackLat,
-                      fallbackLng
-                    );
-                    let streetName = addrDetails.route;
-                    if (!streetName && routeResult) {
-                      streetName = routeResult.formatted_address.split(',')[0];
+                  // 2. BLOCCO RISULTATI NON STRADALI (Plus Code, mare/natural_feature, ecc.) SENZA ROUTE ESPLICITO
+                  const primaryTypes = results[0]?.types || [];
+                  const isPrimaryNonRoad = primaryTypes.some(t => ['plus_code', 'natural_feature', 'political', 'locality', 'establishment'].includes(t));
+                  const hasExplicitRouteComponent = routeResult.address_components && routeResult.address_components.some(c => c.types && c.types.includes('route'));
+                  if (isPrimaryNonRoad && !hasExplicitRouteComponent && !primaryTypes.includes('route') && !primaryTypes.includes('street_address')) {
+                    if (triggerGeoWarnToastRef.current) triggerGeoWarnToastRef.current();
+                    return;
+                  }
+
+                  // Snapping obbligatorio su route: calcola il baricentro del segmento stradale
+                  const geomCenter = getGeometryCenter(routeResult.geometry);
+                  const fallbackLat = geomCenter ? geomCenter.lat : (routeResult.geometry?.location ? (typeof routeResult.geometry.location.lat === 'function' ? routeResult.geometry.location.lat() : Number(routeResult.geometry.location.lat)) : lat);
+                  const fallbackLng = geomCenter ? geomCenter.lng : (routeResult.geometry?.location ? (typeof routeResult.geometry.location.lng === 'function' ? routeResult.geometry.location.lng() : Number(routeResult.geometry.location.lng)) : lng);
+
+                  const addrDetails = extractAddressDetails(
+                    routeResult.address_components,
+                    routeResult.formatted_address || '',
+                    fallbackLat,
+                    fallbackLng
+                  );
+                  let streetName = addrDetails.route;
+                  if (!streetName && routeResult.types && routeResult.types.includes('route')) {
+                    const firstPart = (routeResult.formatted_address || '').split(',')[0].trim();
+                    if (!isPlusCode(firstPart)) {
+                      streetName = firstPart;
                     }
-                    if (!streetName) {
-                      streetName = bestResult.formatted_address.split(',')[0];
-                    }
-                    streetName = extractCivicNumberFromQuery(streetName).cleanQuery || streetName;
-                    const streetCity = addrDetails.city;
-                    const streetProvince = addrDetails.province;
+                  }
+                  streetName = extractCivicNumberFromQuery(streetName).cleanQuery || streetName;
+                  streetName = (streetName || '').trim();
 
-                    // Lookup preventivo sui dati esistenti
-                    const existingStreet = findExistingStreetInList(streetsRef.current, {
-                      name: streetName,
-                      city: streetCity,
-                      province: streetProvince,
-                      lat: fallbackLat,
-                      lng: fallbackLng,
-                    });
+                  // 3. BLOCCO ASSOLUTO DEI PLUS CODE E DEI NOMI NON STRADALI
+                  if (!streetName || isPlusCode(streetName) || streetName.toLowerCase() === 'via sconosciuta') {
+                    if (triggerGeoWarnToastRef.current) triggerGeoWarnToastRef.current();
+                    return;
+                  }
 
-                    if (existingStreet && existingStreet.reviewsCount > 0) {
-                      setSearchQuery(existingStreet.name);
-                      if (handleSelectStreetRef.current) {
-                        handleSelectStreetRef.current({
-                          ...existingStreet,
-                          streetNumber: addrDetails.streetNumber || '',
-                        });
-                      }
-                      return;
-                    }
+                  const streetCity = addrDetails.city;
+                  const streetProvince = addrDetails.province;
 
-                    // Validazione di coerenza territoriale e baricentro ufficiale route
-                    const canonicalRoute = await resolveCanonicalRouteCoordinates(
-                      streetName,
-                      streetCity,
-                      streetProvince,
-                      fallbackLat,
-                      fallbackLng
-                    );
+                  // Lookup preventivo sui dati esistenti
+                  const existingStreet = findExistingStreetInList(streetsRef.current, {
+                    name: streetName,
+                    city: streetCity,
+                    province: streetProvince,
+                    lat: fallbackLat,
+                    lng: fallbackLng,
+                  });
 
-                    const clickTarget = {
-                      name: canonicalRoute.canonicalName || streetName,
-                      city: canonicalRoute.city || streetCity,
-                      province: canonicalRoute.province || streetProvince,
-                      postalCode: canonicalRoute.postalCode || addrDetails.postalCode,
-                      lat: canonicalRoute.lat,
-                      lng: canonicalRoute.lng,
-                      placeId: bestResult.place_id || null,
-                      streetNumber: addrDetails.streetNumber || '',
-                    };
-                    setSearchQuery(clickTarget.name);
+                  if (existingStreet && existingStreet.reviewsCount > 0) {
+                    setSearchQuery(existingStreet.name);
                     if (handleSelectStreetRef.current) {
-                      handleSelectStreetRef.current(clickTarget);
+                      handleSelectStreetRef.current({
+                        ...existingStreet,
+                        streetNumber: addrDetails.streetNumber || '',
+                      });
                     }
+                    return;
+                  }
+
+                  // Validazione di coerenza territoriale e baricentro ufficiale route
+                  const canonicalRoute = await resolveCanonicalRouteCoordinates(
+                    streetName,
+                    streetCity,
+                    streetProvince,
+                    fallbackLat,
+                    fallbackLng
+                  );
+
+                  const clickTarget = {
+                    name: canonicalRoute.canonicalName || streetName,
+                    city: canonicalRoute.city || streetCity,
+                    province: canonicalRoute.province || streetProvince,
+                    postalCode: canonicalRoute.postalCode || addrDetails.postalCode,
+                    lat: canonicalRoute.lat,
+                    lng: canonicalRoute.lng,
+                    placeId: routeResult.place_id || null,
+                    streetNumber: addrDetails.streetNumber || '',
+                  };
+                  setSearchQuery(clickTarget.name);
+                  if (handleSelectStreetRef.current) {
+                    handleSelectStreetRef.current(clickTarget);
                   }
                 });
               });
@@ -5813,8 +5858,17 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`)
               .then(res => res.json())
               .then(data => {
+                if (!data || !data.address) {
+                  if (triggerGeoWarnToastRef.current) triggerGeoWarnToastRef.current();
+                  return;
+                }
                 const addr = data.address || {};
-                const streetName = addr.road || addr.pedestrian || addr.footway || addr.path || addr.suburb || data.display_name.split(',')[0];
+                const roadName = addr.road || addr.pedestrian || addr.footway || addr.cycleway || addr.path || addr.square || addr.plaza;
+                if (!roadName || isPlusCode(roadName)) {
+                  if (triggerGeoWarnToastRef.current) triggerGeoWarnToastRef.current();
+                  return;
+                }
+                const streetName = roadName.trim();
                 const streetCity = addr.city || addr.town || addr.village || addr.municipality || 'Italia';
                 const rawIsoProv = (addr['ISO3166-2-lvl6'] || '').replace('IT-', '');
                 const streetProvince = normalizeProvinceCode(rawIsoProv, normalizeCityKey(streetCity, lat, lng), lat, lng);
@@ -5853,6 +5907,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               })
               .catch(err => {
                 console.warn('Leaflet reverse geocoding notice:', err);
+                if (triggerGeoWarnToastRef.current) triggerGeoWarnToastRef.current();
               });
           });
         };
@@ -6379,6 +6434,14 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         }
 
         if (!selectedStreet) return false;
+
+        // Blocco di sicurezza: verifica che il punto selezionato sia una strada valida e non un Plus Code o coordinata non stradale
+        const currentStreetName = (selectedStreet?.name || '').trim();
+        const currentStreetKey = (selectedStreet?.streetKey || selectedStreet?.id || '').trim();
+        if (!currentStreetName || isPlusCode(currentStreetName) || isPlusCode(currentStreetKey) || currentStreetName.toLowerCase() === 'via sconosciuta') {
+          alert("Impossibile salvare la recensione: il punto selezionato non corrisponde a una strada urbana valida (Plus Code o coordinate non stradali). Clicca direttamente su una via o piazza.");
+          return false;
+        }
 
         // Recupera la sessione Firebase Auth attiva per rispettare le regole (request.auth.uid == authorId)
         const firebaseAuthUser = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser) || null;
@@ -7990,9 +8053,28 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           </div>
         </div>
 
-          {/* NOTIFICHE TOAST CELEBRATIVE (XP GUADAGNATI, LIVELLI, BADGE, EMAIL TRAGUARDI, ELIMINAZIONE, CONDIVISIONE & SEGNALAZIONI) */}
-          {(rewardToast || milestoneEmailToast || deleteToast || shareToast || reportToast) && (
+          {/* NOTIFICHE TOAST CELEBRATIVE (XP GUADAGNATI, LIVELLI, BADGE, EMAIL TRAGUARDI, ELIMINAZIONE, CONDIVISIONE, SEGNALAZIONI & AVVISI GEO) */}
+          {(rewardToast || milestoneEmailToast || deleteToast || shareToast || reportToast || geoWarnToast) && (
             <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[90] w-[calc(100vw-32px)] max-w-md pointer-events-auto space-y-2">
+              {geoWarnToast && (
+                <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-amber-400/60 flex items-center justify-between gap-3 animate-slide-up">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-lg shrink-0">
+                      ⚠️
+                    </div>
+                    <p className="text-xs sm:text-sm font-extrabold text-amber-100 leading-snug">
+                      {geoWarnToast}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGeoWarnToast(null)}
+                    className="p-1 text-slate-400 hover:text-white shrink-0 cursor-pointer"
+                  >
+                    <IconClose size={16} />
+                  </button>
+                </div>
+              )}
               {reportToast && (
                 <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-rose-400/60 flex items-center justify-between gap-3 animate-slide-up">
                   <div className="flex items-center gap-3 min-w-0">
