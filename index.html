@@ -1311,6 +1311,46 @@
         unlockedCls: 'from-fuchsia-50 via-purple-50 to-amber-100/80 border-fuchsia-400 text-slate-900 shadow-sm shadow-fuchsia-500/15',
         iconBgCls: 'bg-gradient-to-br from-fuchsia-100 to-amber-100 border-fuchsia-300 text-fuchsia-900',
       },
+      {
+        id: 'authoritative_voice',
+        icon: '💎',
+        name: 'Voce Autorevole',
+        description: 'Ricevi almeno 10 reazioni "👍 Utile" totali sulle tue recensioni.',
+        target: 10,
+        getValue: (stats) => stats.helpfulReceivedCount || 0,
+        unlockedCls: 'from-sky-50 to-cyan-100/80 border-sky-300 text-slate-900 shadow-sm shadow-sky-500/10',
+        iconBgCls: 'bg-sky-100 border-sky-300 text-sky-700',
+      },
+      {
+        id: 'artery_king',
+        icon: '🛣️',
+        name: 'Re delle Arterie',
+        description: 'Recensisci almeno 5 strade classificate come 🛣️ Statale / Provinciale (SS / SP) o 🟢 Autostrada.',
+        target: 5,
+        getValue: (stats) => stats.arteriesStreetsCount || 0,
+        unlockedCls: 'from-slate-100 to-blue-100/80 border-blue-300 text-slate-900 shadow-sm shadow-blue-500/10',
+        iconBgCls: 'bg-blue-100 border-blue-300 text-blue-800',
+      },
+      {
+        id: 'pedestrian_friend',
+        icon: '🚶',
+        name: 'Amico dei Pedoni',
+        description: 'Recensisci almeno 5 strade 🚶 Pedonale / ZTL oppure vie dotate di 🎠 Area Giochi o 🐕 Area Cani.',
+        target: 5,
+        getValue: (stats) => stats.pedestrianStreetsCount || 0,
+        unlockedCls: 'from-rose-50 to-pink-100/80 border-pink-300 text-slate-900 shadow-sm shadow-pink-500/10',
+        iconBgCls: 'bg-pink-100 border-pink-300 text-pink-700',
+      },
+      {
+        id: 'green_pioneer',
+        icon: '🔋',
+        name: 'Pioniere Green',
+        description: 'Mappa almeno 5 strade dotate di ⚡ Colonnine EV o 🚴 Pista Ciclabile.',
+        target: 5,
+        getValue: (stats) => stats.greenStreetsCount || 0,
+        unlockedCls: 'from-lime-50 to-emerald-100/80 border-emerald-400 text-slate-900 shadow-sm shadow-emerald-500/15',
+        iconBgCls: 'bg-emerald-100 border-emerald-300 text-emerald-800',
+      },
     ];
 
     const isMeaningfulReviewComment = (text) => {
@@ -1789,6 +1829,36 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       } catch (e) {}
     };
 
+    const getLocalFavoriteBadge = (authorId) => {
+      if (!authorId) return null;
+      try {
+        return localStorage.getItem(`sr_fav_badge_${authorId}`) || null;
+      } catch (e) {
+        return null;
+      }
+    };
+
+    const saveLocalFavoriteBadge = (authorId, badgeId) => {
+      if (!authorId) return;
+      try {
+        if (badgeId) {
+          localStorage.setItem(`sr_fav_badge_${authorId}`, String(badgeId));
+        } else {
+          localStorage.removeItem(`sr_fav_badge_${authorId}`);
+        }
+      } catch (e) {}
+    };
+
+    const getCityLeaderboardEmoji = (cityKey) => {
+      const k = String(cityKey || '').toLowerCase();
+      if (k === 'san-benedetto-del-tronto') return '🌴';
+      if (k === 'grottammare' || k === 'martinsicuro' || k === 'cupra-marittima') return '🏖️';
+      if (k === 'alba-adriatica' || k === 'tortoreto') return '🌊';
+      if (k === 'ascoli-piceno' || k === 'roma' || k === 'milano' || k === 'firenze') return '🏛️';
+      if (k === 'acquaviva-picena') return '🏰';
+      return '📍';
+    };
+
     // --- ARCHITETTURA SCALABILE STEP 3: PRE-AGGREGAZIONE ('streets' & 'users') + CARICAMENTO COMMENTI ON-DEMAND ---
     const CATEGORY_KEYS = [
       'roadSurface', 'groundSignage', 'verticalSignage', 'parkingQuantity',
@@ -2023,8 +2093,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
     };
 
     const createDefaultProfile = (usr) => {
+      const uid = usr?.id || usr?.authorId || 'guest';
       const base = {
-        authorId: usr?.id || usr?.authorId || 'guest',
+        authorId: uid,
         name: usr?.name || usr?.authorName || 'Esploratore Ospite',
         avatarUrl: usr?.avatarUrl || usr?.authorAvatar || '',
         xp: 0,
@@ -2033,11 +2104,20 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         uniqueCitiesCount: 0,
         citiesCount: 0,
         pioneerCount: 0,
+        guardianCount: 0,
+        helpfulReceivedCount: 0,
         parkingReviewsCount: 0,
         detailedCommentsCount: 0,
         accessibilityStreetsCount: 0,
+        arteriesStreetsCount: 0,
+        pedestrianStreetsCount: 0,
+        greenStreetsCount: 0,
+        favoriteBadge: uid !== 'guest' ? getLocalFavoriteBadge(uid) : null,
+        mayorCities: [],
+        mayorTitles: [],
+        cityStats: {},
         unlockedBadges: [],
-        awardedMilestones: (usr?.id || usr?.authorId) ? getLocalAwardedMilestones(usr.id || usr.authorId) : [],
+        awardedMilestones: uid !== 'guest' ? getLocalAwardedMilestones(uid) : [],
       };
       return {
         ...base,
@@ -2055,10 +2135,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const xp = Number(uDoc.xp) || 0;
       const reviewsCount = Number(uDoc.reviewsCount) || 0;
       const pioneerCount = Number(uDoc.pioneerCount) || 0;
+      const guardianCount = Number(uDoc.guardianCount) || 0;
+      const helpfulReceivedCount = Number(uDoc.helpfulReceivedCount) || 0;
       const citiesCount = Number(uDoc.citiesCount ?? uDoc.uniqueCitiesCount) || (reviewsCount > 0 ? 1 : 0);
       const uniqueStreetsCount = Number(uDoc.uniqueStreetsCount) || reviewsCount;
       const unlockedBadgeIds = Array.isArray(uDoc.unlockedBadges) ? uDoc.unlockedBadges : [];
       const unlockedSet = new Set(unlockedBadgeIds);
+      const favoriteBadge = uDoc.favoriteBadge || getLocalFavoriteBadge(authorId) || null;
 
       const statsObj = {
         authorId,
@@ -2072,9 +2155,18 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         uniqueCitiesCount: citiesCount,
         citiesCount,
         pioneerCount,
-        parkingReviewsCount: Number(uDoc.parkingReviewsCount) || (unlockedSet.has('parking_hound') ? 5 : 0),
-        detailedCommentsCount: Number(uDoc.detailedCommentsCount) || (unlockedSet.has('street_critic') ? 5 : 0),
-        accessibilityStreetsCount: Number(uDoc.accessibilityStreetsCount) || (unlockedSet.has('accessibility_paladin') ? 5 : 0),
+        guardianCount,
+        helpfulReceivedCount: helpfulReceivedCount || (unlockedSet.has('authoritative_voice') ? 10 : 0),
+        parkingReviewsCount: Number(uDoc.parkingReviewsCount) || (unlockedSet.has('parking_hound') ? 12 : 0),
+        detailedCommentsCount: Number(uDoc.detailedCommentsCount) || (unlockedSet.has('street_critic') ? 15 : 0),
+        accessibilityStreetsCount: Number(uDoc.accessibilityStreetsCount) || (unlockedSet.has('accessibility_paladin') ? 8 : 0),
+        arteriesStreetsCount: Number(uDoc.arteriesStreetsCount) || (unlockedSet.has('artery_king') ? 5 : 0),
+        pedestrianStreetsCount: Number(uDoc.pedestrianStreetsCount) || (unlockedSet.has('pedestrian_friend') ? 5 : 0),
+        greenStreetsCount: Number(uDoc.greenStreetsCount) || (unlockedSet.has('green_pioneer') ? 5 : 0),
+        favoriteBadge,
+        mayorCities: Array.isArray(uDoc.mayorCities) ? uDoc.mayorCities : [],
+        mayorTitles: Array.isArray(uDoc.mayorTitles) ? uDoc.mayorTitles : [],
+        cityStats: (uDoc.cityStats && typeof uDoc.cityStats === 'object') ? uDoc.cityStats : {},
         unlockedBadges: unlockedBadgeIds,
         awardedMilestones: Array.from(new Set([
           ...(Array.isArray(uDoc.awardedMilestones) ? uDoc.awardedMilestones : []),
@@ -2434,6 +2526,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const cityKeys = new Set();
       const pioneerStreetIds = new Set();
       const accessibilityStreetIds = new Set();
+      const arteriesStreetIds = new Set();
+      const pedestrianStreetIds = new Set();
+      const greenStreetIds = new Set();
+      const guardianStreetIds = new Set();
+      const cityStatsTracker = {};
       const awardedMilestonesSet = new Set([
         ...(Array.isArray(extraMilestones) ? extraMilestones : []),
         ...getLocalAwardedMilestones(authorId),
@@ -2442,9 +2539,20 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       let xp = 0;
       let parkingReviewsCount = 0;
       let detailedCommentsCount = 0;
+      let helpfulReceivedCount = 0;
       let resolvedName = profileMeta.authorName || profileMeta.name || '';
       let resolvedAvatar = profileMeta.authorAvatar || profileMeta.avatarUrl || '';
       let resolvedEmail = profileMeta.email || '';
+      const favoriteBadge = profileMeta.favoriteBadge !== undefined ? profileMeta.favoriteBadge : (getLocalFavoriteBadge(authorId) || null);
+
+      (streetsList || []).forEach(s => {
+        if ((s.reviewsCount || 0) > 0) {
+          const gId = s.guardianId || s.pioneerAuthorId;
+          if (gId && String(gId) === String(authorId)) {
+            guardianStreetIds.add(s.streetKey || s.id);
+          }
+        }
+      });
 
       safeReviews.forEach(r => {
         if (!resolvedName && (r.authorName || r.user)) resolvedName = r.authorName || r.user;
@@ -2472,12 +2580,43 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           ))
         );
 
+        const isGuardian = Boolean(
+          (matchingStreet && (
+            (matchingStreet.guardianId && String(matchingStreet.guardianId) === String(authorId)) ||
+            (!matchingStreet.guardianId && isPioneer)
+          )) ||
+          (!matchingStreet && isPioneer)
+        );
+        if (isGuardian) {
+          guardianStreetIds.add(canonicalStreetKey);
+        }
+
         const xpBreakdown = computeSingleReviewXP(r, isPioneer);
         xp += xpBreakdown.totalXP;
+        helpfulReceivedCount += xpBreakdown.helpfulCount;
         streetIds.add(canonicalStreetKey);
 
-        const revCityKey = normalizeCityKey(rCity, rLat, rLng);
-        if (revCityKey) cityKeys.add(revCityKey);
+        const revCityKey = normalizeCityKey(rCity || matchingStreet?.city, rLat, rLng);
+        const revCityName = resolveCanonicalCityName(rCity || matchingStreet?.city, rLat, rLng) || matchingStreet?.city || rCity || 'Italia';
+        if (revCityKey) {
+          cityKeys.add(revCityKey);
+          if (!cityStatsTracker[revCityKey]) {
+            cityStatsTracker[revCityKey] = {
+              cityKey: revCityKey,
+              cityName: revCityName,
+              xp: 0,
+              streetIds: new Set(),
+              pioneerIds: new Set(),
+              reviewsCount: 0,
+              helpfulReceivedCount: 0,
+            };
+          }
+          cityStatsTracker[revCityKey].xp += xpBreakdown.totalXP;
+          cityStatsTracker[revCityKey].streetIds.add(canonicalStreetKey);
+          if (isPioneer) cityStatsTracker[revCityKey].pioneerIds.add(canonicalStreetKey);
+          cityStatsTracker[revCityKey].reviewsCount += 1;
+          cityStatsTracker[revCityKey].helpfulReceivedCount += xpBreakdown.helpfulCount;
+        }
 
         if (isPioneer) {
           pioneerStreetIds.add(canonicalStreetKey);
@@ -2494,11 +2633,53 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         if (hasAccessibilitySignal) {
           accessibilityStreetIds.add(canonicalStreetKey);
         }
+
+        // Nuovi 4 Badge Tematici: Arterie, Pedoni/Famiglie, Green
+        const resolvedStreetType = normalizeStreetTypeLabel(
+          r.streetType || matchingStreet?.streetType || detectStreetTypeFromStreetName(r.streetName || r.name || '')
+        );
+        if (resolvedStreetType === '🛣️ Statale / Provinciale (SS / SP)' || resolvedStreetType === '🟢 Autostrada') {
+          arteriesStreetIds.add(canonicalStreetKey);
+        }
+
+        const rAmenities = Array.isArray(r.amenities) ? r.amenities : [];
+        const sAmenities = Array.isArray(matchingStreet?.amenities) ? matchingStreet.amenities : [];
+        const combinedAmenities = [...rAmenities, ...sAmenities];
+        const hasPlaygroundOrDog =
+          combinedAmenities.includes('PLAYGROUND') ||
+          combinedAmenities.includes('Area Giochi') ||
+          combinedAmenities.includes('DOG_AREA') ||
+          combinedAmenities.includes('Area Cani');
+        if (resolvedStreetType === '🚶 Pedonale / ZTL' || hasPlaygroundOrDog) {
+          pedestrianStreetIds.add(canonicalStreetKey);
+        }
+
+        const hasGreenMobility =
+          Boolean(r.hasCyclePath || matchingStreet?.hasCyclePath) ||
+          combinedAmenities.includes('EV_CHARGING') ||
+          combinedAmenities.includes('CYCLE_PATH');
+        if (hasGreenMobility) {
+          greenStreetIds.add(canonicalStreetKey);
+        }
+
         if (Array.isArray(r.awardedMilestones)) {
           r.awardedMilestones.forEach(m => {
             if (m) awardedMilestonesSet.add(String(m));
           });
         }
+      });
+
+      const serializedCityStats = {};
+      Object.values(cityStatsTracker).forEach(cs => {
+        serializedCityStats[cs.cityKey] = {
+          cityKey: cs.cityKey,
+          cityName: cs.cityName,
+          xp: cs.xp,
+          uniqueStreetsCount: cs.streetIds.size,
+          pioneerCount: cs.pioneerIds.size,
+          reviewsCount: cs.reviewsCount,
+          helpfulReceivedCount: cs.helpfulReceivedCount,
+        };
       });
 
       const finalName = resolvedName || 'Cittadino Esploratore';
@@ -2514,9 +2695,16 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         uniqueCitiesCount: cityKeys.size,
         citiesCount: cityKeys.size,
         pioneerCount: pioneerStreetIds.size,
+        guardianCount: guardianStreetIds.size,
+        helpfulReceivedCount,
         parkingReviewsCount,
         detailedCommentsCount,
         accessibilityStreetsCount: accessibilityStreetIds.size,
+        arteriesStreetsCount: arteriesStreetIds.size,
+        pedestrianStreetsCount: pedestrianStreetIds.size,
+        greenStreetsCount: greenStreetIds.size,
+        favoriteBadge,
+        cityStats: serializedCityStats,
         awardedMilestones: Array.from(awardedMilestonesSet),
       };
 
@@ -2536,12 +2724,19 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         levelTitle: levelInfo.title,
         reviewsCount: safeReviews.length,
         pioneerCount: pioneerStreetIds.size,
+        guardianCount: guardianStreetIds.size,
+        helpfulReceivedCount,
         citiesCount: cityKeys.size,
         uniqueCitiesCount: cityKeys.size,
         uniqueStreetsCount: streetIds.size,
         parkingReviewsCount,
         detailedCommentsCount,
         accessibilityStreetsCount: accessibilityStreetIds.size,
+        arteriesStreetsCount: arteriesStreetIds.size,
+        pedestrianStreetsCount: pedestrianStreetIds.size,
+        greenStreetsCount: greenStreetIds.size,
+        ...(favoriteBadge !== undefined ? { favoriteBadge } : {}),
+        cityStats: serializedCityStats,
         unlockedBadges: unlockedBadgeIds,
         awardedMilestones: Array.from(awardedMilestonesSet),
         updatedAt: new Date().toISOString(),
@@ -3821,15 +4016,46 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
     window.fixCorsoMazziniGrottammare = window.fixMazziniGrottammareAndAlbaAdriatica;
     window.auditAndFixStreetCoordinates = window.fixMazziniGrottammareAndAlbaAdriatica;
 
-    // Combina i dati pre-aggregati di 'streets' e 'users' per la UI Gamification & Classifica Top 10
-    const computeGamificationData = (streetsList, activeUser, leaderboardUsersList = [], activeUserDocProfile = null, cachedUsersMap = {}) => {
+    // Combina i dati pre-aggregati di 'streets', 'users' e 'reviews' per la UI Gamification, Classifiche per Città & Titoli Sindaco
+    const computeGamificationData = (streetsList, activeUser, leaderboardUsersList = [], activeUserDocProfile = null, cachedUsersMap = {}, cloudReviewsList = []) => {
       const reviewMetaMap = {};
       const streetPioneerMap = {};
+      const guardianCountByAuthorId = {};
+      const guardianCountByAuthorName = {};
+      const availableCitiesMap = new Map();
 
       (streetsList || []).forEach(street => {
         const revList = street.reviews || [];
         const pioneerId = street.pioneerAuthorId || null;
         const pioneerRevId = street.pioneerReviewId || null;
+
+        if ((street.reviewsCount || 0) > 0) {
+          const cKey = normalizeCityKey(street.city || street.streetCity, street.latitude, street.longitude);
+          const cName = resolveCanonicalCityName(street.city || street.streetCity, street.latitude, street.longitude) || street.city || street.streetCity || 'Italia';
+          if (cKey && cKey !== 'italia') {
+            if (!availableCitiesMap.has(cKey)) {
+              availableCitiesMap.set(cKey, {
+                cityKey: cKey,
+                cityName: cName,
+                emoji: getCityLeaderboardEmoji(cKey),
+                streetsCount: 0,
+                reviewsCount: 0,
+              });
+            }
+            const cEntry = availableCitiesMap.get(cKey);
+            cEntry.streetsCount += 1;
+            cEntry.reviewsCount += Number(street.reviewsCount || 1);
+          }
+
+          const gId = street.guardianId || pioneerId;
+          const gName = (street.guardianName || street.pioneerAuthorName || '').trim().toLowerCase();
+          if (gId) {
+            guardianCountByAuthorId[String(gId)] = (guardianCountByAuthorId[String(gId)] || 0) + 1;
+          }
+          if (gName) {
+            guardianCountByAuthorName[gName] = (guardianCountByAuthorName[gName] || 0) + 1;
+          }
+        }
 
         let fallbackPioneerRev = null;
         if (!pioneerId && !pioneerRevId && revList.length > 0) {
@@ -3885,7 +4111,254 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         if (prof.name) userStatsByName[prof.name.trim().toLowerCase()] = prof;
       }
 
-      const leaderboard = [...hydratedLeaderboardUsers]
+      // Costruisci i profili completi (12 Badge) e le Classifiche Cittadine dalle recensioni reali quando disponibili
+      const reviewsSource = Array.isArray(cloudReviewsList) && cloudReviewsList.length > 0
+        ? cloudReviewsList
+        : (streetsList || []).flatMap(s => (s.reviews || []).map(r => ({
+            ...r,
+            streetKey: r.streetKey || s.streetKey,
+            streetName: r.streetName || s.name,
+            streetCity: r.streetCity || s.city,
+            streetProvince: r.streetProvince || s.province,
+            latitude: r.latitude || s.latitude,
+            longitude: r.longitude || s.longitude,
+          })));
+
+      const reviewsByAuthorKey = new Map();
+      const cityUserTrackers = {}; // cityKey -> Map(authorKey -> tracker)
+
+      if (reviewsSource.length > 0) {
+        reviewsSource.forEach(r => {
+          if (!r) return;
+          const aId = r.authorId || r.userId;
+          const aName = (r.authorName || r.user || 'Cittadino Esploratore').trim();
+          const authorKey = aId ? String(aId) : `name:${aName.toLowerCase()}`;
+          if (!reviewsByAuthorKey.has(authorKey)) {
+            reviewsByAuthorKey.set(authorKey, []);
+          }
+          reviewsByAuthorKey.get(authorKey).push(r);
+
+          const rLat = Number(r.latitude) || 42.9517;
+          const rLng = Number(r.longitude) || 13.8822;
+          const rCity = r.streetCity || r.city || '';
+          const rProv = r.streetProvince || r.province || '';
+          const rStreetKey = r.streetKey || createStreetCompositeKey(r.streetName || r.name || '', rCity, rLat, rLng, rProv);
+          const matchingStreet = (streetsList || []).find(s =>
+            (s.streetKey && s.streetKey === rStreetKey) ||
+            isSameStreet(s, { name: r.streetName || r.name, city: rCity, province: rProv, lat: rLat, lng: rLng })
+          );
+          const canonicalStreetKey = matchingStreet?.streetKey || rStreetKey;
+          const cKey = normalizeCityKey(matchingStreet?.city || rCity, rLat, rLng);
+          const cName = resolveCanonicalCityName(matchingStreet?.city || rCity, rLat, rLng) || matchingStreet?.city || rCity || 'Italia';
+
+          if (cKey && cKey !== 'italia') {
+            if (!availableCitiesMap.has(cKey)) {
+              availableCitiesMap.set(cKey, {
+                cityKey: cKey,
+                cityName: cName,
+                emoji: getCityLeaderboardEmoji(cKey),
+                streetsCount: 1,
+                reviewsCount: 1,
+              });
+            }
+            if (!cityUserTrackers[cKey]) {
+              cityUserTrackers[cKey] = new Map();
+            }
+            const cityMap = cityUserTrackers[cKey];
+            if (!cityMap.has(authorKey)) {
+              const existingProf = userStatsByKey[authorKey] || userStatsByName[aName.toLowerCase()] || null;
+              cityMap.set(authorKey, {
+                authorId: existingProf?.authorId || authorKey,
+                name: existingProf?.name || aName,
+                avatarUrl: existingProf?.avatarUrl || r.authorAvatar || r.avatarUrl || '',
+                xp: 0,
+                streetIds: new Set(),
+                pioneerIds: new Set(),
+                guardianIds: new Set(),
+                reviewsCount: 0,
+                helpfulReceivedCount: 0,
+              });
+            }
+            const tracker = cityMap.get(authorKey);
+            const isPioneer = Boolean(
+              r.isPioneer ||
+              (matchingStreet && (
+                (matchingStreet.pioneerAuthorId && String(matchingStreet.pioneerAuthorId) === String(authorKey)) ||
+                (matchingStreet.pioneerReviewId && matchingStreet.pioneerReviewId === r.id) ||
+                Number(matchingStreet.reviewsCount ?? matchingStreet.reviewCount ?? 0) <= 1
+              ))
+            );
+            const isGuardian = Boolean(
+              matchingStreet && (
+                (matchingStreet.guardianId && String(matchingStreet.guardianId) === String(authorKey)) ||
+                (!matchingStreet.guardianId && isPioneer)
+              )
+            );
+            const xpBreak = computeSingleReviewXP(r, isPioneer);
+            reviewMetaMap[r.id] = xpBreak;
+            tracker.xp += xpBreak.totalXP;
+            tracker.streetIds.add(canonicalStreetKey);
+            if (isPioneer) tracker.pioneerIds.add(canonicalStreetKey);
+            if (isGuardian) tracker.guardianIds.add(canonicalStreetKey);
+            tracker.reviewsCount += 1;
+            tracker.helpfulReceivedCount += xpBreak.helpfulCount;
+          }
+        });
+
+        reviewsByAuthorKey.forEach((userRevs, authorKey) => {
+          const existingProf = userStatsByKey[authorKey] || null;
+          const { fullProfile } = buildUserSummaryDocFromReviews(
+            authorKey,
+            userRevs,
+            streetsList,
+            existingProf?.awardedMilestones || [],
+            {
+              authorName: existingProf?.name || userRevs[0]?.authorName || userRevs[0]?.user || 'Cittadino Esploratore',
+              authorAvatar: existingProf?.avatarUrl || userRevs[0]?.authorAvatar || userRevs[0]?.avatarUrl || '',
+              favoriteBadge: existingProf?.favoriteBadge || getLocalFavoriteBadge(authorKey) || null,
+            }
+          );
+          userStatsByKey[String(authorKey)] = fullProfile;
+          if (fullProfile.name) {
+            userStatsByName[fullProfile.name.trim().toLowerCase()] = fullProfile;
+          }
+        });
+      }
+
+      // Arricchisci guardianCount e favoriteBadge per tutti i profili
+      Object.values(userStatsByKey).forEach(prof => {
+        if (!prof) return;
+        const gById = prof.authorId ? (guardianCountByAuthorId[String(prof.authorId)] || 0) : 0;
+        const gByName = prof.name ? (guardianCountByAuthorName[prof.name.trim().toLowerCase()] || 0) : 0;
+        prof.guardianCount = Math.max(Number(prof.guardianCount) || 0, gById, gByName);
+        if (!prof.favoriteBadge && prof.authorId) {
+          prof.favoriteBadge = getLocalFavoriteBadge(prof.authorId) || null;
+        }
+      });
+
+      // Fallback da prof.cityStats se cityUserTrackers non ha ancora dati per una città
+      Object.values(userStatsByKey).forEach(prof => {
+        if (!prof || !prof.cityStats || typeof prof.cityStats !== 'object') return;
+        Object.values(prof.cityStats).forEach(cs => {
+          if (!cs || !cs.cityKey) return;
+          if (!cityUserTrackers[cs.cityKey]) {
+            cityUserTrackers[cs.cityKey] = new Map();
+          }
+          const cityMap = cityUserTrackers[cs.cityKey];
+          if (!cityMap.has(String(prof.authorId))) {
+            cityMap.set(String(prof.authorId), {
+              authorId: prof.authorId,
+              name: prof.name,
+              avatarUrl: prof.avatarUrl,
+              xp: Number(cs.xp) || 0,
+              uniqueStreetsCount: Number(cs.uniqueStreetsCount) || 0,
+              pioneerCount: Number(cs.pioneerCount) || 0,
+              guardianCount: 0,
+              reviewsCount: Number(cs.reviewsCount) || 0,
+              helpfulReceivedCount: Number(cs.helpfulReceivedCount) || 0,
+            });
+          }
+        });
+      });
+
+      // Costruisci le classifiche per ogni Comune attivo e assegna il titolo "🎩 Sindaco di [Nome Città]"
+      const cityLeaderboards = {};
+      const mayorCitiesByAuthorId = {};
+      const mayorCitiesByAuthorName = {};
+
+      const availableCities = Array.from(availableCitiesMap.values()).sort((a, b) => {
+        if (a.cityKey === 'san-benedetto-del-tronto') return -1;
+        if (b.cityKey === 'san-benedetto-del-tronto') return 1;
+        return (b.streetsCount - a.streetsCount) || (b.reviewsCount - a.reviewsCount);
+      });
+
+      availableCities.forEach(cityObj => {
+        const cKey = cityObj.cityKey;
+        const cName = cityObj.cityName;
+        const rawMap = cityUserTrackers[cKey] || new Map();
+        const entries = [];
+
+        rawMap.forEach((t, key) => {
+          const fullProf = userStatsByKey[String(t.authorId)] || userStatsByName[(t.name || '').trim().toLowerCase()] || hydrateUserProfileFromDoc(t);
+          const streetsInCity = t.streetIds ? t.streetIds.size : (Number(t.uniqueStreetsCount) || 0);
+          const pioneerInCity = t.pioneerIds ? t.pioneerIds.size : (Number(t.pioneerCount) || 0);
+          const guardianInCity = t.guardianIds ? t.guardianIds.size : (Number(t.guardianCount) || 0);
+          const xpInCity = Number(t.xp) || 0;
+          if (xpInCity <= 0 || streetsInCity <= 0) return;
+
+          entries.push({
+            ...fullProf,
+            authorId: fullProf.authorId || t.authorId,
+            name: fullProf.name || t.name,
+            avatarUrl: fullProf.avatarUrl || t.avatarUrl,
+            xp: xpInCity,
+            totalGlobalXP: fullProf.xp || xpInCity,
+            uniqueStreetsCount: streetsInCity,
+            pioneerCount: pioneerInCity,
+            guardianCount: guardianInCity,
+            reviewsCount: Number(t.reviewsCount) || streetsInCity,
+            cityKey: cKey,
+            cityName: cName,
+          });
+        });
+
+        entries.sort((a, b) => {
+          if (b.xp !== a.xp) return b.xp - a.xp;
+          if (b.uniqueStreetsCount !== a.uniqueStreetsCount) return b.uniqueStreetsCount - a.uniqueStreetsCount;
+          if (b.pioneerCount !== a.pioneerCount) return b.pioneerCount - a.pioneerCount;
+          return b.reviewsCount - a.reviewsCount;
+        });
+
+        const rankedCityEntries = entries.slice(0, 10).map((entry, idx) => {
+          const rank = idx + 1;
+          // Il 1° classificato nel Comune con almeno 2 vie recensite in quel comune è il "🎩 Sindaco di [Città]"
+          const isCityMayor = rank === 1 && entry.uniqueStreetsCount >= 2;
+          const cityMayorTitle = isCityMayor ? `🎩 Sindaco di ${cName}` : null;
+
+          if (isCityMayor) {
+            const uid = String(entry.authorId);
+            if (!mayorCitiesByAuthorId[uid]) mayorCitiesByAuthorId[uid] = [];
+            if (!mayorCitiesByAuthorId[uid].includes(cName)) mayorCitiesByAuthorId[uid].push(cName);
+
+            const uName = (entry.name || '').trim().toLowerCase();
+            if (uName) {
+              if (!mayorCitiesByAuthorName[uName]) mayorCitiesByAuthorName[uName] = [];
+              if (!mayorCitiesByAuthorName[uName].includes(cName)) mayorCitiesByAuthorName[uName].push(cName);
+            }
+          }
+
+          return {
+            ...entry,
+            rank,
+            isCityMayor,
+            cityMayorTitle,
+          };
+        });
+
+        cityLeaderboards[cKey] = rankedCityEntries;
+      });
+
+      // Propaga i titoli di Sindaco a tutti i profili utente in memoria
+      Object.values(userStatsByKey).forEach(prof => {
+        if (!prof) return;
+        const mById = prof.authorId ? (mayorCitiesByAuthorId[String(prof.authorId)] || []) : [];
+        const mByName = prof.name ? (mayorCitiesByAuthorName[prof.name.trim().toLowerCase()] || []) : [];
+        const mergedCities = Array.from(new Set([...mById, ...mByName]));
+        prof.mayorCities = mergedCities;
+        prof.mayorTitles = mergedCities.map(c => `🎩 Sindaco di ${c}`);
+      });
+
+      const allUniqueUsers = new Map();
+      [...hydratedLeaderboardUsers, ...Object.values(userStatsByKey)].forEach(u => {
+        if (!u || !u.authorId) return;
+        const key = String(u.authorId);
+        const enriched = userStatsByKey[key] || u;
+        if (!allUniqueUsers.has(key) || (enriched.xp || 0) >= (allUniqueUsers.get(key).xp || 0)) {
+          allUniqueUsers.set(key, enriched);
+        }
+      });
+
+      const leaderboard = Array.from(allUniqueUsers.values())
         .filter(u => (u.xp || 0) > 0 && (u.reviewsCount || 0) > 0)
         .sort((a, b) => {
           if (b.xp !== a.xp) return b.xp - a.xp;
@@ -3909,6 +4382,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             ...matched,
             name: activeUser.name || matched.name,
             avatarUrl: activeUser.avatarUrl || matched.avatarUrl,
+            favoriteBadge: matched.favoriteBadge || getLocalFavoriteBadge(activeUser.id) || null,
             awardedMilestones: mergedMilestones,
           };
         }
@@ -3938,11 +4412,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
       return {
         leaderboard,
+        cityLeaderboards,
+        availableCities,
         currentUserProfile,
         reviewMetaMap,
         streetPioneerMap,
         getAuthorProfile,
-        totalExplorers: Math.max(leaderboard.length, Object.keys(userStatsByKey).length),
+        totalExplorers: Math.max(leaderboard.length, allUniqueUsers.size),
       };
     };
 
@@ -3950,6 +4426,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       // 1. ELIMINAZIONE DATI FITTIZI: L'app parte con 0 PIN fittizi!
       const [streets, setStreets] = useState([]);
       const [leaderboardUsers, setLeaderboardUsers] = useState([]);
+      const [allCloudReviews, setAllCloudReviews] = useState([]);
       const [currentUserProfileDoc, setCurrentUserProfileDoc] = useState(null);
       const [cachedUsersById, setCachedUsersById] = useState({});
       const [isLoadingComments, setIsLoadingComments] = useState(false);
@@ -4034,10 +4511,10 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         }
       }, [isAdmin]);
 
-      // Calcolo leggero di Livelli, XP, Badge e Classifica Top 10 (da collezione pre-aggregata 'users')
+      // Calcolo di Livelli, XP, 12 Badge, Classifiche per Città e Titolo "🎩 Sindaco di [Città]"
       const gamification = useMemo(
-        () => computeGamificationData(streets, currentUser, leaderboardUsers, currentUserProfileDoc, cachedUsersById),
-        [streets, currentUser, leaderboardUsers, currentUserProfileDoc, cachedUsersById]
+        () => computeGamificationData(streets, currentUser, leaderboardUsers, currentUserProfileDoc, cachedUsersById, allCloudReviews),
+        [streets, currentUser, leaderboardUsers, currentUserProfileDoc, cachedUsersById, allCloudReviews]
       );
 
       const triggerRewardToast = (toastData) => {
@@ -4132,6 +4609,87 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           }
         } else {
           copyShareUrlToClipboard(shareUrl);
+        }
+      };
+
+      // Perk Livello 3+: Seleziona o rimuovi la "Spilla in Vetrina" (favoriteBadge salvato in users/{userId})
+      const handleSelectFavoriteBadge = async (badgeId) => {
+        if (!currentUser?.id) {
+          setIsGamificationOpen(false);
+          setIsAuthOpen(true);
+          return;
+        }
+        const currentLvl = gamification.currentUserProfile?.levelInfo?.level || 1;
+        if (currentLvl < 3) {
+          triggerShareToast('🔒 La "Spilla in Vetrina" si sblocca al Livello 3 (🛵 Sentinella Urbana)!');
+          return;
+        }
+        const badgeObj = GAMIFICATION_BADGES.find(b => b.id === badgeId);
+        const isUnlocked = gamification.currentUserProfile?.badges?.some(b => b.id === badgeId && b.unlocked);
+        if (!isUnlocked) {
+          triggerShareToast('🔒 Sblocca prima questa medaglia per esporla come Spilla in Vetrina!');
+          return;
+        }
+        const currentFav = gamification.currentUserProfile?.favoriteBadge || null;
+        const nextFav = currentFav === badgeId ? null : badgeId;
+        saveLocalFavoriteBadge(currentUser.id, nextFav);
+
+        setCurrentUserProfileDoc(prev => prev ? { ...prev, favoriteBadge: nextFav } : prev);
+        setCachedUsersById(prev => {
+          const existing = prev[String(currentUser.id)];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [String(currentUser.id)]: { ...existing, favoriteBadge: nextFav },
+          };
+        });
+        setLeaderboardUsers(prev => prev.map(u =>
+          String(u.authorId) === String(currentUser.id) ? { ...u, favoriteBadge: nextFav } : u
+        ));
+
+        if (nextFav && badgeObj) {
+          triggerShareToast(`📌 Spilla in Vetrina impostata: ${badgeObj.icon} "${badgeObj.name}"!`);
+        } else {
+          triggerShareToast('📌 Spilla in Vetrina rimossa.');
+        }
+
+        const firestore = window.db;
+        if (firestore) {
+          try {
+            await firestore.collection('users').doc(String(currentUser.id)).set({
+              favoriteBadge: nextFav,
+              updatedAt: new Date().toISOString(),
+            }, { merge: true });
+          } catch (err) {
+            console.warn('[FavoriteBadge] Impossibile salvare favoriteBadge su Firestore:', err);
+          }
+        }
+      };
+
+      // Condivisione "Passaporto Street Review" tramite navigator.share o copia negli appunti
+      const handleSharePassport = async () => {
+        const prof = gamification.currentUserProfile;
+        const lvl = prof.levelInfo;
+        const passportText = `🏆 Sono al Livello ${lvl.level} (${lvl.title}) su Street Review con ${prof.xp} XP! Ho recensito ${prof.uniqueStreetsCount} strade e sono 👑 Guardiano di ${prof.guardianCount || 0} vie. Riesci a battermi in classifica? 👉 https://mattberna15.github.io/Street-Review/`;
+
+        if (navigator.share) {
+          try {
+            await navigator.share({
+              title: `Passaporto Street Review · ${prof.name}`,
+              text: passportText,
+            });
+            return;
+          } catch (err) {
+            if (err && err.name === 'AbortError') return;
+          }
+        }
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(passportText)
+            .then(() => triggerShareToast('📲 Passaporto Street Review copiato negli appunti! Pronto da incollare.'))
+            .catch(() => fallbackCopyShareText(passportText));
+        } else {
+          fallbackCopyShareText(passportText);
         }
       };
 
@@ -4585,9 +5143,21 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           }
         }, 600);
 
+        // Listener 3: Collezione 'reviews' per alimentare in tempo reale le Classifiche per Città, il titolo Sindaco e i 12 Badge
+        const unsubscribeReviews = firestore.collection('reviews').onSnapshot(
+          snapshot => {
+            const revs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setAllCloudReviews(revs);
+          },
+          err => {
+            console.warn('Lettura Firestore (reviews per classifiche cittadine):', err);
+          }
+        );
+
         return () => {
           unsubscribeStreets();
           unsubscribeUsers();
+          unsubscribeReviews();
         };
       }, []);
 
@@ -6178,7 +6748,12 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               allUserReviews,
               streetsRef.current,
               Array.from(awardedMilestonesSet),
-              { authorName, authorAvatar, email: authorEmail }
+              {
+                authorName,
+                authorAvatar,
+                email: authorEmail,
+                favoriteBadge: prevProfile?.favoriteBadge || getLocalFavoriteBadge(authorId) || null,
+              }
             );
 
             const nextLevelInfo = nextProfile.levelInfo;
@@ -6806,20 +7381,58 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 if (uSnap.exists) existingUserData = uSnap.data() || {};
               } catch (e) {}
 
+              const prevAuthorMilestones = new Set(Array.isArray(existingUserData.awardedMilestones) ? existingUserData.awardedMilestones : []);
+              const prevAuthorLevel = Number(existingUserData.level) || 1;
+              const prevAuthorBadges = new Set(Array.isArray(existingUserData.unlockedBadges) ? existingUserData.unlockedBadges : []);
+
               const { userDoc, fullProfile } = buildUserSummaryDocFromReviews(
                 reviewAuthorId,
                 allAuthorRevs,
                 streetsRef.current,
-                Array.isArray(existingUserData.awardedMilestones) ? existingUserData.awardedMilestones : [],
+                Array.from(prevAuthorMilestones),
                 {
                   authorName: existingUserData.authorName || existingUserData.name || review.user || 'Cittadino Esploratore',
                   authorAvatar: existingUserData.authorAvatar || existingUserData.avatarUrl || review.avatarUrl || '',
                   email: existingUserData.email || '',
+                  favoriteBadge: existingUserData.favoriteBadge || getLocalFavoriteBadge(reviewAuthorId) || null,
                 }
               );
 
+              // Controlla se il voto "👍 Utile" ha fatto sbloccare il badge "💎 Voce Autorevole" o un nuovo livello all'autore
+              const newlyUnlockedByHelpful = fullProfile.badges.filter(b =>
+                b.unlocked && !prevAuthorBadges.has(b.id) && !prevAuthorMilestones.has(`badge_${b.id}`) && b.id !== 'first_review'
+              );
+              const newlyReachedLvlByHelpful = (
+                fullProfile.levelInfo.level > prevAuthorLevel &&
+                !prevAuthorMilestones.has(`level_${fullProfile.levelInfo.level}`)
+              ) ? fullProfile.levelInfo : null;
+
+              if (newlyReachedLvlByHelpful) {
+                for (let l = 2; l <= newlyReachedLvlByHelpful.level; l++) {
+                  prevAuthorMilestones.add(`level_${l}`);
+                }
+              }
+              newlyUnlockedByHelpful.forEach(b => prevAuthorMilestones.add(`badge_${b.id}`));
+              userDoc.awardedMilestones = Array.from(prevAuthorMilestones);
+              fullProfile.awardedMilestones = userDoc.awardedMilestones;
+
               await firestore.collection('users').doc(reviewAuthorId).set(userDoc, { merge: true });
               setCachedUsersById(prev => ({ ...prev, [reviewAuthorId]: fullProfile }));
+
+              if ((newlyReachedLvlByHelpful || newlyUnlockedByHelpful.length > 0) && existingUserData.email && existingUserData.email.includes('@') && window.emailjs) {
+                const achTitle = newlyUnlockedByHelpful.length > 0
+                  ? `Nuovo Badge: ${newlyUnlockedByHelpful.map(b => b.name).join(', ')}`
+                  : `Nuovo Livello: ${newlyReachedLvlByHelpful.title}`;
+                const achDesc = newlyUnlockedByHelpful.length > 0
+                  ? `Complimenti! Grazie ai voti "👍 Utile" della community sulle tue recensioni hai sbloccato ${newlyUnlockedByHelpful.map(b => `${b.icon} "${b.name}" (${b.description})`).join(' e ')}, salendo a ${fullProfile.xp} XP totali su Street Review!`
+                  : `Complimenti! Grazie ai voti "👍 Utile" della community hai raggiunto ${fullProfile.xp} XP salendo al Livello ${newlyReachedLvlByHelpful.level} (${newlyReachedLvlByHelpful.fullTitle})!`;
+                window.emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
+                  to_email: existingUserData.email,
+                  user_name: userDoc.name || 'Cittadino Esploratore',
+                  achievement_title: achTitle,
+                  achievement_description: achDesc,
+                }).catch(() => {});
+              }
             }
           }
         } catch (err) {
@@ -8144,12 +8757,20 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                           const helpfulCount = Math.max(0, Number(r.helpfulCount ?? helpfulVoterIds.length) || 0);
                           const hasVotedHelpful = Boolean(currentUser?.id && helpfulVoterIds.includes(String(currentUser.id)));
 
+                          // Perk Livello 6+: Bordo Card Veterano (sottile bordo dorato/ciano luminoso senza testo o badge extra)
+                          const isVeteranAuthor = lvl.level >= 6;
+                          const veteranCardBorderClass = lvl.level >= 7
+                            ? 'border-amber-400/90 ring-1 ring-cyan-400/55 shadow-[0_0_14px_rgba(245,158,11,0.20)] bg-gradient-to-br from-white via-amber-50/20 to-cyan-50/25'
+                            : 'border-cyan-400/90 ring-1 ring-amber-300/55 shadow-[0_0_12px_rgba(6,182,212,0.18)] bg-gradient-to-br from-white via-cyan-50/20 to-amber-50/15';
+
                           return (
                             <div
                               key={r.id}
                               className={`p-3.5 rounded-2xl shadow-xs space-y-2.5 border transition-all ${
                                 isMyReview
                                   ? 'border-blue-400 ring-2 ring-blue-50 bg-white'
+                                  : isVeteranAuthor
+                                  ? veteranCardBorderClass
                                   : lvl.commentHighlightClass
                               }`}
                             >
@@ -8364,6 +8985,10 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             currentUser={currentUser}
             userProfile={gamification.currentUserProfile}
             leaderboard={gamification.leaderboard}
+            cityLeaderboards={gamification.cityLeaderboards}
+            availableCities={gamification.availableCities}
+            onSelectFavoriteBadge={handleSelectFavoriteBadge}
+            onSharePassport={handleSharePassport}
             onOpenAuth={() => {
               setIsGamificationOpen(false);
               setIsAuthOpen(true);
@@ -8404,10 +9029,38 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
     }
 
     // --- MODALE "PROFILO & CLASSIFICA" (GAMIFICATION DASHBOARD) ---
-    function GamificationModal({ isOpen, activeTab, onTabChange, onClose, currentUser, userProfile, leaderboard, onOpenAuth }) {
+    function GamificationModal({
+      isOpen,
+      activeTab,
+      onTabChange,
+      onClose,
+      currentUser,
+      userProfile,
+      leaderboard,
+      cityLeaderboards = {},
+      availableCities = [],
+      leaderboardCityFilter = 'ALL',
+      onChangeLeaderboardCityFilter,
+      onSelectFavoriteBadge,
+      onSharePassport,
+      onOpenAuth
+    }) {
       if (!isOpen) return null;
 
       const lvl = userProfile.levelInfo;
+      const canPinFavoriteBadge = lvl.level >= 3;
+      const pinnedBadgeObj = userProfile.favoriteBadge
+        ? GAMIFICATION_BADGES.find(b => b.id === userProfile.favoriteBadge && (userProfile.unlockedBadgeIds || []).includes(b.id))
+        : null;
+      const userMayorTitles = Array.isArray(userProfile.mayorTitles) ? userProfile.mayorTitles : [];
+
+      const activeLeaderboardList = leaderboardCityFilter === 'ALL'
+        ? leaderboard
+        : (cityLeaderboards[leaderboardCityFilter] || []);
+
+      const cityMayorEntry = leaderboardCityFilter !== 'ALL' && activeLeaderboardList.length > 0 && activeLeaderboardList[0].isMayorOfSelectedCity
+        ? activeLeaderboardList[0]
+        : null;
 
       return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-fade-in">
@@ -8420,7 +9073,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 </div>
                 <div>
                   <h3 className="font-black text-base sm:text-lg tracking-tight">Profilo Esploratore &amp; Classifica</h3>
-                  <p className="text-[11px] text-slate-300">Recensisci le strade della tua città e di tutta Italia, sblocca gli 8 Badge e scala i 10 ranghi</p>
+                  <p className="text-[11px] text-slate-300">Sblocca le 12 Medaglie, scala i 10 ranghi e diventa 🎩 Sindaco della tua Città</p>
                 </div>
               </div>
               <button
@@ -8453,7 +9106,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 }`}
               >
                 <span>🏆</span>
-                <span>Classifica (Top Esploratori d'Italia)</span>
+                <span>Classifica (Italia &amp; Città)</span>
               </button>
             </div>
 
@@ -8466,7 +9119,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
                       <div className="space-y-0.5 text-center sm:text-left">
                         <p className="font-black text-sm">Modalità Ospite attiva</p>
-                        <p className="text-[11px] text-blue-100">Accedi con Google per salvare le tue recensioni, accumulare XP e sbloccare i Badge!</p>
+                        <p className="text-[11px] text-blue-100">Accedi con Google per salvare le tue recensioni, accumulare XP e sbloccare i 12 Badge!</p>
                       </div>
                       <button
                         onClick={onOpenAuth}
@@ -8477,7 +9130,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     </div>
                   )}
 
-                  {/* Card Principale Livello & Barra di Avanzamento */}
+                  {/* Card Principale Livello, Titolo Sindaco, Spilla in Vetrina & Passaporto */}
                   <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div className="flex items-center gap-3.5">
@@ -8498,16 +9151,37 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                             Liv. {lvl.level}
                           </span>
                         </div>
-                        <div>
+                        <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${lvl.badgeClass}`}>
                               Grado {lvl.tierLabel}
                             </span>
                             <span className="text-xs font-bold text-slate-400">· {userProfile.name}</span>
+                            {pinnedBadgeObj && (
+                              <span
+                                title={`Spilla in Vetrina: ${pinnedBadgeObj.name}`}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-800 border border-indigo-200 shadow-2xs"
+                              >
+                                <span>{pinnedBadgeObj.icon}</span>
+                                <span>{pinnedBadgeObj.name}</span>
+                              </span>
+                            )}
                           </div>
-                          <h4 className="text-lg sm:text-xl font-black text-slate-900 mt-0.5">
+                          <h4 className="text-lg sm:text-xl font-black text-slate-900">
                             {lvl.fullTitle}
                           </h4>
+                          {userMayorTitles.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                              {userMayorTitles.map(mTitle => (
+                                <span
+                                  key={mTitle}
+                                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-200 text-amber-950 border border-amber-400 shadow-2xs"
+                                >
+                                  {mTitle}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           <p className="text-xs text-slate-500 font-medium">
                             Esperienza totale accumulata: <strong className="text-slate-900">{userProfile.xp} XP</strong>
                           </p>
@@ -8548,20 +9222,42 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                       </div>
                     </div>
 
-                    {/* Statistiche Rapide Utente */}
-                    <div className="grid grid-cols-3 gap-2.5 pt-1">
-                      <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 text-center">
-                        <p className="text-lg font-black text-slate-900">{userProfile.uniqueStreetsCount}</p>
-                        <p className="text-[10px] font-bold text-slate-500">🛣️ Vie Recensite</p>
+                    {/* Cruscotto "Il Mio Impatto Civico" (4 Contatori Rapidi) */}
+                    <div className="pt-1 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">📊 Cruscotto · Il Mio Impatto Civico</span>
+                        <span className="text-[10px] font-bold text-blue-600">{userProfile.unlockedBadgesCount}/{GAMIFICATION_BADGES.length} Medaglie sbloccate</span>
                       </div>
-                      <div className="bg-amber-50/60 rounded-2xl p-3 border border-amber-200/60 text-center">
-                        <p className="text-lg font-black text-amber-800">{userProfile.pioneerCount}</p>
-                        <p className="text-[10px] font-bold text-amber-700">🧭 Vie da Pioniere</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        <div className="bg-slate-50 rounded-2xl p-3 border border-slate-200/80 text-center">
+                          <p className="text-lg font-black text-slate-900">{userProfile.uniqueStreetsCount}</p>
+                          <p className="text-[10px] font-bold text-slate-500">🛣️ Strade Recensite</p>
+                        </div>
+                        <div className="bg-amber-50/70 rounded-2xl p-3 border border-amber-200/70 text-center">
+                          <p className="text-lg font-black text-amber-800">{userProfile.pioneerCount}</p>
+                          <p className="text-[10px] font-bold text-amber-700">🧭 Strade Inaugurate</p>
+                        </div>
+                        <div className="bg-yellow-50/80 rounded-2xl p-3 border border-yellow-300/70 text-center">
+                          <p className="text-lg font-black text-amber-900">{userProfile.guardianCount || 0}</p>
+                          <p className="text-[10px] font-bold text-amber-800">👑 Vie da Guardiano</p>
+                        </div>
+                        <div className="bg-cyan-50/70 rounded-2xl p-3 border border-cyan-200/70 text-center">
+                          <p className="text-lg font-black text-cyan-800">{userProfile.helpfulReceivedCount || 0}</p>
+                          <p className="text-[10px] font-bold text-cyan-700">👍 Utile Ricevuti</p>
+                        </div>
                       </div>
-                      <div className="bg-blue-50/60 rounded-2xl p-3 border border-blue-200/60 text-center">
-                        <p className="text-lg font-black text-blue-800">{userProfile.unlockedBadgesCount}/{GAMIFICATION_BADGES.length}</p>
-                        <p className="text-[10px] font-bold text-blue-700">🏅 Badge Sbloccati</p>
-                      </div>
+                    </div>
+
+                    {/* Pulsante Condividi il mio Passaporto Street Review */}
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={onSharePassport}
+                        className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 hover:from-slate-800 hover:to-slate-800 text-white font-black text-xs sm:text-sm shadow-md flex items-center justify-center gap-2.5 transition-all cursor-pointer border border-blue-400/30"
+                      >
+                        <span className="text-base">📲</span>
+                        <span>Condividi il mio Passaporto Street Review</span>
+                      </button>
                     </div>
                   </div>
 
@@ -8592,21 +9288,33 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     </div>
                   </div>
 
-                  {/* Griglia Bacheca degli 8 Badge (Medaglie Sbloccabili) */}
+                  {/* Griglia Bacheca dei 12 Badge (Medaglie Sbloccabili + Spilla in Vetrina) */}
                   <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                       <h5 className="text-sm font-black text-slate-900">🎖️ Bacheca Medaglie &amp; Badge ({userProfile.unlockedBadgesCount}/{GAMIFICATION_BADGES.length})</h5>
-                      <span className="text-[11px] text-slate-500 font-semibold">Sbloccati a colori · Bloccati con lucchetto</span>
+                      <span className="text-[11px] text-indigo-600 font-bold">
+                        {canPinFavoriteBadge
+                          ? '📌 Clicca un badge sbloccato per fissarlo come Spilla in Vetrina'
+                          : '🔒 Sblocca il Liv. 3 per fissare una Spilla in Vetrina'}
+                      </span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {userProfile.badges.map(badge => {
                         const pct = Math.min(100, Math.round((badge.progress / badge.target) * 100));
+                        const isPinned = userProfile.favoriteBadge === badge.id && badge.unlocked;
                         return (
                           <div
                             key={badge.id}
+                            onClick={() => {
+                              if (badge.unlocked && onSelectFavoriteBadge) {
+                                onSelectFavoriteBadge(badge.id);
+                              }
+                            }}
                             className={`p-3.5 rounded-2xl border transition-all flex items-start gap-3 ${
                               badge.unlocked
-                                ? `bg-gradient-to-br ${badge.unlockedCls}`
+                                ? `bg-gradient-to-br ${badge.unlockedCls} cursor-pointer hover:shadow-md ${
+                                    isPinned ? 'ring-2 ring-indigo-500 border-indigo-400 shadow-sm' : ''
+                                  }`
                                 : 'bg-slate-100/90 border-slate-200 text-slate-400 grayscale opacity-75'
                             }`}
                           >
@@ -8617,6 +9325,14 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                               {!badge.unlocked && (
                                 <span className="absolute -bottom-1 -right-1 text-xs bg-slate-700 text-white rounded-full w-5 h-5 flex items-center justify-center shadow-2xs">
                                   🔒
+                                </span>
+                              )}
+                              {isPinned && (
+                                <span
+                                  title="Spilla in Vetrina attiva"
+                                  className="absolute -top-1.5 -right-1.5 text-[10px] bg-indigo-600 text-white rounded-full w-5 h-5 flex items-center justify-center shadow-2xs"
+                                >
+                                  📌
                                 </span>
                               )}
                             </div>
@@ -8644,6 +9360,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                                   style={{ width: `${pct}%` }}
                                 />
                               </div>
+                              {badge.unlocked && canPinFavoriteBadge && (
+                                <div className="pt-0.5 flex items-center justify-end">
+                                  <span className={`text-[10px] font-extrabold ${isPinned ? 'text-indigo-700' : 'text-slate-400 hover:text-indigo-600'}`}>
+                                    {isPinned ? '📌 Spilla Preferita attiva' : '📌 Imposta come Spilla'}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -8653,7 +9376,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
                   {/* Scala dei 10 Livelli */}
                   <div className="bg-white rounded-2xl p-4 border border-slate-200/80 space-y-2.5">
-                    <h5 className="text-[11px] font-black uppercase tracking-wider text-slate-400">🗺️ Scala dei 10 Livelli Cittadini</h5>
+                    <h5 className="text-[11px] font-black uppercase tracking-wider text-slate-400">🗺️ Scala dei 10 Livelli Cittadini &amp; Perk Sbloccabili</h5>
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                       {GAMIFICATION_LEVELS.map(l => {
                         const isCurrent = l.level === lvl.level;
@@ -8682,39 +9405,124 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   </div>
                 </>
               ) : (
-                /* SCHEDA 2: CLASSIFICA (TOP 10 ESPLORATORI IN TEMPO REALE DA FIRESTORE) */
+                /* SCHEDA 2: CLASSIFICA GENERALE E PER CITTÀ CON TITOLO "🎩 SINDACO DI [CITTÀ]" */
                 <div className="space-y-4">
-                  <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 rounded-3xl p-4 text-white shadow-md flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <h4 className="text-base font-black flex items-center gap-2">
-                        <span>👑</span> Top 10 Esploratori d'Italia
-                      </h4>
-                      <p className="text-[11px] text-amber-50">
-                        Classifica nazionale calcolata in tempo reale dalle recensioni pubblicate su Firestore
-                      </p>
+                  {/* Selettore Filtro Città (Pillole Rapide) */}
+                  <div className="bg-white rounded-2xl p-3 border border-slate-200/90 space-y-2 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">📍 Filtra Classifica per Comune</span>
+                      <span className="text-[10px] font-bold text-amber-700">1° posto (≥2 vie) = 🎩 Sindaco della Città</span>
                     </div>
-                    <div className="bg-white/20 backdrop-blur-xs px-3 py-1.5 rounded-2xl text-right">
-                      <p className="text-[10px] uppercase font-bold text-amber-100">Esploratori Attivi</p>
-                      <p className="text-lg font-black">{leaderboard.length}</p>
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                      <button
+                        type="button"
+                        onClick={() => onChangeLeaderboardCityFilter && onChangeLeaderboardCityFilter('ALL')}
+                        className={`px-3 py-1.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all cursor-pointer border ${
+                          leaderboardCityFilter === 'ALL'
+                            ? 'bg-slate-900 text-amber-300 border-slate-900 shadow-xs'
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        🌍 Tutta Italia
+                      </button>
+                      {availableCities.map(city => {
+                        const isSelected = leaderboardCityFilter === city;
+                        const emoji = getCityLeaderboardEmoji(city);
+                        return (
+                          <button
+                            key={city}
+                            type="button"
+                            onClick={() => onChangeLeaderboardCityFilter && onChangeLeaderboardCityFilter(city)}
+                            className={`px-3 py-1.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all cursor-pointer border ${
+                              isSelected
+                                ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs'
+                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-amber-50/60 hover:border-amber-300'
+                            }`}
+                          >
+                            {emoji} {city}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  {leaderboard.length === 0 ? (
+                  {/* Header Classifica Attiva */}
+                  <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 rounded-3xl p-4 text-white shadow-md flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <h4 className="text-base font-black flex items-center gap-2">
+                        <span>{leaderboardCityFilter === 'ALL' ? '👑' : '🎩'}</span>
+                        <span>
+                          {leaderboardCityFilter === 'ALL'
+                            ? "Top 10 Esploratori d'Italia"
+                            : `Classifica Cittadina · ${leaderboardCityFilter}`}
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-amber-50">
+                        {leaderboardCityFilter === 'ALL'
+                          ? 'Classifica nazionale calcolata in tempo reale dalle recensioni pubblicate su Firestore'
+                          : `Punti XP e strade recensite nel Comune di ${leaderboardCityFilter}`}
+                      </p>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-xs px-3 py-1.5 rounded-2xl text-right shrink-0">
+                      <p className="text-[10px] uppercase font-bold text-amber-100">Esploratori</p>
+                      <p className="text-lg font-black">{activeLeaderboardList.length}</p>
+                    </div>
+                  </div>
+
+                  {/* Podio "🎩 Sindaco di [Città]" quando una città è selezionata */}
+                  {leaderboardCityFilter !== 'ALL' && (
+                    cityMayorEntry ? (
+                      <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-100/90 via-yellow-50 to-amber-100/80 border-2 border-amber-400 shadow-xs flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-11 h-11 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center text-2xl shrink-0 shadow-xs">
+                            🎩
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 block">
+                              Titolo Onorario Cittadino Attivo
+                            </span>
+                            <p className="text-sm font-black text-slate-900 truncate">
+                              🎩 Sindaco di {leaderboardCityFilter}: <span className="text-amber-900">{cityMayorEntry.name}</span>
+                            </p>
+                            <p className="text-[11px] text-slate-600 font-semibold">
+                              1° posto con <strong>{cityMayorEntry.xp} XP</strong> e <strong>{cityMayorEntry.uniqueStreetsCount} vie</strong> recensite a {leaderboardCityFilter}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="hidden sm:inline-block px-3 py-1 rounded-full bg-amber-900 text-amber-200 font-black text-[11px] shrink-0">
+                          🥇 1° Posto
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 text-amber-900 flex items-center gap-2.5 text-xs">
+                        <span className="text-lg">🎩</span>
+                        <span>
+                          Il titolo di <strong>🎩 Sindaco di {leaderboardCityFilter}</strong> è vacante! Recensisci almeno <strong>2 strade</strong> in questo Comune e conquista il 1° posto.
+                        </span>
+                      </div>
+                    )
+                  )}
+
+                  {activeLeaderboardList.length === 0 ? (
                     <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 space-y-2">
                       <div className="text-3xl">🧭</div>
-                      <p className="text-sm font-bold text-slate-800">Nessun esploratore ancora in classifica</p>
-                      <p className="text-xs text-slate-500">Pubblica la prima recensione di una strada per conquistare il 1° posto!</p>
+                      <p className="text-sm font-bold text-slate-800">Nessun esploratore ancora in questa classifica</p>
+                      <p className="text-xs text-slate-500">Pubblica la prima recensione per conquistare il 1° posto!</p>
                     </div>
                   ) : (
                     <div className="space-y-2.5">
-                      {leaderboard.map((entry) => {
+                      {activeLeaderboardList.map((entry) => {
                         const isMe = currentUser && (entry.authorId === currentUser.id || entry.name.toLowerCase() === currentUser.name.toLowerCase());
                         const rankMedal = entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `#${entry.rank}`;
                         const entryLvl = entry.levelInfo;
+                        const entryPinnedBadge = entry.favoriteBadge
+                          ? GAMIFICATION_BADGES.find(b => b.id === entry.favoriteBadge && (entry.unlockedBadgeIds || []).includes(b.id))
+                          : null;
+                        const entryMayorTitles = Array.isArray(entry.mayorTitles) ? entry.mayorTitles : [];
 
                         return (
                           <div
-                            key={entry.authorId}
+                            key={`${leaderboardCityFilter}-${entry.authorId}`}
                             className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
                               isMe
                                 ? 'bg-blue-50/70 border-blue-400 ring-2 ring-blue-500/20 shadow-sm'
@@ -8762,13 +9570,34 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${entryLvl.badgeClass}`}>
                                     Liv. {entryLvl.level} · {entryLvl.fullTitle}
                                   </span>
+                                  {entryPinnedBadge && (
+                                    <span
+                                      title={`Spilla in Vetrina: ${entryPinnedBadge.name}`}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-800 border border-indigo-200"
+                                    >
+                                      <span>{entryPinnedBadge.icon}</span>
+                                      <span className="hidden sm:inline">{entryPinnedBadge.name}</span>
+                                    </span>
+                                  )}
+                                  {leaderboardCityFilter !== 'ALL' && entry.isMayorOfSelectedCity && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-300/90 text-amber-950 border border-amber-500">
+                                      🎩 Sindaco di {leaderboardCityFilter}
+                                    </span>
+                                  )}
+                                  {leaderboardCityFilter === 'ALL' && entryMayorTitles.length > 0 && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200/90 text-amber-950 border border-amber-400">
+                                      {entryMayorTitles[0]}{entryMayorTitles.length > 1 ? ` +${entryMayorTitles.length - 1}` : ''}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 font-semibold mt-0.5">
-                                  <span>🛣️ {entry.uniqueStreetsCount} {entry.uniqueStreetsCount === 1 ? 'via' : 'vie'}</span>
+                                  <span>🛣️ {entry.uniqueStreetsCount} {entry.uniqueStreetsCount === 1 ? 'via' : 'vie'}{leaderboardCityFilter !== 'ALL' ? ` a ${leaderboardCityFilter}` : ''}</span>
                                   {entry.pioneerCount > 0 && (
                                     <span className="text-amber-700 font-bold">· 🧭 {entry.pioneerCount} da Pioniere</span>
                                   )}
-                                  <span>· 🏅 {entry.unlockedBadgesCount} badge</span>
+                                  {leaderboardCityFilter === 'ALL' && (
+                                    <span>· 🏅 {entry.unlockedBadgesCount} badge</span>
+                                  )}
                                 </div>
                               </div>
                             </div>
