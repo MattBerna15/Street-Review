@@ -4336,6 +4336,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         });
 
         cityLeaderboards[cKey] = rankedCityEntries;
+        if (cName && cName !== cKey) {
+          cityLeaderboards[cName] = rankedCityEntries;
+        }
       });
 
       // Propaga i titoli di Sindaco a tutti i profili utente in memoria
@@ -9039,7 +9042,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       leaderboard,
       cityLeaderboards = {},
       availableCities = [],
-      leaderboardCityFilter = 'ALL',
+      leaderboardCityFilter: propCityFilter,
       onChangeLeaderboardCityFilter,
       onSelectFavoriteBadge,
       onSharePassport,
@@ -9047,20 +9050,46 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
     }) {
       if (!isOpen) return null;
 
+      // Gestione stato interno filtro città per garantire indipendenza e reattività
+      const [internalCityFilter, setInternalCityFilter] = React.useState('ALL');
+      const selectedCityKey = (typeof propCityFilter === 'string' && propCityFilter) ? propCityFilter : internalCityFilter;
+
+      const handleCityFilterChange = (cKey) => {
+        setInternalCityFilter(cKey);
+        if (typeof onChangeLeaderboardCityFilter === 'function') {
+          onChangeLeaderboardCityFilter(cKey);
+        }
+      };
+
+      // Risoluzione sicura oggetto e nome città selezionata
+      const selectedCityObj = (availableCities || []).find(c => {
+        const k = typeof c === 'object' ? (c.cityKey || c.cityName) : c;
+        const n = typeof c === 'object' ? (c.cityName || c.cityKey) : c;
+        return k === selectedCityKey || n === selectedCityKey;
+      });
+
+      const selectedCityDisplayName = selectedCityObj
+        ? (typeof selectedCityObj === 'object' ? (selectedCityObj.cityName || selectedCityObj.name || selectedCityObj.cityKey) : selectedCityObj)
+        : (selectedCityKey !== 'ALL' ? selectedCityKey : '');
+
+      const activeLeaderboardList = selectedCityKey === 'ALL'
+        ? (leaderboard || [])
+        : (
+            cityLeaderboards[selectedCityKey] ||
+            (selectedCityObj && typeof selectedCityObj === 'object' && (cityLeaderboards[selectedCityObj.cityKey] || cityLeaderboards[selectedCityObj.cityName])) ||
+            []
+          );
+
+      const cityMayorEntry = selectedCityKey !== 'ALL' && activeLeaderboardList.length > 0 && (activeLeaderboardList[0].isCityMayor || activeLeaderboardList[0].isMayorOfSelectedCity)
+        ? activeLeaderboardList[0]
+        : null;
+
       const lvl = userProfile.levelInfo;
       const canPinFavoriteBadge = lvl.level >= 3;
       const pinnedBadgeObj = userProfile.favoriteBadge
         ? GAMIFICATION_BADGES.find(b => b.id === userProfile.favoriteBadge && (userProfile.unlockedBadgeIds || []).includes(b.id))
         : null;
       const userMayorTitles = Array.isArray(userProfile.mayorTitles) ? userProfile.mayorTitles : [];
-
-      const activeLeaderboardList = leaderboardCityFilter === 'ALL'
-        ? leaderboard
-        : (cityLeaderboards[leaderboardCityFilter] || []);
-
-      const cityMayorEntry = leaderboardCityFilter !== 'ALL' && activeLeaderboardList.length > 0 && activeLeaderboardList[0].isMayorOfSelectedCity
-        ? activeLeaderboardList[0]
-        : null;
 
       return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-fade-in">
@@ -9416,30 +9445,35 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
                       <button
                         type="button"
-                        onClick={() => onChangeLeaderboardCityFilter && onChangeLeaderboardCityFilter('ALL')}
+                        onClick={() => handleCityFilterChange('ALL')}
                         className={`px-3 py-1.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all cursor-pointer border ${
-                          leaderboardCityFilter === 'ALL'
+                          selectedCityKey === 'ALL'
                             ? 'bg-slate-900 text-amber-300 border-slate-900 shadow-xs'
                             : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                         }`}
                       >
                         🌍 Tutta Italia
                       </button>
-                      {availableCities.map(city => {
-                        const isSelected = leaderboardCityFilter === city;
-                        const emoji = getCityLeaderboardEmoji(city);
+                      {(availableCities || []).map((city, index) => {
+                        const cityKey = typeof city === 'object' ? (city.cityKey || city.cityName) : city;
+                        const cityName = typeof city === 'object' ? (city.cityName || city.name || city.cityKey) : city;
+                        const cityEmoji = (typeof city === 'object' && city.emoji) ? city.emoji : getCityLeaderboardEmoji(cityKey || cityName);
+                        const cityReviewsCount = typeof city === 'object' && city.reviewsCount ? city.reviewsCount : null;
+                        const isSelected = selectedCityKey === cityKey || selectedCityKey === cityName;
+
                         return (
                           <button
-                            key={city}
+                            key={cityKey || cityName || index}
                             type="button"
-                            onClick={() => onChangeLeaderboardCityFilter && onChangeLeaderboardCityFilter(city)}
+                            onClick={() => handleCityFilterChange(cityKey)}
                             className={`px-3 py-1.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all cursor-pointer border ${
                               isSelected
                                 ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs'
                                 : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-amber-50/60 hover:border-amber-300'
                             }`}
                           >
-                            {emoji} {city}
+                            {cityEmoji ? `${cityEmoji} ` : ''}{cityName}
+                            {cityReviewsCount ? ` (${cityReviewsCount})` : ''}
                           </button>
                         );
                       })}
@@ -9450,17 +9484,17 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 rounded-3xl p-4 text-white shadow-md flex items-center justify-between">
                     <div className="space-y-0.5">
                       <h4 className="text-base font-black flex items-center gap-2">
-                        <span>{leaderboardCityFilter === 'ALL' ? '👑' : '🎩'}</span>
+                        <span>{selectedCityKey === 'ALL' ? '👑' : '🎩'}</span>
                         <span>
-                          {leaderboardCityFilter === 'ALL'
+                          {selectedCityKey === 'ALL'
                             ? "Top 10 Esploratori d'Italia"
-                            : `Classifica Cittadina · ${leaderboardCityFilter}`}
+                            : `Classifica Cittadina · ${selectedCityDisplayName}`}
                         </span>
                       </h4>
                       <p className="text-[11px] text-amber-50">
-                        {leaderboardCityFilter === 'ALL'
+                        {selectedCityKey === 'ALL'
                           ? 'Classifica nazionale calcolata in tempo reale dalle recensioni pubblicate su Firestore'
-                          : `Punti XP e strade recensite nel Comune di ${leaderboardCityFilter}`}
+                          : `Punti XP e strade recensite nel Comune di ${selectedCityDisplayName}`}
                       </p>
                     </div>
                     <div className="bg-white/20 backdrop-blur-xs px-3 py-1.5 rounded-2xl text-right shrink-0">
@@ -9470,7 +9504,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   </div>
 
                   {/* Podio "🎩 Sindaco di [Città]" quando una città è selezionata */}
-                  {leaderboardCityFilter !== 'ALL' && (
+                  {selectedCityKey !== 'ALL' && (
                     cityMayorEntry ? (
                       <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-100/90 via-yellow-50 to-amber-100/80 border-2 border-amber-400 shadow-xs flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
@@ -9482,10 +9516,10 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                               Titolo Onorario Cittadino Attivo
                             </span>
                             <p className="text-sm font-black text-slate-900 truncate">
-                              🎩 Sindaco di {leaderboardCityFilter}: <span className="text-amber-900">{cityMayorEntry.name}</span>
+                              🎩 Sindaco di {selectedCityDisplayName}: <span className="text-amber-900">{cityMayorEntry.name}</span>
                             </p>
                             <p className="text-[11px] text-slate-600 font-semibold">
-                              1° posto con <strong>{cityMayorEntry.xp} XP</strong> e <strong>{cityMayorEntry.uniqueStreetsCount} vie</strong> recensite a {leaderboardCityFilter}
+                              1° posto con <strong>{cityMayorEntry.xp} XP</strong> e <strong>{cityMayorEntry.uniqueStreetsCount} vie</strong> recensite a {selectedCityDisplayName}
                             </p>
                           </div>
                         </div>
@@ -9497,7 +9531,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                       <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 text-amber-900 flex items-center gap-2.5 text-xs">
                         <span className="text-lg">🎩</span>
                         <span>
-                          Il titolo di <strong>🎩 Sindaco di {leaderboardCityFilter}</strong> è vacante! Recensisci almeno <strong>2 strade</strong> in questo Comune e conquista il 1° posto.
+                          Il titolo di <strong>🎩 Sindaco di {selectedCityDisplayName}</strong> è vacante! Recensisci almeno <strong>2 strade</strong> in questo Comune e conquista il 1° posto.
                         </span>
                       </div>
                     )
@@ -9511,7 +9545,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     </div>
                   ) : (
                     <div className="space-y-2.5">
-                      {activeLeaderboardList.map((entry) => {
+                      {activeLeaderboardList.map((entry, idx) => {
                         const isMe = currentUser && (entry.authorId === currentUser.id || entry.name.toLowerCase() === currentUser.name.toLowerCase());
                         const rankMedal = entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `#${entry.rank}`;
                         const entryLvl = entry.levelInfo;
@@ -9522,7 +9556,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
                         return (
                           <div
-                            key={`${leaderboardCityFilter}-${entry.authorId}`}
+                            key={`${selectedCityKey}-${entry.authorId || entry.id || idx}`}
                             className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
                               isMe
                                 ? 'bg-blue-50/70 border-blue-400 ring-2 ring-blue-500/20 shadow-sm'
@@ -9579,23 +9613,23 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                                       <span className="hidden sm:inline">{entryPinnedBadge.name}</span>
                                     </span>
                                   )}
-                                  {leaderboardCityFilter !== 'ALL' && entry.isMayorOfSelectedCity && (
+                                  {selectedCityKey !== 'ALL' && (entry.isCityMayor || entry.isMayorOfSelectedCity) && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-300/90 text-amber-950 border border-amber-500">
-                                      🎩 Sindaco di {leaderboardCityFilter}
+                                      🎩 Sindaco di {selectedCityDisplayName}
                                     </span>
                                   )}
-                                  {leaderboardCityFilter === 'ALL' && entryMayorTitles.length > 0 && (
+                                  {selectedCityKey === 'ALL' && entryMayorTitles.length > 0 && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200/90 text-amber-950 border border-amber-400">
                                       {entryMayorTitles[0]}{entryMayorTitles.length > 1 ? ` +${entryMayorTitles.length - 1}` : ''}
                                     </span>
                                   )}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 font-semibold mt-0.5">
-                                  <span>🛣️ {entry.uniqueStreetsCount} {entry.uniqueStreetsCount === 1 ? 'via' : 'vie'}{leaderboardCityFilter !== 'ALL' ? ` a ${leaderboardCityFilter}` : ''}</span>
+                                  <span>🛣️ {entry.uniqueStreetsCount} {entry.uniqueStreetsCount === 1 ? 'via' : 'vie'}{selectedCityKey !== 'ALL' ? ` a ${selectedCityDisplayName}` : ''}</span>
                                   {entry.pioneerCount > 0 && (
                                     <span className="text-amber-700 font-bold">· 🧭 {entry.pioneerCount} da Pioniere</span>
                                   )}
-                                  {leaderboardCityFilter === 'ALL' && (
+                                  {selectedCityKey === 'ALL' && (
                                     <span>· 🏅 {entry.unlockedBadgesCount} badge</span>
                                   )}
                                 </div>
