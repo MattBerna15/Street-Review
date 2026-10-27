@@ -1300,43 +1300,142 @@
             </div>
           </div>
 
-          <!-- Box Perk Esclusivi -->
-          <div class="bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-8">
-            <div class="space-y-5">
-              <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
-                <div>
-                  <span class="text-[11px] font-black uppercase tracking-wider text-amber-400">✨ Ricompense di Status &amp; Titoli Territoriali</span>
-                  <h4 class="text-lg sm:text-xl font-black text-white">I Perk Esclusivi per chi scala i ranghi</h4>
+        <!-- B. SEZIONE DINAMICA: PERK & CONQUISTE TERRITORIALI -->
+        <div class="space-y-8">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <div>
+              <span class="text-[11px] font-black uppercase tracking-wider text-amber-400">✨ Meccaniche di Territorio &amp; Community</span>
+              <h3 class="text-lg sm:text-2xl font-black text-white flex items-center gap-2 mt-0.5">
+                <span>🏰</span> Perk &amp; Conquiste Territoriali
+              </h3>
+            </div>
+            <span class="text-xs font-semibold text-slate-400">Riconoscimenti prestigiosi visibili in tutta l'applicazione</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <!-- Perk 1: Il Guardiano della Via -->
+            <div class="bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/30 border-2 border-amber-500/40 hover:border-amber-400 rounded-3xl p-6 shadow-xl transition-all flex flex-col justify-between group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-3xl p-2.5 rounded-2xl bg-amber-500/20 border border-amber-400/40 group-hover:scale-110 transition-transform">
+                    👑
+                  </span>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-amber-950 text-amber-300 border border-amber-600/60">
+                    Titolo Stradale
+                  </span>
                 </div>
-                <p class="text-xs text-slate-400">
-                  Design pulito ("Less is More") con riconoscimenti territoriali e sociali in tempo reale
+                <h4 class="text-lg font-black text-white">👑 Il Guardiano della Via</h4>
+                <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Chi scrive la <strong>recensione più dettagliata e utile</strong> di una strada ne diventa il <strong class="text-amber-300">Guardiano ufficiale</strong>, con il proprio nome e avatar posti in evidenza in cima alla scheda via per tutta la community!
                 </p>
               </div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div class="bg-slate-950/85 border border-amber-500/30 rounded-2xl p-4 space-y-1.5">
-                  <p class="text-xs font-black text-amber-300 flex items-center gap-1.5"><span>👑</span> Titolo "Guardiano della Via"</p>
-                  <p class="text-[11px] text-slate-400 leading-snug">Chi scrive la recensione più approfondita e apprezzata di una strada diventa <strong class="text-amber-300">👑 Guardiano della Via</strong> nell'header stradale.</p>
+              <div class="mt-4 pt-3 border-t border-amber-800/40 text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
+                <span>📍</span> <span>Visibile su ogni via recensita</span>
+              </div>
+            </div>
+
+            <!-- Perk 2: Il Sindaco della Città -->
+            <div class="bg-gradient-to-br from-slate-900 via-slate-900 to-yellow-950/30 border-2 border-yellow-400/40 hover:border-yellow-300 rounded-3xl p-6 shadow-xl transition-all flex flex-col justify-between group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-3xl p-2.5 rounded-2xl bg-yellow-500/20 border border-yellow-400/40 group-hover:scale-110 transition-transform">
+                    🎩
+                  </span>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-yellow-950 text-yellow-300 border border-yellow-500/60">
+                    Titolo Cittadino
+                  </span>
                 </div>
-                <div class="bg-slate-950/85 border border-yellow-500/30 rounded-2xl p-4 space-y-1.5">
-                  <p class="text-xs font-black text-yellow-300 flex items-center gap-1.5"><span>🎩</span> Titolo "Sindaco di [Città]"</p>
-                  <p class="text-[11px] text-slate-400 leading-snug">Il <strong class="text-yellow-200">1° classificato</strong> di ogni Comune (con almeno 2 strade recensite) ottiene il titolo dinamico di <strong class="text-amber-300">🎩 Sindaco della Città</strong>.</p>
+                <h4 class="text-lg font-black text-white">🎩 Il Sindaco della Città</h4>
+                <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  L'utente che guida la classifica di un singolo comune (con almeno 2 strade recensite) conquista la prestigiosa fascia onorifica di <strong class="text-yellow-300">🎩 Sindaco di [Nome Città]</strong>, sfoggiata sul podio e nel proprio profilo.
+                </p>
+              </div>
+              <div class="mt-4 pt-3 border-t border-yellow-800/40 text-[11px] font-bold text-yellow-400 flex items-center gap-1.5">
+                <span>🥇</span> <span>1° Posto nel Comune di riferimento</span>
+              </div>
+            </div>
+
+            <!-- Perk 3: Reazione Utile & XP Passivi -->
+            <div class="bg-slate-900/90 border border-slate-800 hover:border-cyan-400/60 rounded-3xl p-6 shadow-xl transition-all flex flex-col justify-between group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-3xl p-2.5 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 group-hover:scale-110 transition-transform">
+                    👍
+                  </span>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-700/60">
+                    Community Feedback
+                  </span>
                 </div>
-                <div class="bg-slate-950/85 border border-indigo-500/30 rounded-2xl p-4 space-y-1.5">
-                  <p class="text-xs font-black text-indigo-300 flex items-center gap-1.5"><span>📌</span> Spilla in Vetrina (Liv. 3+)</p>
-                  <p class="text-[11px] text-slate-400 leading-snug">Dal Livello 3 puoi scegliere uno dei tuoi Badge sbloccati come <strong class="text-indigo-200">Spilla Preferita</strong>, mostrata nel profilo e in Classifica.</p>
+                <h4 class="text-lg font-black text-white">👍 Reazione Utile &amp; XP Passivi</h4>
+                <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                  Guadagni <strong class="text-cyan-300">+10 XP passivi</strong> ogni volta che un cittadino trova utile la tua recensione. Continui ad accumulare esperienza e scalare la classifica anche quando non sei connesso!
+                </p>
+              </div>
+              <div class="mt-4 pt-3 border-t border-slate-800/80 text-[11px] font-bold text-cyan-400 flex items-center gap-1.5">
+                <span>💎</span> <span>Verso il badge "Voce Autorevole"</span>
+              </div>
+            </div>
+
+            <!-- Perk 4: Punti Differenziati -->
+            <div class="bg-slate-900/90 border border-slate-800 hover:border-sky-400/60 rounded-3xl p-6 shadow-xl transition-all flex flex-col justify-between group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-3xl p-2.5 rounded-2xl bg-sky-500/15 border border-sky-400/40 group-hover:scale-110 transition-transform">
+                    ⚡
+                  </span>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-sky-950 text-sky-300 border border-sky-700/60">
+                    Da +50 a +130 XP
+                  </span>
                 </div>
-                <div class="bg-slate-950/85 border border-cyan-500/30 rounded-2xl p-4 space-y-1.5">
-                  <p class="text-xs font-black text-cyan-300 flex items-center gap-1.5"><span>✨</span> Bordo Card Veterano (Liv. 6+)</p>
-                  <p class="text-[11px] text-slate-400 leading-snug">Le recensioni scritte da utenti di <strong class="text-cyan-200">Livello 6+</strong> brillano con un elegante bordo luminoso oro/ciano e priorità di lettura.</p>
+                <h4 class="text-lg font-black text-white">⚡ Punti Differenziati</h4>
+                <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                  Flessibilità totale: guadagni <strong class="text-slate-200">+50 XP</strong> per un voto flash rapido, fino a un massimo di <strong class="text-sky-300">+130 XP</strong> per una recensione tecnica approfondita con parametri, tag e commento.
+                </p>
+              </div>
+              <div class="mt-4 pt-3 border-t border-slate-800/80 text-[11px] font-bold text-sky-400 flex items-center gap-1.5">
+                <span>🎯</span> <span>Contatore XP dinamico in tempo reale</span>
+              </div>
+            </div>
+
+            <!-- Perk 5: Passaporto Condivisibile -->
+            <div class="bg-slate-900/90 border border-slate-800 hover:border-emerald-400/60 rounded-3xl p-6 shadow-xl transition-all flex flex-col justify-between group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-3xl p-2.5 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 group-hover:scale-110 transition-transform">
+                    📲
+                  </span>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700/60">
+                    1-Click Share
+                  </span>
                 </div>
-                <div class="bg-slate-950/85 border border-emerald-500/30 rounded-2xl p-4 space-y-1.5">
-                  <p class="text-xs font-black text-emerald-300 flex items-center gap-1.5"><span>📲</span> Passaporto Street Review</p>
-                  <p class="text-[11px] text-slate-400 leading-snug">Cruscotto <strong class="text-emerald-200">"Il Mio Impatto Civico"</strong> con card condivisibile in un clic su WhatsApp, Telegram o social.</p>
+                <h4 class="text-lg font-black text-white">📲 Passaporto Condivisibile</h4>
+                <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                  Genera all'istante il resoconto completo dei tuoi traguardi e del tuo impatto civico (vie recensite, strade da Guardiano e medaglie) pronto da inviare con un clic su <strong>WhatsApp, Telegram e social</strong>.
+                </p>
+              </div>
+              <div class="mt-4 pt-3 border-t border-slate-800/80 text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
+                <span>🏆</span> <span>Sfida i tuoi concittadini e amici</span>
+              </div>
+            </div>
+
+            <!-- Perk 6: Spilla in Vetrina & Bordo Veterano -->
+            <div class="bg-gradient-to-br from-slate-900 via-indigo-950/30 to-slate-900 border border-indigo-500/40 hover:border-indigo-300 rounded-3xl p-6 shadow-xl transition-all flex flex-col justify-between group">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-3xl p-2.5 rounded-2xl bg-indigo-500/20 border border-indigo-400/40 group-hover:scale-110 transition-transform">
+                    📌
+                  </span>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-500/60">
+                    Status Visivo
+                  </span>
                 </div>
-                <div class="bg-slate-950/85 border border-purple-500/30 rounded-2xl p-4 space-y-1.5">
-                  <p class="text-xs font-black text-purple-300 flex items-center gap-1.5"><span>🖼️</span> Cornici Avatar &amp; Email Celebrative</p>
-                  <p class="text-[11px] text-slate-400 leading-snug">Cornici <strong class="text-amber-500">Bronzo</strong>, <strong class="text-cyan-400">Ciano</strong>, <strong class="text-yellow-300">Oro</strong> e <strong class="text-fuchsia-300">Diamante</strong> + email automatica ad ogni nuovo traguardo.</p>
-                </div>
+                <h4 class="text-lg font-black text-white">📌 Spilla &amp; Bordo Veterano</h4>
+                <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Fissa la tua medaglia preferita come <strong class="text-indigo-200">Spilla in Vetrina</strong> (Liv. 3+) e ottieni l'esclusivo <strong class="text-amber-300">Bordo Card Veterano</strong> luminoso sulle tue recensioni a partire dal Livello 6!
+                </p>
+              </div>
+              <div class="mt-4 pt-3 border-t border-indigo-800/40 text-[11px] font-bold text-indigo-300 flex items-center gap-1.5">
+                <span>✨</span> <span>Perk esclusivi Livelli 3+ e 6+</span>
               </div>
             </div>
           </div>
@@ -1345,70 +1444,73 @@
         <!-- C. VETRINA DEI 12 BADGE (ACHIEVEMENT) -->
         <div class="space-y-6">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
-            <h3 class="text-lg sm:text-xl font-black text-white flex items-center gap-2">
-              <span class="text-amber-400">🏅</span> Vetrina dei 12 Badge Sbloccabili (Achievement)
-            </h3>
-            <span class="text-xs font-semibold text-slate-400">Colleziona tutte le 12 medaglie nella tua bacheca personale e fissa la tua Spilla in Vetrina</span>
+            <div>
+              <span class="text-[11px] font-black uppercase tracking-wider text-amber-400">🏅 Collezione Completa</span>
+              <h3 class="text-lg sm:text-2xl font-black text-white flex items-center gap-2 mt-0.5">
+                <span>🎖️</span> Vetrina Completa delle 12 Medaglie Civiche
+              </h3>
+            </div>
+            <span class="text-xs font-semibold text-slate-400">12 Medaglie sbloccabili con barra di progresso e Spilla in Vetrina</span>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <!-- Badge 1 -->
+            <!-- Badge 1: Battesimo dell'Asfalto -->
             <div class="bg-slate-900/90 border border-slate-800 hover:border-blue-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
               <div class="space-y-3">
                 <div class="flex items-center justify-between">
                   <div class="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-400/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
                     🚀
                   </div>
-                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-blue-950/90 text-blue-300 border border-blue-700/60">Obiettivo: 1 Via</span>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-blue-950/90 text-blue-300 border border-blue-700/60">Obiettivo: 1ª Recensione</span>
                 </div>
-                <h4 class="text-base font-black text-white">Battesimo dell'Asfalto</h4>
-                <p class="text-xs text-slate-400 leading-relaxed">Pubblica la tua 1ª recensione stradale sulla mappa civica.</p>
+                <h4 class="text-base font-black text-white">1. Battesimo dell'Asfalto</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Pubblica la tua 1ª recensione.</p>
               </div>
             </div>
 
-            <!-- Badge 2 -->
+            <!-- Badge 2: Pioniere -->
             <div class="bg-slate-900/90 border border-slate-800 hover:border-amber-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
               <div class="space-y-3">
                 <div class="flex items-center justify-between">
                   <div class="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-400/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
                     🧭
                   </div>
-                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-amber-950/90 text-amber-300 border border-amber-700/60">Obiettivo: 10 Vie</span>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-amber-950/90 text-amber-300 border border-amber-700/60">Obiettivo: 10 Strade</span>
                 </div>
-                <h4 class="text-base font-black text-white">Pioniere</h4>
-                <p class="text-xs text-slate-400 leading-relaxed">Inaugura per primo almeno 10 strade diverse ancora prive di recensioni.</p>
+                <h4 class="text-base font-black text-white">2. Pioniere</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Inaugura per primo 10 strade non ancora recensite.</p>
               </div>
             </div>
 
-            <!-- Badge 3 -->
+            <!-- Badge 3: Segugio del Parcheggio -->
             <div class="bg-slate-900/90 border border-slate-800 hover:border-cyan-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
               <div class="space-y-3">
                 <div class="flex items-center justify-between">
                   <div class="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
                     🅿️
                   </div>
-                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-cyan-950/90 text-cyan-300 border border-cyan-700/60">Obiettivo: 12 Recensioni</span>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-cyan-950/90 text-cyan-300 border border-cyan-700/60">Obiettivo: 12 Vie</span>
                 </div>
-                <h4 class="text-base font-black text-white">Segugio del Parcheggio</h4>
-                <p class="text-xs text-slate-400 leading-relaxed">Segnala i tag parcheggio (Liberi, Blu, Disco Orario, ecc.) in almeno 12 recensioni.</p>
+                <h4 class="text-base font-black text-white">3. Segugio del Parcheggio</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Segnala la tipologia di sosta in almeno 12 vie.</p>
               </div>
             </div>
 
-            <!-- Badge 4 -->
+            <!-- Badge 4: Paladino dell'Accessibilità -->
             <div class="bg-slate-900/90 border border-slate-800 hover:border-purple-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
               <div class="space-y-3">
                 <div class="flex items-center justify-between">
                   <div class="w-12 h-12 rounded-2xl bg-purple-500/15 border border-purple-400/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
                     ♿
                   </div>
-                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-purple-950/90 text-purple-300 border border-purple-700/60">Obiettivo: 8 Vie</span>
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-purple-950/90 text-purple-300 border border-purple-700/60">Obiettivo: 8 Strade</span>
                 </div>
-                <h4 class="text-base font-black text-white">Paladino dell'Accessibilità</h4>
-                <p class="text-xs text-slate-400 leading-relaxed">Segnala stalli Disabili/Rosa o valuta l'accessibilità in almeno 8 vie.</p>
+                <h4 class="text-base font-black text-white">4. Paladino dell'Accessibilità</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Mappa stalli Disabili/Rosa o valuta l'accessibilità in 8 strade.</p>
               </div>
             </div>
 
-            <!-- Badge 5 -->
+            <!-- Badge 5: Critico Stradale -->
             <div class="bg-slate-900/90 border border-slate-800 hover:border-emerald-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
               <div class="space-y-3">
                 <div class="flex items-center justify-between">
@@ -1417,12 +1519,12 @@
                   </div>
                   <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-emerald-950/90 text-emerald-300 border border-emerald-700/60">Obiettivo: 15 Commenti</span>
                 </div>
-                <h4 class="text-base font-black text-white">Critico Stradale</h4>
-                <p class="text-xs text-slate-400 leading-relaxed">Scrivi almeno 15 recensioni con commento approfondito (&ge; 40 caratteri).</p>
+                <h4 class="text-base font-black text-white">5. Critico Stradale</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Scrivi 15 recensioni con commento approfondito (&ge; 40 caratteri).</p>
               </div>
             </div>
 
-            <!-- Badge 6 -->
+            <!-- Badge 6: Re del Quartiere -->
             <div class="bg-slate-900/90 border border-slate-800 hover:border-yellow-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
               <div class="space-y-3">
                 <div class="flex items-center justify-between">
@@ -1431,12 +1533,12 @@
                   </div>
                   <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-yellow-950/90 text-yellow-300 border border-yellow-700/60">Obiettivo: 15 Strade</span>
                 </div>
-                <h4 class="text-base font-black text-white">Re del Quartiere</h4>
-                <p class="text-xs text-slate-400 leading-relaxed">Recensisci almeno 15 strade totali nella tua città o in Italia.</p>
+                <h4 class="text-base font-black text-white">6. Re del Quartiere</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Recensisci almeno 15 strade totali.</p>
               </div>
             </div>
 
-            <!-- Badge 7 -->
+            <!-- Badge 7: Esploratore Intercomunale -->
             <div class="bg-slate-900/90 border border-slate-800 hover:border-indigo-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
               <div class="space-y-3">
                 <div class="flex items-center justify-between">
@@ -1445,12 +1547,12 @@
                   </div>
                   <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-indigo-950/90 text-indigo-300 border border-indigo-700/60">Obiettivo: 3 Comuni</span>
                 </div>
-                <h4 class="text-base font-black text-white">Esploratore Intercomunale</h4>
-                <p class="text-xs text-slate-400 leading-relaxed">Recensisci vie in almeno 3 comuni o città differenti in Italia (es. San Benedetto, Grottammare, Milano, Roma).</p>
+                <h4 class="text-base font-black text-white">7. Esploratore Intercomunale</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Recensisci strade in almeno 3 comuni differenti.</p>
               </div>
             </div>
 
-            <!-- Badge 8 -->
+            <!-- Badge 8: Maestro dell'Asfalto -->
             <div class="bg-gradient-to-br from-slate-900 via-fuchsia-950/30 to-amber-950/30 border border-fuchsia-400/60 hover:border-amber-300 rounded-2xl p-5 flex flex-col justify-between transition-all group shadow-lg shadow-fuchsia-500/10">
               <div class="space-y-3">
                 <div class="flex items-center justify-between">
@@ -1459,12 +1561,12 @@
                   </div>
                   <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-fuchsia-950/90 text-amber-300 border border-fuchsia-500/60">Élite: 30 Strade</span>
                 </div>
-                <h4 class="text-base font-black text-white">Maestro dell'Asfalto</h4>
-                <p class="text-xs text-slate-300 leading-relaxed">Raggiungi il traguardo d'élite di 30 strade recensite in Italia.</p>
+                <h4 class="text-base font-black text-white">8. Maestro dell'Asfalto</h4>
+                <p class="text-xs text-slate-300 leading-relaxed">Raggiungi il traguardo d'élite di 30 strade recensite.</p>
               </div>
             </div>
 
-            <!-- Badge 9 (NUOVO) -->
+            <!-- Badge 9: Voce Autorevole -->
             <div class="bg-slate-900/90 border border-slate-800 hover:border-sky-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
               <div class="space-y-3">
                 <div class="flex items-center justify-between">
@@ -1473,12 +1575,12 @@
                   </div>
                   <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-sky-950/90 text-sky-300 border border-sky-700/60">Obiettivo: 10 "👍 Utile"</span>
                 </div>
-                <h4 class="text-base font-black text-white">Voce Autorevole</h4>
-                <p class="text-xs text-slate-400 leading-relaxed">Ricevi almeno 10 reazioni "👍 Utile" totali dagli altri cittadini sulle tue recensioni.</p>
+                <h4 class="text-base font-black text-white">9. Voce Autorevole</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Raccogli almeno 10 reazioni "👍 Utile" dai cittadini.</p>
               </div>
             </div>
 
-            <!-- Badge 10 (NUOVO) -->
+            <!-- Badge 10: Re delle Arterie -->
             <div class="bg-slate-900/90 border border-slate-800 hover:border-orange-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
               <div class="space-y-3">
                 <div class="flex items-center justify-between">
@@ -1487,12 +1589,12 @@
                   </div>
                   <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-orange-950/90 text-orange-300 border border-orange-700/60">Obiettivo: 5 Arterie</span>
                 </div>
-                <h4 class="text-base font-black text-white">Re delle Arterie</h4>
-                <p class="text-xs text-slate-400 leading-relaxed">Recensisci almeno 5 strade classificate come Statale / Provinciale (SS / SP) o Autostrada.</p>
+                <h4 class="text-base font-black text-white">10. Re delle Arterie</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Valuta almeno 5 strade classificate come Statali/Provinciali (SS/SP) o Autostrade.</p>
               </div>
             </div>
 
-            <!-- Badge 11 (NUOVO) -->
+            <!-- Badge 11: Amico dei Pedoni -->
             <div class="bg-slate-900/90 border border-slate-800 hover:border-teal-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
               <div class="space-y-3">
                 <div class="flex items-center justify-between">
@@ -1501,12 +1603,12 @@
                   </div>
                   <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-teal-950/90 text-teal-300 border border-teal-700/60">Obiettivo: 5 Vie Pedonali</span>
                 </div>
-                <h4 class="text-base font-black text-white">Amico dei Pedoni</h4>
-                <p class="text-xs text-slate-400 leading-relaxed">Recensisci almeno 5 strade Pedonali / ZTL oppure vie dotate di Area Giochi o Area Cani.</p>
+                <h4 class="text-base font-black text-white">11. Amico dei Pedoni</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Valuta almeno 5 aree Pedonali/ZTL o vie con Aree Cani e Giostre Bimbi.</p>
               </div>
             </div>
 
-            <!-- Badge 12 (NUOVO) -->
+            <!-- Badge 12: Pioniere Green -->
             <div class="bg-slate-900/90 border border-slate-800 hover:border-lime-400/60 rounded-2xl p-5 flex flex-col justify-between transition-all group">
               <div class="space-y-3">
                 <div class="flex items-center justify-between">
@@ -1515,8 +1617,8 @@
                   </div>
                   <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-lime-950/90 text-lime-300 border border-lime-700/60">Obiettivo: 5 Vie Green</span>
                 </div>
-                <h4 class="text-base font-black text-white">Pioniere Green</h4>
-                <p class="text-xs text-slate-400 leading-relaxed">Mappa almeno 5 strade dotate di Colonnine Ricarica EV o Pista Ciclabile.</p>
+                <h4 class="text-base font-black text-white">12. Pioniere Green</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">Mappa almeno 5 strade con Colonnine EV o Piste Ciclabili.</p>
               </div>
             </div>
           </div>
