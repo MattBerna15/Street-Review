@@ -1869,18 +1869,32 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       return '📍';
     };
 
-    // --- PALETTE SEMANTICA A 5 SCAGLIONI OPACA (TONALITÀ TERROSE / MATTE) ---
+    // --- PALETTE SEMANTICA A 5 SCAGLIONI CON CONTRASTO ADATTIVO ---
     const getRatingColor = (rating) => {
-      if (rating === null || rating === undefined || rating === '' || rating === 'N/A') return '#525e6e';
+      if (rating === null || rating === undefined || rating === '' || rating === 'N/A') return '#808080';
       const num = typeof rating === 'number' ? rating : parseFloat(String(rating).replace(',', '.'));
-      if (isNaN(num) || num <= 0) return '#525e6e'; // Grigio Ardesia Opaco
-      if (num < 2.0) return '#be4d4d';              // 1.0 - 1.9: Rosso Mattone Opaco
-      if (num < 3.0) return '#c4683c';              // 2.0 - 2.9: Terracotta / Ruggine Opaco
-      if (num <= 3.7) return '#b8862d';             // 3.0 - 3.7: Giallo Ocra / Senape Opaco
-      if (num <= 4.3) return '#5e8b61';             // 3.8 - 4.3: Verde Salvia Opaco
-      return '#2d6a4f';                             // 4.4 - 5.0: Verde Bosco Opaco
+      if (isNaN(num) || num <= 0) return '#808080'; // Gray
+      if (num < 2.0) return '#FF0000';              // 1.0 - 1.9: Red
+      if (num < 3.0) return '#FFA500';              // 2.0 - 2.9: Orange
+      if (num <= 3.7) return '#FFFF00';             // 3.0 - 3.7: Yellow
+      if (num <= 4.3) return '#90EE90';             // 3.8 - 4.3: Light Green
+      return '#008000';                             // 4.4 - 5.0: Green
     };
     window.getRatingColor = getRatingColor;
+
+    const getRatingTextColor = (ratingOrColor) => {
+      if (typeof ratingOrColor === 'string' && ratingOrColor.startsWith('#')) {
+        const hex = ratingOrColor.toUpperCase();
+        if (hex === '#FFFF00' || hex === '#90EE90') return '#0f172a';
+        return '#FFFFFF';
+      }
+      if (ratingOrColor === null || ratingOrColor === undefined || ratingOrColor === '' || ratingOrColor === 'N/A') return '#FFFFFF';
+      const num = typeof ratingOrColor === 'number' ? ratingOrColor : parseFloat(String(ratingOrColor).replace(',', '.'));
+      if (isNaN(num) || num <= 0) return '#FFFFFF';
+      if (num >= 3.0 && num <= 4.3) return '#0f172a'; // Giallo (#FFFF00) o Verde Chiaro (#90EE90)
+      return '#FFFFFF';
+    };
+    window.getRatingTextColor = getRatingTextColor;
 
     // --- ARCHITETTURA SCALABILE STEP 3: PRE-AGGREGAZIONE ('streets' & 'users') + CARICAMENTO COMMENTI ON-DEMAND ---
     const CATEGORY_KEYS = [
@@ -6142,7 +6156,10 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             viewportStreets.forEach(street => {
               const isNew = street.reviewsCount === 0;
               const isSelected = selectedStreet ? (selectedStreet.id === street.id || isSameStreet(selectedStreet, street)) : false;
-              const pinBgColor = isNew ? '#525e6e' : getRatingColor(street.avgOverallRating);
+              const pinBgColor = isNew ? '#808080' : getRatingColor(street.avgOverallRating);
+              const pinTextColor = isNew ? '#FFFFFF' : getRatingTextColor(street.avgOverallRating);
+              const pinTextShadow = pinTextColor === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.45)' : 'none';
+              const pinBorderColor = pinTextColor === '#FFFFFF' ? 'white' : 'rgba(15,23,42,0.35)';
 
               const Overlay = new window.google.maps.OverlayView();
               let div = null;
@@ -6159,11 +6176,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     <div style="
                       display:flex;align-items:center;gap:4px;
                       background:${pinBgColor};
-                      color:#ffffff;padding:4px 10px;border-radius:9999px;
+                      color:${pinTextColor};padding:4px 10px;border-radius:9999px;
                       font-weight:800;font-size:11px;
                       box-shadow:0 8px 16px rgba(0,0,0,0.25);
-                      text-shadow:0 1px 2px rgba(0,0,0,0.35);
-                      border:2px solid white;
+                      text-shadow:${pinTextShadow};
+                      border:2px solid ${pinBorderColor};
                       transition:transform 0.2s;
                       ${isSelected ? 'transform:scale(1.25);box-shadow:0 0 0 4px rgba(59,130,246,0.5);' : ''}
                     ">
@@ -6250,11 +6267,14 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             viewportStreets.forEach(street => {
               const isNew = street.reviewsCount === 0;
               const isSelected = selectedStreet ? (selectedStreet.id === street.id || isSameStreet(selectedStreet, street)) : false;
-              const pinBgColor = isNew ? '#525e6e' : getRatingColor(street.avgOverallRating);
+              const pinBgColor = isNew ? '#808080' : getRatingColor(street.avgOverallRating);
+              const pinTextColor = isNew ? '#FFFFFF' : getRatingTextColor(street.avgOverallRating);
+              const pinTextShadow = pinTextColor === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.45)' : 'none';
+              const pinBorderColor = pinTextColor === '#FFFFFF' ? 'white' : 'rgba(15,23,42,0.35)';
 
               const markerHtml = `
                 <div class="flex flex-col items-center cursor-pointer transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
-                  <div class="flex items-center gap-1 px-2.5 py-1 rounded-full text-white font-extrabold text-xs shadow-lg border-2 border-white" style="background-color: ${pinBgColor}; text-shadow: 0 1px 2px rgba(0,0,0,0.35);">
+                  <div class="flex items-center gap-1 px-2.5 py-1 rounded-full font-extrabold text-xs shadow-lg border-2" style="background-color: ${pinBgColor}; color: ${pinTextColor}; border-color: ${pinBorderColor}; text-shadow: ${pinTextShadow};">
                     ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${street.avgOverallRating.toFixed(1)}</span>`}
                   </div>
                   <div class="mt-1 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-md shadow-sm border border-slate-200 text-[10px] font-bold text-slate-800 text-center whitespace-nowrap">
@@ -7722,17 +7742,23 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                         <p className="text-xs text-slate-400">{item.city}{item.province ? ` (${item.province})` : ''} {item.reviewsCount > 0 ? `· ${item.reviewsCount} recensioni` : '· Senza recensioni'}</p>
                       </div>
                     </div>
-                    {item.rating ? (
-                      <span
-                        className="text-xs font-extrabold px-2.5 py-0.5 rounded-full text-white border border-white/30 shadow-2xs select-none inline-flex items-center gap-1"
-                        style={{
-                          backgroundColor: getRatingColor(item.rating),
-                          textShadow: '0 1px 2px rgba(0,0,0,0.35)'
-                        }}
-                      >
-                        ★ {typeof item.rating === 'number' ? item.rating.toFixed(1) : item.rating}
-                      </span>
-                    ) : (
+                    {item.rating ? (() => {
+                      const ratingBg = getRatingColor(item.rating);
+                      const ratingText = getRatingTextColor(item.rating);
+                      return (
+                        <span
+                          className="text-xs font-extrabold px-2.5 py-0.5 rounded-full border shadow-2xs select-none inline-flex items-center gap-1"
+                          style={{
+                            backgroundColor: ratingBg,
+                            color: ratingText,
+                            borderColor: ratingText === '#FFFFFF' ? 'rgba(255,255,255,0.3)' : 'rgba(15,23,42,0.25)',
+                            textShadow: ratingText === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.45)' : 'none'
+                          }}
+                        >
+                          ★ {typeof item.rating === 'number' ? item.rating.toFixed(1) : item.rating}
+                        </span>
+                      );
+                    })() : (
                       <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
                         Nuova
                       </span>
@@ -8437,22 +8463,32 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <div
-                    className="px-2.5 py-1 rounded-xl font-extrabold text-sm border border-white/40 flex items-center gap-1 text-white shadow-2xs select-none"
-                    style={{
-                      backgroundColor: isSelectedStreetNew ? '#525e6e' : getRatingColor(selectedStreet.avgOverallRating),
-                      textShadow: '0 1px 2px rgba(0,0,0,0.35)'
-                    }}
-                  >
-                    {isSelectedStreetNew ? (
-                      <span>Nuova</span>
-                    ) : (
-                      <>
-                        <span className="text-white select-none">★</span>
-                        <span>{selectedStreet.avgOverallRating.toFixed(1)}</span>
-                      </>
-                    )}
-                  </div>
+                  {(() => {
+                    const drawerBg = isSelectedStreetNew ? '#808080' : getRatingColor(selectedStreet.avgOverallRating);
+                    const drawerText = isSelectedStreetNew ? '#FFFFFF' : getRatingTextColor(selectedStreet.avgOverallRating);
+                    const drawerTextShadow = drawerText === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.45)' : 'none';
+                    const drawerBorder = drawerText === '#FFFFFF' ? 'rgba(255,255,255,0.4)' : 'rgba(15,23,42,0.25)';
+                    return (
+                      <div
+                        className="px-2.5 py-1 rounded-xl font-extrabold text-sm border flex items-center gap-1 shadow-2xs select-none"
+                        style={{
+                          backgroundColor: drawerBg,
+                          color: drawerText,
+                          borderColor: drawerBorder,
+                          textShadow: drawerTextShadow
+                        }}
+                      >
+                        {isSelectedStreetNew ? (
+                          <span>Nuova</span>
+                        ) : (
+                          <>
+                            <span style={{ color: drawerText }} className="select-none">★</span>
+                            <span>{selectedStreet.avgOverallRating.toFixed(1)}</span>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {/* Pulsante 🔗 Condividi */}
                   <button
                     type="button"
@@ -8914,22 +8950,30 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                                   </div>
                                 </div>
 
-                                {/* Badge Voto prioritario e ingrandito in alto a destra con palette semantica a 5 livelli */}
-                                {ratingScore > 0 && (
-                                  <div
-                                    className="shrink-0 inline-flex items-center gap-1.5 rounded-xl font-extrabold shadow-sm select-none text-white border border-white/40"
-                                    style={{
-                                      fontSize: '1.05rem',
-                                      padding: '6px 12px',
-                                      backgroundColor: getRatingColor(ratingScore),
-                                      textShadow: '0 1px 2px rgba(0,0,0,0.35)'
-                                    }}
-                                    title={`Valutazione: ${ratingScore.toFixed(1)} su 5`}
-                                  >
-                                    <span className="text-white text-lg leading-none select-none">★</span>
-                                    <span className="font-extrabold leading-none">{ratingScore.toFixed(1)}</span>
-                                  </div>
-                                )}
+                                {/* Badge Voto prioritario e ingrandito in alto a destra con palette semantica e contrasto adattivo */}
+                                {ratingScore > 0 && (() => {
+                                  const cardBg = getRatingColor(ratingScore);
+                                  const cardText = getRatingTextColor(ratingScore);
+                                  const cardShadow = cardText === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.45)' : 'none';
+                                  const cardBorder = cardText === '#FFFFFF' ? 'rgba(255,255,255,0.4)' : 'rgba(15,23,42,0.25)';
+                                  return (
+                                    <div
+                                      className="shrink-0 inline-flex items-center gap-1.5 rounded-xl font-extrabold shadow-sm select-none border"
+                                      style={{
+                                        fontSize: '1.05rem',
+                                        padding: '6px 12px',
+                                        backgroundColor: cardBg,
+                                        color: cardText,
+                                        borderColor: cardBorder,
+                                        textShadow: cardShadow
+                                      }}
+                                      title={`Valutazione: ${ratingScore.toFixed(1)} su 5`}
+                                    >
+                                      <span style={{ color: cardText }} className="text-lg leading-none select-none">★</span>
+                                      <span className="font-extrabold leading-none">{ratingScore.toFixed(1)}</span>
+                                    </div>
+                                  );
+                                })()}
                               </div>
 
                               {/* Testo del commento (mostrato solo per opinioni reali, nessun placeholder o testo generato) */}
@@ -10042,12 +10086,18 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 {(() => {
                   const displayScore = isAccordionOpen && overallRating > 0 ? balancedScore : overallRating;
                   const hasScore = displayScore > 0;
+                  const modalBg = hasScore ? getRatingColor(displayScore) : '#808080';
+                  const modalText = hasScore ? getRatingTextColor(displayScore) : '#FFFFFF';
+                  const modalShadow = modalText === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.45)' : 'none';
+                  const modalBorder = modalText === '#FFFFFF' ? 'rgba(255,255,255,0.3)' : 'rgba(15,23,42,0.25)';
                   return (
                     <span
-                      className="text-xs font-extrabold px-2.5 py-0.5 rounded-full text-white border border-white/30 shadow-2xs inline-flex items-center gap-1"
+                      className="text-xs font-extrabold px-2.5 py-0.5 rounded-full border shadow-2xs inline-flex items-center gap-1"
                       style={{
-                        backgroundColor: hasScore ? getRatingColor(displayScore) : '#525e6e',
-                        textShadow: '0 1px 2px rgba(0,0,0,0.35)'
+                        backgroundColor: modalBg,
+                        color: modalText,
+                        borderColor: modalBorder,
+                        textShadow: modalShadow
                       }}
                       title="Anteprima voto complessivo"
                     >
@@ -10173,19 +10223,27 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 </div>
 
                 {/* Feedback Visivo Dinamico: Voto Bilanciato quando l'accordion tecnico è aperto */}
-                {isAccordionOpen && overallRating > 0 && (
-                  <div
-                    className="px-3.5 py-2 rounded-2xl flex items-center justify-center gap-1.5 text-center shadow-xs animate-fade-in border border-white/30 text-white font-extrabold"
-                    style={{
-                      backgroundColor: getRatingColor(balancedScore),
-                      textShadow: '0 1px 2px rgba(0,0,0,0.35)'
-                    }}
-                  >
-                    <span className="text-xs sm:text-sm font-black tracking-tight">
-                      ⭐ Voto bilanciato della recensione: ★ {balancedScore.toFixed(1)} (40% sintetico + 60% tecnico)
-                    </span>
-                  </div>
-                )}
+                {isAccordionOpen && overallRating > 0 && (() => {
+                  const bannerBg = getRatingColor(balancedScore);
+                  const bannerText = getRatingTextColor(balancedScore);
+                  const bannerShadow = bannerText === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.45)' : 'none';
+                  const bannerBorder = bannerText === '#FFFFFF' ? 'rgba(255,255,255,0.3)' : 'rgba(15,23,42,0.25)';
+                  return (
+                    <div
+                      className="px-3.5 py-2 rounded-2xl flex items-center justify-center gap-1.5 text-center shadow-xs animate-fade-in border font-extrabold"
+                      style={{
+                        backgroundColor: bannerBg,
+                        color: bannerText,
+                        borderColor: bannerBorder,
+                        textShadow: bannerShadow
+                      }}
+                    >
+                      <span className="text-xs sm:text-sm font-black tracking-tight">
+                        ⭐ Voto bilanciato della recensione: ★ {balancedScore.toFixed(1)} (40% sintetico + 60% tecnico)
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 {/* Campo Commento Essenziale */}
                 <div className="space-y-1.5 pt-1">
@@ -10530,19 +10588,27 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 </div>
 
                 {/* Feedback Visivo Dinamico sopra il pulsante Pubblica */}
-                {isAccordionOpen && overallRating > 0 && (
-                  <div
-                    className="px-3.5 py-2 rounded-2xl flex items-center justify-center gap-1.5 text-center shadow-xs animate-fade-in border border-white/30 text-white font-extrabold"
-                    style={{
-                      backgroundColor: getRatingColor(balancedScore),
-                      textShadow: '0 1px 2px rgba(0,0,0,0.35)'
-                    }}
-                  >
-                    <span className="text-xs sm:text-sm font-black tracking-tight">
-                      ⭐ Voto bilanciato della recensione: ★ {balancedScore.toFixed(1)} (40% sintetico + 60% tecnico)
-                    </span>
-                  </div>
-                )}
+                {isAccordionOpen && overallRating > 0 && (() => {
+                  const bannerBg = getRatingColor(balancedScore);
+                  const bannerText = getRatingTextColor(balancedScore);
+                  const bannerShadow = bannerText === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.45)' : 'none';
+                  const bannerBorder = bannerText === '#FFFFFF' ? 'rgba(255,255,255,0.3)' : 'rgba(15,23,42,0.25)';
+                  return (
+                    <div
+                      className="px-3.5 py-2 rounded-2xl flex items-center justify-center gap-1.5 text-center shadow-xs animate-fade-in border font-extrabold"
+                      style={{
+                        backgroundColor: bannerBg,
+                        color: bannerText,
+                        borderColor: bannerBorder,
+                        textShadow: bannerShadow
+                      }}
+                    >
+                      <span className="text-xs sm:text-sm font-black tracking-tight">
+                        ⭐ Voto bilanciato della recensione: ★ {balancedScore.toFixed(1)} (40% sintetico + 60% tecnico)
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 {/* Pulsante primario chiaro ad alto contrasto: "Pubblica" */}
                 <button
