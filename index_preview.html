@@ -1931,6 +1931,442 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       return '🏡 Urbana';
     };
 
+    // --- SISTEMA AVANZATO REGOLE DI SOSTA (DISCO ORARIO & STRISCE BLU STAGIONALI / MULTI-PERIODO) ---
+    const MONTH_NAMES_IT = [
+      'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+      'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
+    ];
+    const MONTH_SHORT_IT = [
+      'Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu',
+      'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'
+    ];
+
+    const getEasterMondayMonthDay = (year) => {
+      const a = year % 19;
+      const b = Math.floor(year / 100);
+      const c = year % 100;
+      const d = Math.floor(b / 4);
+      const e = b % 4;
+      const f = Math.floor((b + 8) / 25);
+      const g = Math.floor((b - f + 1) / 3);
+      const h = (19 * a + b - d - g + 15) % 30;
+      const i = Math.floor(c / 4);
+      const k = c % 4;
+      const l = (32 + 2 * e + 2 * i - h - k) % 7;
+      const m = Math.floor((a + 11 * h + 22 * l) / 451);
+      const month = Math.floor((h + l - 7 * m + 114) / 31);
+      const day = ((h + l - 7 * m + 114) % 31) + 1;
+      const easterDate = new Date(year, month - 1, day);
+      const easterMonday = new Date(easterDate.getTime() + 86400000);
+      return {
+        mondayMonth: easterMonday.getMonth() + 1,
+        mondayDay: easterMonday.getDate(),
+      };
+    };
+
+    const isItalianPublicHoliday = (date = new Date()) => {
+      const d = date instanceof Date ? date : new Date(date);
+      if (isNaN(d.getTime())) return false;
+      if (d.getDay() === 0) return true; // Domenica
+      const month = d.getMonth() + 1;
+      const day = d.getDate();
+      const fixedHolidays = [
+        [1, 1], [1, 6], [4, 25], [5, 1], [6, 2],
+        [8, 15], [11, 1], [12, 8], [12, 25], [12, 26]
+      ];
+      if (fixedHolidays.some(([m, dd]) => m === month && dd === day)) return true;
+      const easter = getEasterMondayMonthDay(d.getFullYear());
+      if (month === easter.mondayMonth && day === easter.mondayDay) return true;
+      return false;
+    };
+
+    const isItalianPreHoliday = (date = new Date()) => {
+      const d = date instanceof Date ? date : new Date(date);
+      if (isNaN(d.getTime())) return false;
+      if (d.getDay() === 6) return true; // Sabato
+      const tomorrow = new Date(d.getTime() + 86400000);
+      return isItalianPublicHoliday(tomorrow);
+    };
+
+    const isHolidayOrPreHolidayIT = (date = new Date()) => {
+      return isItalianPublicHoliday(date) || isItalianPreHoliday(date);
+    };
+
+    const isTimeWithinActiveHours = (activeHoursStr = '08:00 - 20:00', date = new Date()) => {
+      const raw = String(activeHoursStr || '08:00 - 20:00').trim();
+      if (!raw || /00[:.]00\s*[-–a]+\s*24[:.]00/i.test(raw) || /\bh24\b/i.test(raw)) {
+        return true;
+      }
+      const d = date instanceof Date ? date : new Date(date);
+      const curMinutes = d.getHours() * 60 + d.getMinutes();
+
+      const regex = /(\d{1,2})[:.](\d{2})\s*(?:[-–]|alle|al)\s*(\d{1,2})[:.](\d{2})/gi;
+      const intervals = [];
+      let match;
+      while ((match = regex.exec(raw)) !== null) {
+        const h1 = Math.min(24, Math.max(0, parseInt(match[1], 10)));
+        const m1 = Math.min(59, Math.max(0, parseInt(match[2], 10)));
+        const h2 = Math.min(24, Math.max(0, parseInt(match[3], 10)));
+        const m2 = Math.min(59, Math.max(0, parseInt(match[4], 10)));
+        intervals.push([h1 * 60 + m1, h2 * 60 + m2]);
+      }
+
+      if (intervals.length === 0) {
+        return curMinutes >= 8 * 60 && curMinutes < 20 * 60;
+      }
+
+      return intervals.some(([startMin, endMin]) => {
+        if (endMin >= startMin) {
+          return curMinutes >= startMin && curMinutes < endMin;
+        }
+        return curMinutes >= startMin || curMinutes < endMin;
+      });
+    };
+
+    // Calcolo Dinamico in Tempo Reale ("Si paga adesso?")
+    const evaluateLiveParkingStatus = (parkingRules, now = new Date()) => {
+      const d = now instanceof Date ? now : new Date(now);
+      if (!parkingRules || typeof parkingRules !== 'object' || !parkingRules.paid || !parkingRules.paid.enabled) {
+        return null;
+      }
+
+      const paid = parkingRules.paid;
+      const month = d.getMonth() + 1;
+      const day = d.getDate();
+      const curMD = month * 100 + day;
+      const isHol = isItalianPublicHoliday(d);
+      const isHolOrPre = isHolidayOrPreHolidayIT(d);
+      const activeHours = paid.activeHours || '08:00 - 20:00';
+      const inHours = isTimeWithinActiveHours(activeHours, d);
+
+      let isDayActive = false;
+      let periodReason = '';
+
+      if (paid.periodType === 'SEASONAL') {
+        const regime = paid.seasonalRegime || 'ALL_DAYS';
+        if (regime === 'CUSTOM' && Array.isArray(paid.customPeriods) && paid.customPeriods.length > 0) {
+          let matchedPeriod = null;
+          for (const p of paid.customPeriods) {
+            const fromM = Number(p.fromMonth) || 6;
+            const fromD = Number(p.fromDay) || 1;
+            const toM = Number(p.toMonth) || 9;
+            const toD = Number(p.toDay) || 30;
+            const startMD = fromM * 100 + fromD;
+            const endMD = toM * 100 + toD;
+            const inRange = endMD >= startMD
+              ? (curMD >= startMD && curMD <= endMD)
+              : (curMD >= startMD || curMD <= endMD);
+            if (inRange) {
+              matchedPeriod = p;
+              break;
+            }
+          }
+          if (!matchedPeriod) {
+            isDayActive = false;
+            periodReason = 'Fuori periodo stagionale';
+          } else if (matchedPeriod.regime === 'HOLIDAYS_PREHOLIDAYS') {
+            isDayActive = isHolOrPre;
+            periodReason = isDayActive ? 'Periodo stagionale (festivo/prefestivo)' : 'Giorno feriale esente in questo periodo';
+          } else {
+            isDayActive = true;
+            periodReason = 'Periodo stagionale attivo';
+          }
+        } else if (regime === 'MISTO_MARE') {
+          const startM = Number(paid.seasonalStartMonth) || 6;
+          const endM = Number(paid.seasonalEndMonth) || 9;
+          const inSeason = endM >= startM ? (month >= startM && month <= endM) : (month >= startM || month <= endM);
+          if (!inSeason) {
+            isDayActive = false;
+            periodReason = 'Fuori stagione estiva';
+          } else if (month === 7 || month === 8) {
+            isDayActive = true;
+            periodReason = 'Stagione estiva (Luglio-Agosto tutti i giorni)';
+          } else {
+            isDayActive = isHolOrPre;
+            periodReason = isDayActive ? 'Regime Misto Mare (festivo/prefestivo)' : 'Giorno feriale gratuito (Misto Mare)';
+          }
+        } else {
+          const startM = Number(paid.seasonalStartMonth) || 6;
+          const endM = Number(paid.seasonalEndMonth) || 9;
+          const inSeason = endM >= startM ? (month >= startM && month <= endM) : (month >= startM || month <= endM);
+          if (!inSeason) {
+            isDayActive = false;
+            periodReason = `Fuori stagione (${MONTH_SHORT_IT[startM - 1]}-${MONTH_SHORT_IT[endM - 1]})`;
+          } else if (regime === 'HOLIDAYS_PREHOLIDAYS') {
+            isDayActive = isHolOrPre;
+            periodReason = isDayActive ? 'Stagionale (festivo/prefestivo)' : 'Giorno feriale esente';
+          } else {
+            isDayActive = true;
+            periodReason = 'Stagione attiva';
+          }
+        }
+      } else {
+        if (paid.yearRoundDays === 'ALL_DAYS') {
+          isDayActive = true;
+          periodReason = 'Attivo tutti i giorni';
+        } else {
+          isDayActive = !isHol;
+          periodReason = isDayActive ? 'Giorno feriale attivo' : 'Giorno festivo gratuito';
+        }
+      }
+
+      if (!isDayActive) {
+        return {
+          isFreeNow: true,
+          isPaidNow: false,
+          badgeText: '🟢 In questo momento il parcheggio è GRATUITO',
+          reason: periodReason || 'Fuori periodo a pagamento',
+        };
+      }
+
+      if (!inHours) {
+        return {
+          isFreeNow: true,
+          isPaidNow: false,
+          badgeText: '🟢 In questo momento il parcheggio è GRATUITO',
+          reason: `Fuori fascia oraria (${activeHours})`,
+        };
+      }
+
+      return {
+        isFreeNow: false,
+        isPaidNow: true,
+        badgeText: '🔴 Sosta a pagamento attiva adesso',
+        reason: `Fascia attiva: ${activeHours}${paid.hourlyRate ? ` • ${paid.hourlyRate}` : ''}`,
+      };
+    };
+    window.evaluateLiveParkingStatus = evaluateLiveParkingStatus;
+
+    const createDefaultParkingRulesDraft = (existingRules = null) => {
+      const rawDisc = existingRules?.disc || {};
+      const rawPaid = existingRules?.paid || {};
+      const defaultCustom = [
+        { fromDay: 1, fromMonth: 6, toDay: 30, toMonth: 6, regime: 'HOLIDAYS_PREHOLIDAYS' },
+        { fromDay: 1, fromMonth: 7, toDay: 31, toMonth: 8, regime: 'ALL_DAYS' },
+        { fromDay: 1, fromMonth: 9, toDay: 15, toMonth: 9, regime: 'HOLIDAYS_PREHOLIDAYS' },
+      ];
+      return {
+        disc: {
+          enabled: Boolean(rawDisc.enabled),
+          maxLimit: rawDisc.maxLimit || '1h',
+          daysValidity: rawDisc.daysValidity || 'WEEKDAYS',
+        },
+        paid: {
+          enabled: Boolean(rawPaid.enabled),
+          activeHours: rawPaid.activeHours || '08:00 - 20:00',
+          hourlyRate: rawPaid.hourlyRate || '',
+          periodType: rawPaid.periodType || 'YEAR_ROUND',
+          yearRoundDays: rawPaid.yearRoundDays || 'WEEKDAYS',
+          seasonalStartMonth: Number(rawPaid.seasonalStartMonth) || 6,
+          seasonalEndMonth: Number(rawPaid.seasonalEndMonth) || 9,
+          seasonalRegime: rawPaid.seasonalRegime || 'ALL_DAYS',
+          customPeriods: Array.isArray(rawPaid.customPeriods) && rawPaid.customPeriods.length > 0
+            ? rawPaid.customPeriods.map(p => ({
+                fromDay: Number(p.fromDay) || 1,
+                fromMonth: Number(p.fromMonth) || 6,
+                toDay: Number(p.toDay) || 30,
+                toMonth: Number(p.toMonth) || 9,
+                regime: p.regime === 'HOLIDAYS_PREHOLIDAYS' ? 'HOLIDAYS_PREHOLIDAYS' : 'ALL_DAYS',
+              }))
+            : defaultCustom,
+        },
+      };
+    };
+
+    const formatDiscLimitLabel = (maxLimit) => {
+      if (maxLimit === '30m') return '30 min';
+      if (maxLimit === '1h') return '1 ora';
+      if (maxLimit === '2h') return '2 ore';
+      if (maxLimit === '4h') return '4 ore';
+      return maxLimit || '1 ora';
+    };
+
+    const formatDiscDaysLabel = (daysValidity) => {
+      return daysValidity === 'ALL_DAYS' ? 'tutti i giorni (festivi inclusi)' : 'solo giorni feriali';
+    };
+
+    const formatPaidScheduleDetails = (paid) => {
+      if (!paid || !paid.enabled) return null;
+      const hoursStr = paid.activeHours || '08:00 - 20:00';
+      const rateStr = paid.hourlyRate ? ` • Tariffa: ${paid.hourlyRate}` : '';
+      let periodHeadline = '';
+      const customLines = [];
+
+      if (paid.periodType === 'SEASONAL') {
+        const startM = Math.min(12, Math.max(1, Number(paid.seasonalStartMonth) || 6));
+        const endM = Math.min(12, Math.max(1, Number(paid.seasonalEndMonth) || 9));
+        const startName = MONTH_NAMES_IT[startM - 1];
+        const endName = MONTH_NAMES_IT[endM - 1];
+        const regime = paid.seasonalRegime || 'ALL_DAYS';
+
+        if (regime === 'MISTO_MARE') {
+          periodHeadline = `☀️ Stagionale Misto Mare (${startName} - ${endName}): Festivi e prefestivi a Giugno e Settembre, tutti i giorni a Luglio-Agosto`;
+        } else if (regime === 'HOLIDAYS_PREHOLIDAYS') {
+          periodHeadline = `☀️ Stagionale (${startName} - ${endName}): Solo Festivi e Prefestivi`;
+        } else if (regime === 'CUSTOM' && Array.isArray(paid.customPeriods) && paid.customPeriods.length > 0) {
+          periodHeadline = '☀️ Stagionale a Periodi Personalizzati:';
+          paid.customPeriods.forEach(p => {
+            const fm = MONTH_SHORT_IT[Math.min(12, Math.max(1, Number(p.fromMonth) || 6)) - 1];
+            const tm = MONTH_SHORT_IT[Math.min(12, Math.max(1, Number(p.toMonth) || 9)) - 1];
+            const regLabel = p.regime === 'HOLIDAYS_PREHOLIDAYS' ? 'Festivi e Prefestivi' : 'Tutti i giorni';
+            customLines.push(`Dal ${p.fromDay || 1} ${fm} al ${p.toDay || 30} ${tm}: ${regLabel}`);
+          });
+        } else {
+          periodHeadline = `☀️ Stagionale (${startName} - ${endName}): Tutti i giorni`;
+        }
+      } else {
+        const daysLabel = paid.yearRoundDays === 'ALL_DAYS' ? 'Tutti i giorni (festivi inclusi)' : 'Solo giorni feriali';
+        periodHeadline = `🔄 Tutto l'Anno (${daysLabel})`;
+      }
+
+      return {
+        hoursLine: `${hoursStr}${rateStr}`,
+        periodHeadline,
+        customLines,
+      };
+    };
+
+    const formatParkingRulesSummaryText = (parkingRules) => {
+      if (!parkingRules) return '';
+      const parts = [];
+      if (parkingRules.disc?.enabled) {
+        parts.push(`Disco Orario max ${formatDiscLimitLabel(parkingRules.disc.maxLimit)} (${formatDiscDaysLabel(parkingRules.disc.daysValidity)})`);
+      }
+      if (parkingRules.paid?.enabled) {
+        const det = formatPaidScheduleDetails(parkingRules.paid);
+        if (det) {
+          const customPart = det.customLines.length > 0 ? ` [${det.customLines.join('; ')}]` : '';
+          parts.push(`Strisce Blu ${det.hoursLine} — ${det.periodHeadline}${customPart}`);
+        }
+      }
+      return parts.join(' | ');
+    };
+
+    const formatLastVerifiedDate = (isoStr) => {
+      if (!isoStr) return 'Recente';
+      try {
+        const d = new Date(isoStr);
+        if (isNaN(d.getTime())) return 'Recente';
+        return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
+      } catch (e) {
+        return 'Recente';
+      }
+    };
+
+    const areParkingRulesSchedulesEqual = (r1, r2) => {
+      if (!r1 || !r2) return false;
+      const norm = (r) => JSON.stringify({
+        disc: {
+          enabled: Boolean(r.disc?.enabled),
+          maxLimit: r.disc?.maxLimit || '1h',
+          daysValidity: r.disc?.daysValidity || 'WEEKDAYS',
+        },
+        paid: {
+          enabled: Boolean(r.paid?.enabled),
+          activeHours: (r.paid?.activeHours || '08:00 - 20:00').trim(),
+          hourlyRate: (r.paid?.hourlyRate || '').trim(),
+          periodType: r.paid?.periodType || 'YEAR_ROUND',
+          yearRoundDays: r.paid?.yearRoundDays || 'WEEKDAYS',
+          seasonalStartMonth: Number(r.paid?.seasonalStartMonth) || 6,
+          seasonalEndMonth: Number(r.paid?.seasonalEndMonth) || 9,
+          seasonalRegime: r.paid?.seasonalRegime || 'ALL_DAYS',
+          customPeriods: (r.paid?.customPeriods || []).map(p => ({
+            fromDay: Number(p.fromDay) || 1,
+            fromMonth: Number(p.fromMonth) || 6,
+            toDay: Number(p.toDay) || 30,
+            toMonth: Number(p.toMonth) || 9,
+            regime: p.regime || 'ALL_DAYS',
+          })),
+        },
+      });
+      return norm(r1) === norm(r2);
+    };
+
+    const mergeParkingRulesWithConsensus = (existingRules, submittedDraft, userMeta = {}) => {
+      const nowIso = new Date().toISOString();
+      const uid = userMeta.uid ? String(userMeta.uid) : null;
+      const userName = userMeta.name || 'Cittadino Esploratore';
+      const isUserAdmin = Boolean(userMeta.isAdmin);
+      const userLevel = Number(userMeta.level) || 1;
+
+      const cleanSubmitted = createDefaultParkingRulesDraft(submittedDraft);
+      cleanSubmitted.disc.enabled = Boolean(submittedDraft?.disc?.enabled);
+      cleanSubmitted.paid.enabled = Boolean(submittedDraft?.paid?.enabled);
+
+      const hasExistingActive = Boolean(
+        existingRules &&
+        (existingRules.disc?.enabled || existingRules.paid?.enabled)
+      );
+
+      if (!hasExistingActive) {
+        return {
+          nextParkingRules: {
+            disc: cleanSubmitted.disc,
+            paid: cleanSubmitted.paid,
+            confirmedByUids: uid ? [uid] : [],
+            confirmCount: 1,
+            lastVerifiedAt: nowIso,
+            verifiedByAdmin: isUserAdmin,
+            updatedByUid: uid,
+            updatedByName: userName,
+            pendingProposal: null,
+          },
+          wasQueuedAsProposal: false,
+        };
+      }
+
+      if (areParkingRulesSchedulesEqual(existingRules, cleanSubmitted)) {
+        const prevUids = Array.isArray(existingRules.confirmedByUids) ? existingRules.confirmedByUids.map(String) : [];
+        const nextUids = uid && !prevUids.includes(uid) ? [...prevUids, uid] : prevUids;
+        const nextCount = Math.max(Number(existingRules.confirmCount) || 1, nextUids.length);
+        return {
+          nextParkingRules: {
+            ...existingRules,
+            confirmedByUids: nextUids,
+            confirmCount: nextCount,
+            lastVerifiedAt: nowIso,
+            verifiedByAdmin: Boolean(existingRules.verifiedByAdmin || isUserAdmin),
+          },
+          wasQueuedAsProposal: false,
+        };
+      }
+
+      const existingConfirms = Number(existingRules.confirmCount) || 1;
+      const isProtectedRule = Boolean(existingRules.verifiedByAdmin) || existingConfirms >= 2;
+      const canOverwriteDirectly = isUserAdmin || userLevel >= 5 || !isProtectedRule;
+
+      if (canOverwriteDirectly) {
+        return {
+          nextParkingRules: {
+            disc: cleanSubmitted.disc,
+            paid: cleanSubmitted.paid,
+            confirmedByUids: uid ? [uid] : [],
+            confirmCount: 1,
+            lastVerifiedAt: nowIso,
+            verifiedByAdmin: isUserAdmin,
+            updatedByUid: uid,
+            updatedByName: userName,
+            pendingProposal: null,
+          },
+          wasQueuedAsProposal: false,
+        };
+      }
+
+      return {
+        nextParkingRules: {
+          ...existingRules,
+          pendingProposal: {
+            disc: cleanSubmitted.disc,
+            paid: cleanSubmitted.paid,
+            proposedByUid: uid,
+            proposedByName: userName,
+            proposedAt: nowIso,
+          },
+        },
+        wasQueuedAsProposal: true,
+      };
+    };
+
     const normalizeStreetTypeLabel = (raw) => {
       if (!raw) return '';
       const str = String(raw).trim();
@@ -2269,6 +2705,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         comment: r.comment || '',
         ratings: r.ratings || {},
         parkingTypes: Array.isArray(r.parkingTypes) ? r.parkingTypes : [],
+        parkingRules: r.parkingRules || null,
         hasCyclePath: Boolean(r.hasCyclePath),
         amenities: Array.isArray(r.amenities) ? r.amenities : [],
         roadObstacles: Array.isArray(r.roadObstacles) ? r.roadObstacles : [],
@@ -2467,6 +2904,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         reviewCount: safeReviews.length,
         categoryAverages,
         parkingTypes,
+        ...(fallbackMeta.parkingRules ? { parkingRules: fallbackMeta.parkingRules } : {}),
         hasCyclePath,
         amenities,
         roadObstacles,
@@ -2545,6 +2983,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         avgOverallRating: Number(docData.ratingOverall ?? docData.avgOverallRating ?? 0),
         categoryAverages: defaultCats,
         commonParkingTypes: mergedParking,
+        parkingRules: docData.parkingRules || existingStreet?.parkingRules || null,
         hasCyclePath: mergedCyclePath,
         amenities: mergedAmenities,
         roadObstacles: mergedRoadObstacles,
@@ -2593,6 +3032,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           if (gId && String(gId) === String(authorId)) {
             guardianStreetIds.add(s.streetKey || s.id);
           }
+        }
+        if (s.parkingRules && Array.isArray(s.parkingRules.confirmedByUids) && s.parkingRules.confirmedByUids.includes(String(authorId))) {
+          awardedMilestonesSet.add(`parking_verify_${s.streetKey || s.id}`);
         }
       });
 
@@ -2723,6 +3165,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           helpfulReceivedCount: cs.helpfulReceivedCount,
         };
       });
+
+      const verifiedParkingMilestonesCount = Array.from(awardedMilestonesSet).filter(m => String(m).startsWith('parking_verify_')).length;
+      xp += verifiedParkingMilestonesCount * 5;
 
       const finalName = resolvedName || 'Cittadino Esploratore';
       const statsObj = {
@@ -4645,6 +5090,262 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         }
       };
 
+      // --- HANDLER CONSENSO COMMUNITY, CONFERMA (+5 XP), PROPOSTE E CERTIFICAZIONE ADMIN ORARI SOSTA ---
+      const handleConfirmParkingRules = async (streetObj) => {
+        if (!streetObj || !streetObj.parkingRules) return;
+        const firebaseAuthUser = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser) || null;
+        const uid = firebaseAuthUser ? firebaseAuthUser.uid : (currentUser ? currentUser.id : null);
+        if (!uid) {
+          setIsAuthOpen(true);
+          return;
+        }
+
+        const streetKey = streetObj.streetKey || streetObj.id;
+        const existingRules = streetObj.parkingRules;
+        const prevUids = Array.isArray(existingRules.confirmedByUids) ? existingRules.confirmedByUids.map(String) : [];
+        const alreadyConfirmed = prevUids.includes(String(uid));
+        const nextUids = alreadyConfirmed ? prevUids : [...prevUids, String(uid)];
+        const nextCount = Math.max(
+          (Number(existingRules.confirmCount) || 1) + (alreadyConfirmed ? 0 : 1),
+          nextUids.length
+        );
+        const nowIso = new Date().toISOString();
+        const userIsAdmin = isCurrentUserAdmin(currentUser) || isAdmin;
+
+        const updatedRules = {
+          ...existingRules,
+          confirmedByUids: nextUids,
+          confirmCount: nextCount,
+          lastVerifiedAt: nowIso,
+          verifiedByAdmin: Boolean(existingRules.verifiedByAdmin || userIsAdmin),
+        };
+
+        const applyOptimistic = (s) => {
+          if ((s.streetKey && s.streetKey === streetKey) || isSameStreet(s, streetObj)) {
+            return { ...s, parkingRules: updatedRules };
+          }
+          return s;
+        };
+
+        setStreets(prev => {
+          const next = prev.map(applyOptimistic);
+          streetsRef.current = next;
+          return next;
+        });
+        setSelectedStreet(prev => (prev ? applyOptimistic(prev) : prev));
+
+        const milestoneKey = `parking_verify_${streetKey}`;
+        const localMiles = getLocalAwardedMilestones(uid);
+        const hasBonusAlready = localMiles.includes(milestoneKey) ||
+          Boolean(gamification.currentUserProfile?.awardedMilestones?.includes(milestoneKey));
+
+        if (!hasBonusAlready) {
+          const updatedMiles = Array.from(new Set([...localMiles, milestoneKey]));
+          saveLocalAwardedMilestones(uid, updatedMiles);
+          setRewardToast({
+            totalXP: 5,
+            baseXP: 5,
+            pioneerXP: 0,
+            technicalXP: 0,
+            chroniclerXP: 0,
+            customTitle: '🅿️ +5 XP Bonus Verifica Orari di Sosta!',
+          });
+        }
+
+        if (window.db) {
+          try {
+            await window.db.collection('streets').doc(streetKey).set({
+              parkingRules: updatedRules,
+              updatedAt: nowIso,
+            }, { merge: true });
+
+            if (!hasBonusAlready) {
+              const userSnap = await window.db.collection('users').doc(String(uid)).get().catch(() => null);
+              if (userSnap && userSnap.exists) {
+                const uData = userSnap.data() || {};
+                const nextMiles = Array.from(new Set([...(Array.isArray(uData.awardedMilestones) ? uData.awardedMilestones : []), milestoneKey]));
+                const nextXp = (Number(uData.xp) || 0) + 5;
+                await window.db.collection('users').doc(String(uid)).set({
+                  xp: nextXp,
+                  awardedMilestones: nextMiles,
+                  updatedAt: nowIso,
+                }, { merge: true });
+              }
+            }
+          } catch (err) {
+            console.warn('[ParkingConsensus] Errore salvataggio conferma:', err);
+          }
+        }
+      };
+
+      const handleAdminCertifyParkingRules = async (streetObj) => {
+        if (!streetObj || !streetObj.parkingRules || !isAdmin) return;
+        const firebaseAuthUser = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser) || null;
+        const uid = firebaseAuthUser ? firebaseAuthUser.uid : (currentUser ? currentUser.id : 'admin');
+        const streetKey = streetObj.streetKey || streetObj.id;
+        const nowIso = new Date().toISOString();
+        const prevUids = Array.isArray(streetObj.parkingRules.confirmedByUids) ? streetObj.parkingRules.confirmedByUids.map(String) : [];
+        const nextUids = uid && !prevUids.includes(String(uid)) ? [...prevUids, String(uid)] : prevUids;
+
+        const certifiedRules = {
+          ...streetObj.parkingRules,
+          confirmedByUids: nextUids,
+          confirmCount: Math.max(Number(streetObj.parkingRules.confirmCount) || 1, nextUids.length),
+          lastVerifiedAt: nowIso,
+          verifiedByAdmin: true,
+        };
+
+        const applyOptimistic = (s) => {
+          if ((s.streetKey && s.streetKey === streetKey) || isSameStreet(s, streetObj)) {
+            return { ...s, parkingRules: certifiedRules };
+          }
+          return s;
+        };
+
+        setStreets(prev => {
+          const next = prev.map(applyOptimistic);
+          streetsRef.current = next;
+          return next;
+        });
+        setSelectedStreet(prev => (prev ? applyOptimistic(prev) : prev));
+
+        if (window.db) {
+          try {
+            await window.db.collection('streets').doc(streetKey).set({
+              parkingRules: certifiedRules,
+              updatedAt: nowIso,
+            }, { merge: true });
+          } catch (err) {
+            console.warn('[ParkingConsensus] Errore certificazione Admin:', err);
+          }
+        }
+      };
+
+      const handleSaveInlineParkingRules = async (streetObj, draftRules) => {
+        if (!streetObj || !draftRules) return;
+        const firebaseAuthUser = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser) || null;
+        const uid = firebaseAuthUser ? firebaseAuthUser.uid : (currentUser ? currentUser.id : null);
+        if (!uid) {
+          setIsAuthOpen(true);
+          return;
+        }
+
+        const userName = (firebaseAuthUser && firebaseAuthUser.displayName) || (currentUser ? currentUser.name : 'Cittadino Esploratore');
+        const userIsAdmin = isCurrentUserAdmin(currentUser) || isAdmin;
+        const userLevel = gamification.currentUserProfile?.levelInfo?.level || 1;
+        const streetKey = streetObj.streetKey || streetObj.id;
+        const nowIso = new Date().toISOString();
+
+        const { nextParkingRules, wasQueuedAsProposal } = mergeParkingRulesWithConsensus(
+          streetObj.parkingRules || null,
+          draftRules,
+          {
+            uid,
+            name: userName,
+            isAdmin: userIsAdmin,
+            level: userLevel,
+          }
+        );
+
+        const prevParkingTypes = Array.isArray(streetObj.commonParkingTypes) ? streetObj.commonParkingTypes : [];
+        const updatedParkingTypesSet = new Set(prevParkingTypes);
+        if (draftRules.disc?.enabled) updatedParkingTypesSet.add('PARKING_DISC');
+        if (draftRules.paid?.enabled) updatedParkingTypesSet.add('PAID');
+        const nextParkingTypes = Array.from(updatedParkingTypesSet);
+
+        const applyOptimistic = (s) => {
+          if ((s.streetKey && s.streetKey === streetKey) || isSameStreet(s, streetObj)) {
+            return {
+              ...s,
+              commonParkingTypes: nextParkingTypes,
+              parkingRules: nextParkingRules,
+            };
+          }
+          return s;
+        };
+
+        setStreets(prev => {
+          const next = prev.map(applyOptimistic);
+          streetsRef.current = next;
+          return next;
+        });
+        setSelectedStreet(prev => (prev ? applyOptimistic(prev) : prev));
+        setIsInlineParkingEditOpen(false);
+
+        if (window.db) {
+          try {
+            await window.db.collection('streets').doc(streetKey).set({
+              parkingTypes: nextParkingTypes,
+              parkingRules: nextParkingRules,
+              updatedAt: nowIso,
+            }, { merge: true });
+          } catch (err) {
+            console.warn('[ParkingConsensus] Errore salvataggio orari di sosta:', err);
+          }
+        }
+
+        if (wasQueuedAsProposal) {
+          alert("La regola attuale è già confermata dalla community o certificata: la tua modifica è stata registrata come proposta di aggiornamento ed è visibile per l'approvazione.");
+        }
+      };
+
+      const handleResolveParkingProposal = async (streetObj, approve = true) => {
+        if (!streetObj || !streetObj.parkingRules || !streetObj.parkingRules.pendingProposal) return;
+        const firebaseAuthUser = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser) || null;
+        const uid = firebaseAuthUser ? firebaseAuthUser.uid : (currentUser ? currentUser.id : 'admin');
+        const streetKey = streetObj.streetKey || streetObj.id;
+        const nowIso = new Date().toISOString();
+        const proposal = streetObj.parkingRules.pendingProposal;
+        const userIsAdmin = isCurrentUserAdmin(currentUser) || isAdmin;
+
+        let resolvedRules;
+        if (approve) {
+          const confirmUids = Array.from(new Set([proposal.proposedByUid, uid].filter(Boolean).map(String)));
+          resolvedRules = {
+            ...streetObj.parkingRules,
+            disc: proposal.disc || streetObj.parkingRules.disc,
+            paid: proposal.paid || streetObj.parkingRules.paid,
+            confirmedByUids: confirmUids,
+            confirmCount: Math.max(2, confirmUids.length),
+            lastVerifiedAt: nowIso,
+            verifiedByAdmin: Boolean(userIsAdmin || streetObj.parkingRules.verifiedByAdmin),
+            updatedByUid: proposal.proposedByUid || uid,
+            updatedByName: proposal.proposedByName || 'Community',
+            pendingProposal: null,
+          };
+        } else {
+          resolvedRules = {
+            ...streetObj.parkingRules,
+            pendingProposal: null,
+          };
+        }
+
+        const applyOptimistic = (s) => {
+          if ((s.streetKey && s.streetKey === streetKey) || isSameStreet(s, streetObj)) {
+            return { ...s, parkingRules: resolvedRules };
+          }
+          return s;
+        };
+
+        setStreets(prev => {
+          const next = prev.map(applyOptimistic);
+          streetsRef.current = next;
+          return next;
+        });
+        setSelectedStreet(prev => (prev ? applyOptimistic(prev) : prev));
+
+        if (window.db) {
+          try {
+            await window.db.collection('streets').doc(streetKey).set({
+              parkingRules: resolvedRules,
+              updatedAt: nowIso,
+            }, { merge: true });
+          } catch (err) {
+            console.warn('[ParkingConsensus] Errore risoluzione proposta:', err);
+          }
+        }
+      };
+
       const handleShareStreet = async (streetToShare) => {
         if (!streetToShare) return;
         const streetId = streetToShare.id || streetToShare.streetKey || '';
@@ -4839,10 +5540,14 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const [filterDogArea, setFilterDogArea] = useState(false);
       const [filterPlayground, setFilterPlayground] = useState(false);
       const [filterRoadObstacles, setFilterRoadObstacles] = useState(false);
+      const [filterFreeNow, setFilterFreeNow] = useState(false);
+      const [isInlineParkingEditOpen, setIsInlineParkingEditOpen] = useState(false);
+      const [inlineParkingDraft, setInlineParkingDraft] = useState(() => createDefaultParkingRulesDraft(null));
 
       const hasAnyActiveFilter = Boolean(
         filterStreetType ||
         Object.keys(filterCategoryThresholds).length > 0 ||
+        filterFreeNow ||
         filterEvCharging ||
         filterDisabledParking ||
         filterPinkParking ||
@@ -4857,6 +5562,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const resetAllFilters = () => {
         setFilterStreetType(null);
         setFilterCategoryThresholds({});
+        setFilterFreeNow(false);
         setFilterEvCharging(false);
         setFilterDisabledParking(false);
         setFilterPinkParking(false);
@@ -6029,9 +6735,19 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           // 4. Filtro Ostacoli Fisici & Sottopassi
           if (filterRoadObstacles && (!Array.isArray(s.roadObstacles) || s.roadObstacles.length === 0)) return false;
 
+          // 5. Filtro Rapido "🟢 Gratis adesso" (Parcheggio gratuito FREE + Strisce Blu PAID attualmente gratuite per orario/stagione/festività)
+          if (filterFreeNow) {
+            const pTypes = Array.isArray(s.commonParkingTypes) ? s.commonParkingTypes : [];
+            const hasFreeTag = pTypes.includes('FREE');
+            const hasPaidSchedule = Boolean(s.parkingRules?.paid?.enabled);
+            const liveStatus = hasPaidSchedule ? evaluateLiveParkingStatus(s.parkingRules, new Date()) : null;
+            const isPaidFreeRightNow = Boolean(liveStatus && liveStatus.isFreeNow);
+            if (!hasFreeTag && !isPaidFreeRightNow) return false;
+          }
+
           return true;
         });
-      }, [streets, filterStreetType, filterCategoryThresholds, filterEvCharging, filterDisabledParking, filterPinkParking, filterLoadingZone, filterCyclePath, filterDrinkingFountain, filterDogArea, filterPlayground, filterRoadObstacles]);
+      }, [streets, filterStreetType, filterCategoryThresholds, filterFreeNow, filterEvCharging, filterDisabledParking, filterPinkParking, filterLoadingZone, filterCyclePath, filterDrinkingFountain, filterDogArea, filterPlayground, filterRoadObstacles]);
 
       // OTTIMIZZAZIONE VIEWPORT RENDERING (Zoom >= 14): renderizza nel DOM solo i marker nell'area visibile (+ margine di buffer)
       const viewportStreets = useMemo(() => {
@@ -6642,8 +7358,41 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           return prof?.levelInfo?.level || 1;
         };
 
-        // B. AGGIORNAMENTO OTTIMISTICO IMMEDIATO DELLA SCHEDA STRADA IN MEMORIA
+        // B. GESTIONE CONSENSO REGOLE DI SOSTA (Disco Orario / Strisce Blu)
         const targetStreet = selectedStreet;
+        const currentUserIsAdmin = isCurrentUserAdmin({ email: authorEmail }) || isAdmin;
+        const currentUserLevel = prevProfile?.levelInfo?.level || 1;
+        let resolvedNextParkingRules = targetStreet?.parkingRules || null;
+        let parkingProposalQueued = false;
+
+        if (reviewPayload.parkingRules && (reviewPayload.parkingRules.disc?.enabled || reviewPayload.parkingRules.paid?.enabled)) {
+          const mergedResult = mergeParkingRulesWithConsensus(
+            targetStreet?.parkingRules || null,
+            reviewPayload.parkingRules,
+            {
+              uid: authorId,
+              name: authorName,
+              isAdmin: currentUserIsAdmin,
+              level: currentUserLevel,
+            }
+          );
+          resolvedNextParkingRules = mergedResult.nextParkingRules;
+          parkingProposalQueued = mergedResult.wasQueuedAsProposal;
+          awardedMilestonesSet.add(`parking_verify_${streetCompKey}`);
+        } else if (reviewPayload.confirmExistingParkingRules && targetStreet?.parkingRules) {
+          const prevUids = Array.isArray(targetStreet.parkingRules.confirmedByUids)
+            ? targetStreet.parkingRules.confirmedByUids.map(String)
+            : [];
+          const nextUids = !prevUids.includes(String(authorId)) ? [...prevUids, String(authorId)] : prevUids;
+          resolvedNextParkingRules = {
+            ...targetStreet.parkingRules,
+            confirmedByUids: nextUids,
+            confirmCount: Math.max((Number(targetStreet.parkingRules.confirmCount) || 1) + (!prevUids.includes(String(authorId)) ? 1 : 0), nextUids.length),
+            lastVerifiedAt: nowIso,
+            verifiedByAdmin: Boolean(targetStreet.parkingRules.verifiedByAdmin || currentUserIsAdmin),
+          };
+          awardedMilestonesSet.add(`parking_verify_${streetCompKey}`);
+        }
         const optimisticStreets = (streetsRef.current || []).map(s => {
           if (s.id !== targetStreet.id && s.streetKey !== streetCompKey) return s;
 
@@ -6741,6 +7490,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             avgOverallRating: newAvg,
             categoryAverages: updatedCat,
             commonParkingTypes: mergedParking,
+            parkingRules: resolvedNextParkingRules || s.parkingRules || null,
             hasCyclePath: mergedCycle,
             amenities: mergedAmenities,
             roadObstacles: mergedObstacles,
@@ -6843,6 +7593,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               latitude: finalLat,
               longitude: finalLng,
               googlePlaceId: targetStreet.placeId || targetStreet.googlePlaceId || canonicalRoute.placeId || null,
+              parkingRules: resolvedNextParkingRules || targetStreet?.parkingRules || null,
               resolveAuthorLevel: resolveAuthorLevelHelper,
             });
 
@@ -7239,6 +7990,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 postalCode: finalPostal,
                 latitude: finalLat,
                 longitude: finalLng,
+                parkingRules: targetStreet?.parkingRules || null,
               });
               newStreetPioneerAuthorId = streetSummaryDoc.pioneerAuthorId ? String(streetSummaryDoc.pioneerAuthorId) : null;
 
@@ -8230,7 +8982,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-black text-amber-300 truncate">
-                        {rewardToast.isEdit ? 'Recensione aggiornata!' : 'Recensione pubblicata!'} +{rewardToast.totalXP} XP guadagnati!
+                        {rewardToast.customTitle || `${rewardToast.isEdit ? 'Recensione aggiornata!' : 'Recensione pubblicata!'} +${rewardToast.totalXP} XP guadagnati!`}
                       </p>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px] font-bold text-slate-200">
                         <span className="bg-white/15 px-2 py-0.5 rounded-full">+{rewardToast.baseXP} XP Base</span>
@@ -8353,6 +9105,20 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             })}
 
             <span className="h-5 w-px bg-slate-300/80 shrink-0 mx-0.5" aria-hidden="true" />
+
+            <button
+              type="button"
+              onClick={() => setFilterFreeNow(!filterFreeNow)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold flex items-center gap-1.5 border shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                filterFreeNow
+                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-emerald-500/30 ring-2 ring-emerald-400/50'
+                  : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Mostra le vie con parcheggio gratuito e le strisce blu che in questo preciso momento sono gratuite"
+            >
+              <span>🟢</span>
+              <span>Gratis adesso</span>
+            </button>
 
             <button
               type="button"
@@ -8726,6 +9492,253 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                         );
                       })}
                     </div>
+
+                    {/* BOX REGOLE DI SOSTA (Disco Orario, Strisce Blu, Indicatore Live "Si paga adesso?" e Consenso Community) */}
+                    {(() => {
+                      const pRules = selectedStreet.parkingRules || null;
+                      const hasDiscRule = Boolean(pRules?.disc?.enabled);
+                      const hasPaidRule = Boolean(pRules?.paid?.enabled);
+                      const hasActiveRules = hasDiscRule || hasPaidRule;
+                      const pTypes = Array.isArray(selectedStreet.commonParkingTypes) ? selectedStreet.commonParkingTypes : [];
+                      const hasDiscOrPaidTag = pTypes.includes('PARKING_DISC') || pTypes.includes('PAID');
+
+                      if (!hasActiveRules && !hasDiscOrPaidTag && !isInlineParkingEditOpen) return null;
+
+                      const liveStatus = hasPaidRule ? evaluateLiveParkingStatus(pRules, new Date()) : null;
+                      const paidDetails = hasPaidRule ? formatPaidScheduleDetails(pRules.paid) : null;
+                      const confirmCount = Math.max(1, Number(pRules?.confirmCount) || (Array.isArray(pRules?.confirmedByUids) ? pRules.confirmedByUids.length : 1));
+                      const currentUid = currentUser?.id ? String(currentUser.id) : null;
+                      const hasUserConfirmed = Boolean(currentUid && Array.isArray(pRules?.confirmedByUids) && pRules.confirmedByUids.includes(currentUid));
+                      const canApproveProposal = Boolean(isAdmin || (gamification.currentUserProfile?.levelInfo?.level || 1) >= 5);
+
+                      return (
+                        <div className="bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 rounded-2xl p-4 border border-blue-200/80 shadow-2xs space-y-3">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                              <span>🅿️</span>
+                              <span>Regole e Orari di Sosta</span>
+                            </h4>
+                            {hasActiveRules && (
+                              pRules.verifiedByAdmin ? (
+                                <span className="text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 shadow-2xs">
+                                  <span>🛡️</span>
+                                  <span>Certificato da Street Review • Check: {formatLastVerifiedDate(pRules.lastVerifiedAt)}</span>
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold bg-white text-slate-700 border border-slate-200 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 shadow-2xs">
+                                  <span>🛡️</span>
+                                  <span>Confermato da {confirmCount} {confirmCount === 1 ? 'cittadino' : 'cittadini'} • Ultimo check: {formatLastVerifiedDate(pRules.lastVerifiedAt)}</span>
+                                </span>
+                              )
+                            )}
+                          </div>
+
+                          {/* INDICATORE LIVE IN TEMPO REALE ("Si paga adesso?") */}
+                          {liveStatus && (
+                            <div
+                              className={`p-3 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 shadow-xs transition-all ${
+                                liveStatus.isFreeNow
+                                  ? 'bg-emerald-600 text-white border-emerald-700'
+                                  : 'bg-rose-600 text-white border-rose-700'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 font-black text-xs sm:text-sm">
+                                <span>{liveStatus.badgeText}</span>
+                              </div>
+                              <span className="text-[11px] font-bold opacity-95 bg-black/15 px-2.5 py-0.5 rounded-full self-start sm:self-auto">
+                                {liveStatus.reason}
+                              </span>
+                            </div>
+                          )}
+
+                          {hasActiveRules ? (
+                            <div className="space-y-2.5 text-xs">
+                              {hasDiscRule && (
+                                <div className="bg-white/90 p-3 rounded-xl border border-slate-200/90 space-y-1">
+                                  <p className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                                    <span>🕒 Sosta Regolamentata (Disco Orario)</span>
+                                  </p>
+                                  <p className="text-slate-700 font-semibold">
+                                    ⏱️ Limite massimo: <strong className="text-slate-900">{formatDiscLimitLabel(pRules.disc.maxLimit)}</strong> ({formatDiscDaysLabel(pRules.disc.daysValidity)})
+                                  </p>
+                                </div>
+                              )}
+
+                              {hasPaidRule && paidDetails && (
+                                <div className="bg-white/90 p-3 rounded-xl border border-blue-200/80 space-y-1.5">
+                                  <p className="font-extrabold text-blue-950 flex items-center gap-1.5">
+                                    <span>🅿️ Strisce Blu (Parcheggio a Pagamento)</span>
+                                  </p>
+                                  <p className="text-slate-800 font-semibold">
+                                    🕒 Orario attivo: <strong className="text-slate-950">{paidDetails.hoursLine}</strong>
+                                  </p>
+                                  <p className="text-slate-700 font-semibold">
+                                    {paidDetails.periodHeadline}
+                                  </p>
+                                  {paidDetails.customLines.length > 0 && (
+                                    <ul className="list-disc list-inside pl-1 space-y-0.5 text-[11px] font-semibold text-slate-700 bg-blue-50/50 p-2 rounded-lg border border-blue-100">
+                                      {paidDetails.customLines.map((line, idx) => (
+                                        <li key={idx}>{line}</li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Proposta di modifica in attesa (se inviata da utente standard su regola protetta) */}
+                              {pRules.pendingProposal && (
+                                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 space-y-2 text-[11px]">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-extrabold text-amber-950">
+                                      ⏳ Proposta di aggiornamento segnalata da {pRules.pendingProposal.proposedByName || 'un cittadino'}:
+                                    </span>
+                                  </div>
+                                  <p className="text-amber-900 font-medium">
+                                    {formatParkingRulesSummaryText(pRules.pendingProposal)}
+                                  </p>
+                                  {canApproveProposal && (
+                                    <div className="flex items-center gap-2 pt-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleResolveParkingProposal(selectedStreet, true)}
+                                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold cursor-pointer shadow-2xs"
+                                      >
+                                        ✅ Approva con 1 click
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleResolveParkingProposal(selectedStreet, false)}
+                                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 font-bold cursor-pointer"
+                                      >
+                                        ❌ Rifiuta
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Azioni Community: Conferma (+5 XP), Segnala Modifica, Certifica Orari (Admin) */}
+                              <div className="flex flex-wrap items-center gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmParkingRules(selectedStreet)}
+                                  className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold border transition-all cursor-pointer flex items-center gap-1 ${
+                                    hasUserConfirmed
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                      : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 shadow-xs'
+                                  }`}
+                                >
+                                  <span>👍</span>
+                                  <span>{hasUserConfirmed ? 'Confermata (Ancora valida)' : 'Conferma (Ancora valida) (+5 XP)'}</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setInlineParkingDraft(createDefaultParkingRulesDraft(pRules));
+                                    setIsInlineParkingEditOpen(!isInlineParkingEditOpen);
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl text-[11px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 transition-all cursor-pointer flex items-center gap-1"
+                                >
+                                  <span>✏️</span>
+                                  <span>{isInlineParkingEditOpen ? 'Chiudi modifica' : 'Segnala modifica'}</span>
+                                </button>
+
+                                {isAdmin && !pRules.verifiedByAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAdminCertifyParkingRules(selectedStreet)}
+                                    className="px-3 py-1.5 rounded-xl text-[11px] font-extrabold bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-400/60 transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                                  >
+                                    <span>🛡️</span>
+                                    <span>Certifica Orari</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+                              <p className="text-slate-600 font-medium">
+                                Orari dettagliati di Disco Orario / Strisce Blu non ancora specificati.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const initDraft = createDefaultParkingRulesDraft(null);
+                                  initDraft.disc.enabled = pTypes.includes('PARKING_DISC');
+                                  initDraft.paid.enabled = pTypes.includes('PAID') || !pTypes.includes('PARKING_DISC');
+                                  setInlineParkingDraft(initDraft);
+                                  setIsInlineParkingEditOpen(!isInlineParkingEditOpen);
+                                }}
+                                className="px-3 py-1.5 rounded-xl text-[11px] font-extrabold bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-xs"
+                              >
+                                ✏️ Specifica Orari di Sosta
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Editor Inline Regole di Sosta nello Street Profile */}
+                          {isInlineParkingEditOpen && (
+                            <div className="pt-2 border-t border-blue-200/70 space-y-3 animate-fade-in">
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setInlineParkingDraft(prev => ({
+                                    ...prev,
+                                    disc: { ...prev.disc, enabled: !prev.disc.enabled }
+                                  }))}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer ${
+                                    inlineParkingDraft.disc.enabled
+                                      ? 'bg-slate-800 text-white border-slate-900'
+                                      : 'bg-white text-slate-700 border-slate-300'
+                                  }`}
+                                >
+                                  🕒 Disco Orario {inlineParkingDraft.disc.enabled ? '✓' : ''}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setInlineParkingDraft(prev => ({
+                                    ...prev,
+                                    paid: { ...prev.paid, enabled: !prev.paid.enabled }
+                                  }))}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer ${
+                                    inlineParkingDraft.paid.enabled
+                                      ? 'bg-blue-600 text-white border-blue-700'
+                                      : 'bg-white text-slate-700 border-slate-300'
+                                  }`}
+                                >
+                                  🅿️ Strisce Blu (A Pagamento) {inlineParkingDraft.paid.enabled ? '✓' : ''}
+                                </button>
+                              </div>
+
+                              <ParkingRulesConfigPanel
+                                showDisc={inlineParkingDraft.disc.enabled}
+                                showPaid={inlineParkingDraft.paid.enabled}
+                                draft={inlineParkingDraft}
+                                onChangeDraft={setInlineParkingDraft}
+                              />
+
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setIsInlineParkingEditOpen(false)}
+                                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white text-slate-600 border border-slate-300 cursor-pointer"
+                                >
+                                  Annulla
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveInlineParkingRules(selectedStreet, inlineParkingDraft)}
+                                  className="px-4 py-1.5 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm cursor-pointer"
+                                >
+                                  💾 Salva Regole di Sosta
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Spaccato Categorie (13 Parametri)</h4>
@@ -9149,6 +10162,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               streetName={selectedStreet.name}
               currentUser={currentUser}
               initialData={editingReview}
+              existingParkingRules={selectedStreet.parkingRules || null}
+              onConfirmExistingParkingRules={() => handleConfirmParkingRules(selectedStreet)}
               defaultStreetSegment={prefilledStreetSegment}
               isPioneerCandidate={
                 isSelectedStreetNew ||
@@ -9848,8 +10863,418 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       );
     }
 
+    // --- PANNELLO CONFIGURAZIONE PROGRESSIVE DISCLOSURE: DISCO ORARIO & STRISCE BLU (STAGIONALI E MULTI-PERIODO) ---
+    function ParkingRulesConfigPanel({ showDisc, showPaid, draft, onChangeDraft }) {
+      if (!showDisc && !showPaid) return null;
+
+      const disc = draft?.disc || { enabled: false, maxLimit: '1h', daysValidity: 'WEEKDAYS' };
+      const paid = draft?.paid || {
+        enabled: false,
+        activeHours: '08:00 - 20:00',
+        hourlyRate: '',
+        periodType: 'YEAR_ROUND',
+        yearRoundDays: 'WEEKDAYS',
+        seasonalStartMonth: 6,
+        seasonalEndMonth: 9,
+        seasonalRegime: 'ALL_DAYS',
+        customPeriods: [
+          { fromDay: 1, fromMonth: 6, toDay: 30, toMonth: 6, regime: 'HOLIDAYS_PREHOLIDAYS' },
+          { fromDay: 1, fromMonth: 7, toDay: 31, toMonth: 8, regime: 'ALL_DAYS' },
+          { fromDay: 1, fromMonth: 9, toDay: 15, toMonth: 9, regime: 'HOLIDAYS_PREHOLIDAYS' },
+        ],
+      };
+
+      const updateDisc = (patch) => {
+        onChangeDraft(prev => ({
+          ...prev,
+          disc: { ...prev.disc, enabled: true, ...patch },
+        }));
+      };
+
+      const updatePaid = (patch) => {
+        onChangeDraft(prev => ({
+          ...prev,
+          paid: { ...prev.paid, enabled: true, ...patch },
+        }));
+      };
+
+      const handleUpdateCustomPeriod = (idx, patch) => {
+        const currentList = Array.isArray(paid.customPeriods) ? [...paid.customPeriods] : [];
+        currentList[idx] = { ...currentList[idx], ...patch };
+        updatePaid({ customPeriods: currentList });
+      };
+
+      const handleAddCustomPeriod = () => {
+        const currentList = Array.isArray(paid.customPeriods) ? [...paid.customPeriods] : [];
+        currentList.push({ fromDay: 1, fromMonth: 6, toDay: 30, toMonth: 9, regime: 'ALL_DAYS' });
+        updatePaid({ customPeriods: currentList });
+      };
+
+      const handleRemoveCustomPeriod = (idx) => {
+        const currentList = Array.isArray(paid.customPeriods) ? [...paid.customPeriods] : [];
+        if (currentList.length <= 1) return;
+        currentList.splice(idx, 1);
+        updatePaid({ customPeriods: currentList });
+      };
+
+      return (
+        <div className="space-y-3 pt-1 animate-fade-in">
+          {/* A) PANNELLO DISCO ORARIO (PARKING_DISC) */}
+          {showDisc && (
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-300 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
+                  <span>🕒</span>
+                  <span>Dettagli Disco Orario</span>
+                </p>
+                <span className="text-[10px] font-bold text-slate-500">Sosta regolamentata</span>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 block">Limite massimo di sosta:</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    ['30m', '30 min'],
+                    ['1h', '1 ora'],
+                    ['2h', '2 ore'],
+                    ['4h', '4 ore'],
+                  ].map(([val, label]) => {
+                    const active = disc.maxLimit === val;
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => updateDisc({ maxLimit: val })}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                          active
+                            ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 block">Validità giorni:</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    ['WEEKDAYS', '🛠️ Solo Giorni Feriali'],
+                    ['ALL_DAYS', '📅 Tutti i giorni (festivi inclusi)'],
+                  ].map(([val, label]) => {
+                    const active = disc.daysValidity === val;
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => updateDisc({ daysValidity: val })}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          active
+                            ? 'bg-slate-800 text-white border-slate-800 shadow-2xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* B) PANNELLO PARCHEGGIO A PAGAMENTO / STRISCE BLU (PAID) */}
+          {showPaid && (
+            <div className="p-3.5 rounded-2xl bg-blue-50/60 border border-blue-300 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="font-extrabold text-blue-950 text-xs flex items-center gap-1.5">
+                  <span>🅿️</span>
+                  <span>Dettagli Parcheggio a Pagamento (Strisce Blu)</span>
+                </p>
+                <span className="text-[10px] font-bold text-blue-700">Orari &amp; Stagionalità</span>
+              </div>
+
+              {/* Orario giornaliero attivo + tariffa opzionale */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-700 block">Orario giornaliero attivo:</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    '08:00 - 20:00',
+                    '09:00 - 13:00 / 15:30 - 20:00',
+                    '00:00 - 24:00',
+                  ].map((preset) => {
+                    const active = paid.activeHours === preset;
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => updatePaid({ activeHours: preset })}
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-all cursor-pointer ${
+                          active
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-blue-50'
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  <div className="sm:col-span-2 flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
+                    <span className="text-[11px] font-bold text-slate-500 shrink-0">🕒 Fascia:</span>
+                    <input
+                      type="text"
+                      value={paid.activeHours}
+                      onChange={(e) => updatePaid({ activeHours: e.target.value })}
+                      placeholder="Es. 08:00 - 20:00"
+                      className="w-full bg-transparent text-xs font-bold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
+                    <span className="text-[11px] font-bold text-slate-500 shrink-0">💶 Tariffa:</span>
+                    <input
+                      type="text"
+                      value={paid.hourlyRate || ''}
+                      onChange={(e) => updatePaid({ hourlyRate: e.target.value })}
+                      placeholder="1,20 €/h (opz.)"
+                      className="w-full bg-transparent text-xs font-bold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Periodo di Validità: Tutto l'Anno vs Solo Stagionale */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-700 block">Periodo di Validità:</label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => updatePaid({ periodType: 'YEAR_ROUND' })}
+                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                      paid.periodType === 'YEAR_ROUND'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    🔄 Tutto l&apos;Anno
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updatePaid({ periodType: 'SEASONAL' })}
+                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                      paid.periodType === 'SEASONAL'
+                        ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    ☀️ Solo Stagionale
+                  </button>
+                </div>
+              </div>
+
+              {paid.periodType === 'YEAR_ROUND' ? (
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 block">Giorni di validità annuale:</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      ['WEEKDAYS', 'Solo Feriali'],
+                      ['ALL_DAYS', 'Tutti i giorni (festivi inclusi)'],
+                    ].map(([val, label]) => {
+                      const active = paid.yearRoundDays === val;
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => updatePaid({ yearRoundDays: val })}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                            active
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3 pt-1 border-t border-blue-200/70">
+                  {/* Selettore Mesi attivi */}
+                  {paid.seasonalRegime !== 'CUSTOM' && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-white p-2 rounded-xl border border-slate-200">
+                        <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Mese Inizio:</label>
+                        <select
+                          value={paid.seasonalStartMonth || 6}
+                          onChange={(e) => updatePaid({ seasonalStartMonth: Number(e.target.value) })}
+                          className="w-full text-xs font-extrabold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                        >
+                          {MONTH_NAMES_IT.map((mName, idx) => (
+                            <option key={mName} value={idx + 1}>{mName}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="bg-white p-2 rounded-xl border border-slate-200">
+                        <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Mese Fine:</label>
+                        <select
+                          value={paid.seasonalEndMonth || 9}
+                          onChange={(e) => updatePaid({ seasonalEndMonth: Number(e.target.value) })}
+                          className="w-full text-xs font-extrabold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                        >
+                          {MONTH_NAMES_IT.map((mName, idx) => (
+                            <option key={mName} value={idx + 1}>{mName}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Regime di sosta stagionale */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-700 block">Regime di sosta stagionale:</label>
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {[
+                        ['ALL_DAYS', '📅 Tutti i giorni'],
+                        ['MISTO_MARE', '🏖️ Misto Mare (Festivi e prefestivi a Giugno e Settembre, tutti i giorni a Luglio-Agosto)'],
+                        ['HOLIDAYS_PREHOLIDAYS', '🎉 Solo Festivi e Prefestivi'],
+                        ['CUSTOM', '⚙️ Altro (Generatore di Periodi Personalizzati)'],
+                      ].map(([val, label]) => {
+                        const active = paid.seasonalRegime === val;
+                        return (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => updatePaid({ seasonalRegime: val })}
+                            className={`text-left px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                              active
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-blue-50/50'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Generatore di Periodi Personalizzati (quando seasonalRegime === 'CUSTOM') */}
+                  {paid.seasonalRegime === 'CUSTOM' && (
+                    <div className="space-y-2 bg-white p-3 rounded-2xl border border-blue-200">
+                      <p className="text-[11px] font-extrabold text-slate-800">
+                        ⚙️ Componi gli intervalli stagionali personalizzati:
+                      </p>
+                      <div className="space-y-2">
+                        {(paid.customPeriods || []).map((period, idx) => (
+                          <div key={idx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-1 text-[11px] font-bold text-slate-700">
+                                <span className="text-slate-500">Dal:</span>
+                                <select
+                                  value={period.fromDay || 1}
+                                  onChange={(e) => handleUpdateCustomPeriod(idx, { fromDay: Number(e.target.value) })}
+                                  className="bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-xs font-extrabold text-slate-800"
+                                >
+                                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                                    <option key={d} value={d}>{d}</option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={period.fromMonth || 6}
+                                  onChange={(e) => handleUpdateCustomPeriod(idx, { fromMonth: Number(e.target.value) })}
+                                  className="bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-xs font-extrabold text-slate-800"
+                                >
+                                  {MONTH_NAMES_IT.map((mName, mIdx) => (
+                                    <option key={mName} value={mIdx + 1}>{mName}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="flex items-center gap-1 text-[11px] font-bold text-slate-700">
+                                <span className="text-slate-500">Al:</span>
+                                <select
+                                  value={period.toDay || 30}
+                                  onChange={(e) => handleUpdateCustomPeriod(idx, { toDay: Number(e.target.value) })}
+                                  className="bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-xs font-extrabold text-slate-800"
+                                >
+                                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                                    <option key={d} value={d}>{d}</option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={period.toMonth || 9}
+                                  onChange={(e) => handleUpdateCustomPeriod(idx, { toMonth: Number(e.target.value) })}
+                                  className="bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-xs font-extrabold text-slate-800"
+                                >
+                                  {MONTH_NAMES_IT.map((mName, mIdx) => (
+                                    <option key={mName} value={mIdx + 1}>{mName}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {(paid.customPeriods || []).length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveCustomPeriod(idx)}
+                                  title="Rimuovi questo periodo"
+                                  className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-slate-500">Regime:</span>
+                              {[
+                                ['ALL_DAYS', 'Tutti i giorni'],
+                                ['HOLIDAYS_PREHOLIDAYS', 'Festivi e Prefestivi'],
+                              ].map(([rVal, rLabel]) => {
+                                const isSel = period.regime === rVal;
+                                return (
+                                  <button
+                                    key={rVal}
+                                    type="button"
+                                    onClick={() => handleUpdateCustomPeriod(idx, { regime: rVal })}
+                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer ${
+                                      isSel
+                                        ? 'bg-blue-600 text-white border-blue-600'
+                                        : 'bg-white text-slate-700 border-slate-200'
+                                    }`}
+                                  >
+                                    {rLabel}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleAddCustomPeriod}
+                        className="w-full py-2 rounded-xl border border-dashed border-blue-400 text-blue-700 hover:bg-blue-50 font-extrabold text-xs cursor-pointer transition-colors"
+                      >
+                        ➕ Aggiungi periodo
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     // --- SOTTORAPPRESENTAZIONE MODALE RECENSIONE INTERATTIVA ---
-    function ReviewModal({ streetName, currentUser, initialData, defaultStreetSegment = '', isPioneerCandidate, onClose, onSubmit, onDelete, onOpenPrivacy }) {
+    function ReviewModal({ streetName, currentUser, initialData, existingParkingRules = null, onConfirmExistingParkingRules = null, defaultStreetSegment = '', isPioneerCandidate, onClose, onSubmit, onDelete, onOpenPrivacy }) {
       const isEditing = Boolean(initialData);
 
       // Risoluzione iniziale tipologia strada (priorità: dato salvato in precedenza, altrimenti rilevamento da nome via)
@@ -9910,6 +11335,15 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
       const [ratings, setRatings] = useState(buildRatingsState);
       const [parkingTypes, setParkingTypes] = useState(initialData?.parkingTypes || ['FREE']);
+      const [parkingRulesDraft, setParkingRulesDraft] = useState(() =>
+        createDefaultParkingRulesDraft(initialData?.parkingRules || existingParkingRules || null)
+      );
+      const hasExistingActiveParkingRules = Boolean(
+        existingParkingRules &&
+        (existingParkingRules.disc?.enabled || existingParkingRules.paid?.enabled)
+      );
+      const [isEditingExistingParking, setIsEditingExistingParking] = useState(!hasExistingActiveParkingRules);
+      const [hasConfirmedExistingParking, setHasConfirmedExistingParking] = useState(false);
       const [hasCyclePath, setHasCyclePath] = useState(initialData?.hasCyclePath || false);
       const [amenities, setAmenities] = useState(initialData?.amenities || []);
       const [roadObstacles, setRoadObstacles] = useState(() => Array.isArray(initialData?.roadObstacles) ? initialData.roadObstacles : []);
@@ -10104,6 +11538,21 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             comment: finalComment,
             streetSegment: finalSegment,
             parkingTypes: includeTechnical ? parkingTypes : (isEditing ? (initialData?.parkingTypes || []) : []),
+            parkingRules: (
+              includeTechnical &&
+              (parkingTypes.includes('PARKING_DISC') || parkingTypes.includes('PAID')) &&
+              (!hasExistingActiveParkingRules || isEditingExistingParking)
+            ) ? {
+              disc: {
+                ...parkingRulesDraft.disc,
+                enabled: parkingTypes.includes('PARKING_DISC'),
+              },
+              paid: {
+                ...parkingRulesDraft.paid,
+                enabled: parkingTypes.includes('PAID'),
+              },
+            } : null,
+            confirmExistingParkingRules: Boolean(includeTechnical && hasConfirmedExistingParking),
             hasCyclePath: includeTechnical ? hasCyclePath : (isEditing ? Boolean(initialData?.hasCyclePath) : false),
             amenities: includeTechnical ? amenities : (isEditing ? (initialData?.amenities || []) : []),
             roadObstacles: includeTechnical ? roadObstacles : (isEditing ? (initialData?.roadObstacles || []) : []),
@@ -10518,6 +11967,50 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                           </button>
                         ))}
                       </div>
+
+                      {/* Box Regole di Sosta già presenti sulla via (Consenso Community Anti-Sovrascrittura) */}
+                      {hasExistingActiveParkingRules && !isEditingExistingParking && (
+                        <div className="mt-2 p-3 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-2 animate-fade-in">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-[11px] font-extrabold text-blue-950 leading-snug">
+                              🅿️ Regole di sosta attuali segnalate: <span className="font-semibold text-slate-800">{formatParkingRulesSummaryText(existingParkingRules)}</span>
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setHasConfirmedExistingParking(true);
+                                if (onConfirmExistingParkingRules) onConfirmExistingParkingRules();
+                              }}
+                              className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold border transition-all cursor-pointer ${
+                                hasConfirmedExistingParking
+                                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                                  : 'bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-300'
+                              }`}
+                            >
+                              {hasConfirmedExistingParking ? '✓ Confermata (+5 XP)' : '👍 Conferma (Ancora valida) (+5 XP)'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingExistingParking(true)}
+                              className="px-3 py-1.5 rounded-xl text-[11px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 transition-all cursor-pointer"
+                            >
+                              ✏️ Segnala modifica
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Progressive Disclosure: Pannelli Disco Orario & Strisce Blu */}
+                      {(!hasExistingActiveParkingRules || isEditingExistingParking) && (
+                        <ParkingRulesConfigPanel
+                          showDisc={parkingTypes.includes('PARKING_DISC')}
+                          showPaid={parkingTypes.includes('PAID')}
+                          draft={parkingRulesDraft}
+                          onChangeDraft={setParkingRulesDraft}
+                        />
+                      )}
                     </div>
 
                     {/* Tag Dotazioni Urbane / Servizi */}
