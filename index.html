@@ -218,6 +218,11 @@
       maxZoom: 19,
     };
 
+    // --- SOGLIA DI ZOOM PER VISIBILITÀ NOMI STRADE ---
+    // A livelli di zoom < 16 mostra solo le pillole compatte con voto/stella per evitare sovrapposizioni.
+    // A livelli di zoom >= 16 (o per la via selezionata) mostra l'etichetta con il nome della strada.
+    const ZOOM_THRESHOLD_STREET_NAMES = 16;
+
     // Verifica se le coordinate ricadono nel comprensorio storico della Riviera delle Palme (usato solo per inferenza comune locale)
     const isInsideRivieraBounds = (lat, lng) => {
       const nLat = Number(lat);
@@ -5607,11 +5612,22 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               googleMapRef.current = gmap;
               setMapEngine('google');
 
-              // Listener zoom_changed e idle per Marker Clustering dinamico e Viewport Rendering
+              // Listener zoom_changed e idle per Marker Clustering dinamico, Viewport Rendering e visibilità etichette
               const syncGoogleViewport = () => {
                 if (!isMounted || !gmap) return;
                 const z = gmap.getZoom();
-                if (typeof z === 'number') setMapZoom(z);
+                if (typeof z === 'number') {
+                  setMapZoom(z);
+                  const shouldShow = z >= ZOOM_THRESHOLD_STREET_NAMES;
+                  const labels = document.querySelectorAll('.street-marker-label');
+                  labels.forEach(el => {
+                    if (el.getAttribute('data-selected') === 'true') {
+                      el.style.display = 'block';
+                    } else {
+                      el.style.display = shouldShow ? 'block' : 'none';
+                    }
+                  });
+                }
                 const b = gmap.getBounds();
                 if (b) {
                   const ne = b.getNorthEast();
@@ -5860,10 +5876,20 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           leafletMapRef.current = lmap;
           setMapEngine('leaflet');
 
-          // Listener zoomend e moveend per Marker Clustering dinamico e Viewport Rendering su Leaflet
+          // Listener zoomend e moveend per Marker Clustering dinamico, Viewport Rendering e visibilità etichette su Leaflet
           const syncLeafletViewport = () => {
             if (!isMounted || !lmap) return;
-            setMapZoom(lmap.getZoom());
+            const z = lmap.getZoom();
+            setMapZoom(z);
+            const shouldShow = z >= ZOOM_THRESHOLD_STREET_NAMES;
+            const labels = document.querySelectorAll('.street-marker-label');
+            labels.forEach(el => {
+              if (el.getAttribute('data-selected') === 'true') {
+                el.style.display = 'block';
+              } else {
+                el.style.display = shouldShow ? 'block' : 'none';
+              }
+            });
             const b = lmap.getBounds();
             if (b) {
               setMapBounds({
@@ -5874,6 +5900,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               });
             }
           };
+          lmap.on('zoom', syncLeafletViewport);
           lmap.on('zoomend', syncLeafletViewport);
           lmap.on('moveend', syncLeafletViewport);
           syncLeafletViewport();
@@ -6161,6 +6188,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               const pinTextShadow = pinTextColor === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.45)' : 'none';
               const pinBorderColor = pinTextColor === '#FFFFFF' ? 'white' : 'rgba(15,23,42,0.35)';
 
+              // Visibilità condizionale del nome della via:
+              // Per Zoom < 16 viene mostrata solo la pillola del voto per evitare sovrapposizioni.
+              // Per Zoom >= 16 o se la via è selezionata (o cercata), il nome è visibile.
+              const showStreetLabel = (mapZoom >= ZOOM_THRESHOLD_STREET_NAMES) || isSelected;
+
               const Overlay = new window.google.maps.OverlayView();
               let div = null;
 
@@ -6173,7 +6205,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
                 div.innerHTML = `
                   <div style="display:flex;flex-direction:column;align-items:center;">
-                    <div style="
+                    <div class="street-marker-pill" style="
                       display:flex;align-items:center;gap:4px;
                       background:${pinBgColor};
                       color:${pinTextColor};padding:4px 10px;border-radius:9999px;
@@ -6186,7 +6218,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     ">
                       ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${street.avgOverallRating.toFixed(1)}</span>`}
                     </div>
-                    <div style="
+                    <div class="street-marker-label" data-selected="${isSelected ? 'true' : 'false'}" style="
                       background:rgba(255,255,255,0.95);
                       backdrop-filter:blur(4px);
                       padding:2px 8px;border-radius:6px;
@@ -6194,6 +6226,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                       white-space:nowrap;margin-top:3px;
                       box-shadow:0 2px 4px rgba(0,0,0,0.1);
                       border:1px solid #e2e8f0;
+                      display:${showStreetLabel ? 'block' : 'none'};
+                      pointer-events:none;
                     ">
                       ${street.name}
                     </div>
@@ -6205,6 +6239,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   setSelectedStreet(street);
                   setSheetSnap('half');
                   googleMapRef.current.panTo({ lat: street.latitude, lng: street.longitude });
+                  const myLabel = div.querySelector('.street-marker-label');
+                  if (myLabel) {
+                    myLabel.style.display = 'block';
+                    myLabel.setAttribute('data-selected', 'true');
+                  }
                 };
 
                 this.getPanes().overlayMouseTarget.appendChild(div);
@@ -6272,12 +6311,17 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               const pinTextShadow = pinTextColor === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.45)' : 'none';
               const pinBorderColor = pinTextColor === '#FFFFFF' ? 'white' : 'rgba(15,23,42,0.35)';
 
+              // Visibilità condizionale del nome della via:
+              // Per Zoom < 16 viene mostrata solo la pillola del voto per evitare sovrapposizioni.
+              // Per Zoom >= 16 o se la via è selezionata (o cercata), il nome è visibile.
+              const showStreetLabel = (mapZoom >= ZOOM_THRESHOLD_STREET_NAMES) || isSelected;
+
               const markerHtml = `
                 <div class="flex flex-col items-center cursor-pointer transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
-                  <div class="flex items-center gap-1 px-2.5 py-1 rounded-full font-extrabold text-xs shadow-lg border-2" style="background-color: ${pinBgColor}; color: ${pinTextColor}; border-color: ${pinBorderColor}; text-shadow: ${pinTextShadow};">
+                  <div class="street-marker-pill flex items-center gap-1 px-2.5 py-1 rounded-full font-extrabold text-xs shadow-lg border-2" style="background-color: ${pinBgColor}; color: ${pinTextColor}; border-color: ${pinBorderColor}; text-shadow: ${pinTextShadow};">
                     ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${street.avgOverallRating.toFixed(1)}</span>`}
                   </div>
-                  <div class="mt-1 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-md shadow-sm border border-slate-200 text-[10px] font-bold text-slate-800 text-center whitespace-nowrap">
+                  <div class="street-marker-label mt-1 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-md shadow-sm border border-slate-200 text-[10px] font-bold text-slate-800 text-center whitespace-nowrap pointer-events-none" data-selected="${isSelected ? 'true' : 'false'}" style="display: ${showStreetLabel ? 'block' : 'none'};">
                     ${street.name}
                   </div>
                 </div>
@@ -6295,6 +6339,14 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 setSelectedStreet(street);
                 setSheetSnap('half');
                 leafletMapRef.current.setView([street.latitude, street.longitude], 16, { animate: true });
+                const el = marker.getElement();
+                if (el) {
+                  const lbl = el.querySelector('.street-marker-label');
+                  if (lbl) {
+                    lbl.style.display = 'block';
+                    lbl.setAttribute('data-selected', 'true');
+                  }
+                }
               });
 
               layer.addLayer(marker);
