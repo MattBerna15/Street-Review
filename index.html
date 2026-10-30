@@ -6610,8 +6610,49 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 styles: [
                   { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
                   { featureType: 'road', elementType: 'geometry', stylers: [{ visibility: 'on' }] },
-                  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#0f172a' }] },
                   { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#cbd5e1' }] },
+                  // 1. Arterie principali (Viali, corsi e vie ad alto scorrimento)
+                  {
+                    featureType: 'road.arterial',
+                    elementType: 'labels.text.fill',
+                    stylers: [{ color: '#ffffff' }]
+                  },
+                  {
+                    featureType: 'road.arterial',
+                    elementType: 'labels.text.stroke',
+                    stylers: [
+                      { color: '#8a9ba8' }, // Contorno morbido coerente con l'asfalto
+                      { weight: 2.2 }
+                    ]
+                  },
+                  // 2. Strade statali / scorrimento veloce
+                  {
+                    featureType: 'road.highway',
+                    elementType: 'labels.text.fill',
+                    stylers: [{ color: '#ffffff' }]
+                  },
+                  {
+                    featureType: 'road.highway',
+                    elementType: 'labels.text.stroke',
+                    stylers: [
+                      { color: '#7b8d9b' },
+                      { weight: 2.5 }
+                    ]
+                  },
+                  // 3. Strade locali / residenziali (preserva il testo chiaro e discreto)
+                  {
+                    featureType: 'road.local',
+                    elementType: 'labels.text.fill',
+                    stylers: [{ color: '#758390' }]
+                  },
+                  {
+                    featureType: 'road.local',
+                    elementType: 'labels.text.stroke',
+                    stylers: [
+                      { color: '#ffffff' },
+                      { weight: 1.5 }
+                    ]
+                  },
                 ]
               });
 
