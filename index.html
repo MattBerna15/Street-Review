@@ -2137,22 +2137,38 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
     };
     window.evaluateLiveParkingStatus = evaluateLiveParkingStatus;
 
-    const createDefaultParkingRulesDraft = (existingRules = null) => {
+    const createDefaultParkingRulesDraft = (existingRules = null, existingParkingTypes = []) => {
       const rawDisc = existingRules?.disc || {};
       const rawPaid = existingRules?.paid || {};
+      const pTypes = Array.isArray(existingParkingTypes) ? existingParkingTypes : [];
+
+      let derivedRegime = existingRules?.parkingRegime;
+      if (!derivedRegime) {
+        if (pTypes.includes('PAID') && !pTypes.includes('FREE')) {
+          derivedRegime = 'PAID_ONLY';
+        } else if (pTypes.includes('PAID') && pTypes.includes('FREE')) {
+          derivedRegime = 'MIXED';
+        } else if (pTypes.includes('PAID') || Boolean(rawPaid.enabled)) {
+          derivedRegime = 'PAID_ONLY';
+        } else {
+          derivedRegime = 'FREE_ONLY';
+        }
+      }
+
       const defaultCustom = [
         { fromDay: 1, fromMonth: 6, toDay: 30, toMonth: 6, regime: 'HOLIDAYS_PREHOLIDAYS' },
         { fromDay: 1, fromMonth: 7, toDay: 31, toMonth: 8, regime: 'ALL_DAYS' },
         { fromDay: 1, fromMonth: 9, toDay: 15, toMonth: 9, regime: 'HOLIDAYS_PREHOLIDAYS' },
       ];
       return {
+        parkingRegime: derivedRegime,
         disc: {
           enabled: Boolean(rawDisc.enabled),
           maxLimit: rawDisc.maxLimit || '1h',
           daysValidity: rawDisc.daysValidity || 'WEEKDAYS',
         },
         paid: {
-          enabled: Boolean(rawPaid.enabled),
+          enabled: derivedRegime === 'FREE_ONLY' ? false : Boolean(rawPaid.enabled || derivedRegime === 'PAID_ONLY' || derivedRegime === 'MIXED'),
           activeHours: rawPaid.activeHours || '08:00 - 20:00',
           hourlyRate: rawPaid.hourlyRate || '',
           periodType: rawPaid.periodType || 'YEAR_ROUND',
@@ -2229,6 +2245,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
     const formatParkingRulesSummaryText = (parkingRules) => {
       if (!parkingRules) return '';
       const parts = [];
+      if (parkingRules.parkingRegime === 'PAID_ONLY') {
+        parts.push('Solo a Pagamento (100% Strisce Blu)');
+      } else if (parkingRules.parkingRegime === 'MIXED') {
+        parts.push('Misto (Strisce Blu + Tratti Gratuiti)');
+      } else if (parkingRules.parkingRegime === 'FREE_ONLY') {
+        parts.push('Interamente Gratuito');
+      }
       if (parkingRules.disc?.enabled) {
         parts.push(`Disco Orario max ${formatDiscLimitLabel(parkingRules.disc.maxLimit)} (${formatDiscDaysLabel(parkingRules.disc.daysValidity)})`);
       }
@@ -2256,6 +2279,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
     const areParkingRulesSchedulesEqual = (r1, r2) => {
       if (!r1 || !r2) return false;
       const norm = (r) => JSON.stringify({
+        parkingRegime: r.parkingRegime || (r.paid?.enabled ? 'PAID_ONLY' : 'FREE_ONLY'),
         disc: {
           enabled: Boolean(r.disc?.enabled),
           maxLimit: r.disc?.maxLimit || '1h',
@@ -2290,17 +2314,19 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const userLevel = Number(userMeta.level) || 1;
 
       const cleanSubmitted = createDefaultParkingRulesDraft(submittedDraft);
+      cleanSubmitted.parkingRegime = submittedDraft?.parkingRegime || (cleanSubmitted.paid?.enabled ? 'PAID_ONLY' : 'FREE_ONLY');
       cleanSubmitted.disc.enabled = Boolean(submittedDraft?.disc?.enabled);
-      cleanSubmitted.paid.enabled = Boolean(submittedDraft?.paid?.enabled);
+      cleanSubmitted.paid.enabled = cleanSubmitted.parkingRegime === 'FREE_ONLY' ? false : Boolean(submittedDraft?.paid?.enabled);
 
       const hasExistingActive = Boolean(
         existingRules &&
-        (existingRules.disc?.enabled || existingRules.paid?.enabled)
+        (existingRules.disc?.enabled || existingRules.paid?.enabled || existingRules.parkingRegime)
       );
 
       if (!hasExistingActive) {
         return {
           nextParkingRules: {
+            parkingRegime: cleanSubmitted.parkingRegime,
             disc: cleanSubmitted.disc,
             paid: cleanSubmitted.paid,
             confirmedByUids: uid ? [uid] : [],
@@ -2322,6 +2348,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         return {
           nextParkingRules: {
             ...existingRules,
+            parkingRegime: cleanSubmitted.parkingRegime || existingRules.parkingRegime || 'FREE_ONLY',
             confirmedByUids: nextUids,
             confirmCount: nextCount,
             lastVerifiedAt: nowIso,
@@ -2338,6 +2365,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       if (canOverwriteDirectly) {
         return {
           nextParkingRules: {
+            parkingRegime: cleanSubmitted.parkingRegime,
             disc: cleanSubmitted.disc,
             paid: cleanSubmitted.paid,
             confirmedByUids: uid ? [uid] : [],
@@ -2356,6 +2384,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         nextParkingRules: {
           ...existingRules,
           pendingProposal: {
+            parkingRegime: cleanSubmitted.parkingRegime,
             disc: cleanSubmitted.disc,
             paid: cleanSubmitted.paid,
             proposedByUid: uid,
@@ -2871,6 +2900,23 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         roadObstacles,
       } = computeStreetAggregatesFromReviews(safeReviews, streetName, fallbackMeta?.streetType);
 
+      // Sincronizzazione automatica del regime di sosta su parkingTypes
+      const resolvedParkingRules = fallbackMeta.parkingRules || sample?.parkingRules || null;
+      let finalParkingTypes = Array.from(parkingTypes);
+      const activeRegime = resolvedParkingRules?.parkingRegime || (
+        resolvedParkingRules?.paid?.enabled ? (finalParkingTypes.includes('FREE') ? 'MIXED' : 'PAID_ONLY') : null
+      );
+      if (activeRegime === 'PAID_ONLY') {
+        finalParkingTypes = finalParkingTypes.filter(t => t !== 'FREE');
+        if (!finalParkingTypes.includes('PAID')) finalParkingTypes.push('PAID');
+      } else if (activeRegime === 'FREE_ONLY') {
+        finalParkingTypes = finalParkingTypes.filter(t => t !== 'PAID');
+        if (!finalParkingTypes.includes('FREE')) finalParkingTypes.push('FREE');
+      } else if (activeRegime === 'MIXED') {
+        if (!finalParkingTypes.includes('PAID')) finalParkingTypes.push('PAID');
+        if (!finalParkingTypes.includes('FREE')) finalParkingTypes.push('FREE');
+      }
+
       // Determina l'autore Pioniere (prima recensione storica della via per timestamp createdAt)
       let pioneerRev = safeReviews[safeReviews.length - 1] || null;
       let minTime = pioneerRev ? parseReviewTimestampMs(pioneerRev) : Number.MAX_SAFE_INTEGER;
@@ -2903,8 +2949,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         ratingOverall,
         reviewCount: safeReviews.length,
         categoryAverages,
-        parkingTypes,
-        ...(fallbackMeta.parkingRules ? { parkingRules: fallbackMeta.parkingRules } : {}),
+        parkingTypes: finalParkingTypes,
+        ...(resolvedParkingRules ? { parkingRules: resolvedParkingRules } : {}),
         hasCyclePath,
         amenities,
         roadObstacles,
@@ -2951,6 +2997,22 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         ? Array.from(new Set([...rawParking, ...preservedReviews.flatMap(r => r.parkingTypes || [])]))
         : rawParking;
 
+      const resolvedParkingRules = docData.parkingRules || existingStreet?.parkingRules || null;
+      let finalCommonParking = mergedParking;
+      const activeRegime = resolvedParkingRules?.parkingRegime;
+      if (activeRegime === 'PAID_ONLY') {
+        finalCommonParking = finalCommonParking.filter(t => t !== 'FREE');
+        if (!finalCommonParking.includes('PAID')) finalCommonParking.push('PAID');
+      } else if (activeRegime === 'FREE_ONLY') {
+        finalCommonParking = finalCommonParking.filter(t => t !== 'PAID');
+        if (!finalCommonParking.includes('FREE')) finalCommonParking.push('FREE');
+      } else if (activeRegime === 'MIXED') {
+        if (!finalCommonParking.includes('PAID')) finalCommonParking.push('PAID');
+        if (!finalCommonParking.includes('FREE')) finalCommonParking.push('FREE');
+      } else if (!rawParking.includes('FREE') && rawParking.includes('PAID')) {
+        finalCommonParking = finalCommonParking.filter(t => t !== 'FREE');
+      }
+
       const rawAmenities = Array.isArray(docData.amenities) ? docData.amenities : [];
       const mergedAmenities = preservedReviews.length > 0
         ? Array.from(new Set([...rawAmenities, ...preservedReviews.flatMap(r => r.amenities || [])]))
@@ -2982,8 +3044,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         reviewsCount: Number(docData.reviewCount ?? docData.reviewsCount ?? preservedReviews.length ?? 0),
         avgOverallRating: Number(docData.ratingOverall ?? docData.avgOverallRating ?? 0),
         categoryAverages: defaultCats,
-        commonParkingTypes: mergedParking,
-        parkingRules: docData.parkingRules || existingStreet?.parkingRules || null,
+        commonParkingTypes: finalCommonParking,
+        parkingRules: resolvedParkingRules,
         hasCyclePath: mergedCyclePath,
         amenities: mergedAmenities,
         roadObstacles: mergedRoadObstacles,
@@ -5221,6 +5283,100 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         }
       };
 
+      const handleAdminRemoveParkingTag = async (streetObj, tagToRemove) => {
+        if (!streetObj) return;
+        const firebaseAuthUser = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser) || null;
+        const userIsAdmin = isCurrentUserAdmin(currentUser) || isAdmin || (firebaseAuthUser && isCurrentUserAdmin(firebaseAuthUser));
+        if (!userIsAdmin) {
+          alert("Operazione consentita solo agli amministratori.");
+          return;
+        }
+
+        const streetKey = streetObj.streetKey || streetObj.id;
+        const nowIso = new Date().toISOString();
+        const prevTypes = Array.isArray(streetObj.commonParkingTypes) ? streetObj.commonParkingTypes : [];
+        const nextTypes = prevTypes.filter(t => t !== tagToRemove);
+
+        const prevRules = streetObj.parkingRules || {};
+        let nextRules = { ...prevRules };
+
+        if (tagToRemove === 'FREE') {
+          if (nextTypes.includes('PAID') || prevRules.paid?.enabled) {
+            nextRules = {
+              ...nextRules,
+              parkingRegime: 'PAID_ONLY',
+              paid: { ...(nextRules.paid || {}), enabled: true },
+            };
+          }
+        } else if (tagToRemove === 'PAID') {
+          nextRules = {
+            ...nextRules,
+            parkingRegime: nextTypes.includes('FREE') ? 'FREE_ONLY' : (nextRules.parkingRegime === 'PAID_ONLY' ? 'FREE_ONLY' : nextRules.parkingRegime),
+            paid: { ...(nextRules.paid || {}), enabled: false },
+          };
+        } else if (tagToRemove === 'PARKING_DISC') {
+          nextRules = {
+            ...nextRules,
+            disc: { ...(nextRules.disc || {}), enabled: false },
+          };
+        }
+
+        const applyOptimistic = (s) => {
+          if ((s.streetKey && s.streetKey === streetKey) || isSameStreet(s, streetObj)) {
+            const cleanReviews = (s.reviews || []).map(r => {
+              if (Array.isArray(r.parkingTypes) && r.parkingTypes.includes(tagToRemove)) {
+                return { ...r, parkingTypes: r.parkingTypes.filter(t => t !== tagToRemove) };
+              }
+              return r;
+            });
+            return {
+              ...s,
+              commonParkingTypes: nextTypes,
+              parkingRules: nextRules,
+              reviews: cleanReviews,
+            };
+          }
+          return s;
+        };
+
+        setStreets(prev => {
+          const next = prev.map(applyOptimistic);
+          streetsRef.current = next;
+          return next;
+        });
+        setSelectedStreet(prev => (prev ? applyOptimistic(prev) : prev));
+
+        if (window.db) {
+          try {
+            await window.db.collection('streets').doc(streetKey).set({
+              parkingTypes: nextTypes,
+              parkingRules: nextRules,
+              updatedAt: nowIso,
+            }, { merge: true });
+            console.log(`[Admin] Rimosso tag '${tagToRemove}' per ${streetKey}`);
+
+            // Rimuovi il tag anche dalle recensioni storiche salvate su Firestore per evitare che riappaia se ricalcolato
+            const revSnap = await window.db.collection('reviews').where('streetKey', '==', streetKey).get();
+            const batch = window.db.batch();
+            let batchCount = 0;
+            revSnap.docs.forEach(docSnap => {
+              const rData = docSnap.data();
+              if (Array.isArray(rData.parkingTypes) && rData.parkingTypes.includes(tagToRemove)) {
+                const cleaned = rData.parkingTypes.filter(t => t !== tagToRemove);
+                batch.update(docSnap.ref, { parkingTypes: cleaned });
+                batchCount++;
+              }
+            });
+            if (batchCount > 0) {
+              await batch.commit();
+              console.log(`[Admin] Rimossi tag '${tagToRemove}' da ${batchCount} recensioni di ${streetKey}`);
+            }
+          } catch (err) {
+            console.warn(`[Admin] Errore rimozione tag '${tagToRemove}':`, err);
+          }
+        }
+      };
+
       const handleSaveInlineParkingRules = async (streetObj, draftRules) => {
         if (!streetObj || !draftRules) return;
         const firebaseAuthUser = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser) || null;
@@ -5231,7 +5387,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         }
 
         const userName = (firebaseAuthUser && firebaseAuthUser.displayName) || (currentUser ? currentUser.name : 'Cittadino Esploratore');
-        const userIsAdmin = isCurrentUserAdmin(currentUser) || isAdmin;
+        const userIsAdmin = isCurrentUserAdmin(currentUser) || isAdmin || (firebaseAuthUser && isCurrentUserAdmin(firebaseAuthUser));
         const userLevel = gamification.currentUserProfile?.levelInfo?.level || 1;
         const streetKey = streetObj.streetKey || streetObj.id;
         const nowIso = new Date().toISOString();
@@ -5250,7 +5406,25 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         const prevParkingTypes = Array.isArray(streetObj.commonParkingTypes) ? streetObj.commonParkingTypes : [];
         const updatedParkingTypesSet = new Set(prevParkingTypes);
         if (draftRules.disc?.enabled) updatedParkingTypesSet.add('PARKING_DISC');
-        if (draftRules.paid?.enabled) updatedParkingTypesSet.add('PAID');
+        else if (draftRules.disc && draftRules.disc.enabled === false) updatedParkingTypesSet.delete('PARKING_DISC');
+
+        const activeRegime = nextParkingRules.parkingRegime || draftRules.parkingRegime || (
+          draftRules.paid?.enabled ? (updatedParkingTypesSet.has('FREE') ? 'MIXED' : 'PAID_ONLY') : 'FREE_ONLY'
+        );
+
+        if (activeRegime === 'PAID_ONLY') {
+          updatedParkingTypesSet.delete('FREE');
+          updatedParkingTypesSet.add('PAID');
+        } else if (activeRegime === 'FREE_ONLY') {
+          updatedParkingTypesSet.delete('PAID');
+          updatedParkingTypesSet.add('FREE');
+        } else if (activeRegime === 'MIXED') {
+          updatedParkingTypesSet.add('PAID');
+          updatedParkingTypesSet.add('FREE');
+        } else {
+          if (draftRules.paid?.enabled) updatedParkingTypesSet.add('PAID');
+        }
+
         const nextParkingTypes = Array.from(updatedParkingTypesSet);
 
         const applyOptimistic = (s) => {
@@ -5279,6 +5453,23 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               parkingRules: nextParkingRules,
               updatedAt: nowIso,
             }, { merge: true });
+
+            if (activeRegime === 'PAID_ONLY') {
+              const revSnap = await window.db.collection('reviews').where('streetKey', '==', streetKey).get();
+              const batch = window.db.batch();
+              let bCount = 0;
+              revSnap.docs.forEach(docSnap => {
+                const rData = docSnap.data();
+                if (Array.isArray(rData.parkingTypes) && rData.parkingTypes.includes('FREE')) {
+                  const cleaned = rData.parkingTypes.filter(t => t !== 'FREE');
+                  batch.update(docSnap.ref, { parkingTypes: cleaned });
+                  bCount++;
+                }
+              });
+              if (bCount > 0) {
+                await batch.commit();
+              }
+            }
           } catch (err) {
             console.warn('[ParkingConsensus] Errore salvataggio orari di sosta:', err);
           }
@@ -5299,10 +5490,12 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         const userIsAdmin = isCurrentUserAdmin(currentUser) || isAdmin;
 
         let resolvedRules;
+        let nextParkingTypes = Array.isArray(streetObj.commonParkingTypes) ? streetObj.commonParkingTypes : [];
         if (approve) {
           const confirmUids = Array.from(new Set([proposal.proposedByUid, uid].filter(Boolean).map(String)));
           resolvedRules = {
             ...streetObj.parkingRules,
+            parkingRegime: proposal.parkingRegime || streetObj.parkingRules.parkingRegime || (proposal.paid?.enabled ? 'PAID_ONLY' : 'FREE_ONLY'),
             disc: proposal.disc || streetObj.parkingRules.disc,
             paid: proposal.paid || streetObj.parkingRules.paid,
             confirmedByUids: confirmUids,
@@ -5313,6 +5506,17 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             updatedByName: proposal.proposedByName || 'Community',
             pendingProposal: null,
           };
+          const reg = resolvedRules.parkingRegime;
+          if (reg === 'PAID_ONLY') {
+            nextParkingTypes = nextParkingTypes.filter(t => t !== 'FREE');
+            if (!nextParkingTypes.includes('PAID')) nextParkingTypes.push('PAID');
+          } else if (reg === 'FREE_ONLY') {
+            nextParkingTypes = nextParkingTypes.filter(t => t !== 'PAID');
+            if (!nextParkingTypes.includes('FREE')) nextParkingTypes.push('FREE');
+          } else if (reg === 'MIXED') {
+            if (!nextParkingTypes.includes('PAID')) nextParkingTypes.push('PAID');
+            if (!nextParkingTypes.includes('FREE')) nextParkingTypes.push('FREE');
+          }
         } else {
           resolvedRules = {
             ...streetObj.parkingRules,
@@ -5322,7 +5526,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
         const applyOptimistic = (s) => {
           if ((s.streetKey && s.streetKey === streetKey) || isSameStreet(s, streetObj)) {
-            return { ...s, parkingRules: resolvedRules };
+            return {
+              ...s,
+              commonParkingTypes: nextParkingTypes,
+              parkingRules: resolvedRules,
+            };
           }
           return s;
         };
@@ -5337,6 +5545,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         if (window.db) {
           try {
             await window.db.collection('streets').doc(streetKey).set({
+              parkingTypes: nextParkingTypes,
               parkingRules: resolvedRules,
               updatedAt: nowIso,
             }, { merge: true });
@@ -7476,6 +7685,19 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             roadObstacles: mergedObstacles,
           } = computeStreetAggregatesFromReviews(updatedReviews, canonicalStreetName, reviewPayload.streetType || s.streetType);
 
+          let finalMergedParking = Array.from(mergedParking);
+          const activeReg = resolvedNextParkingRules?.parkingRegime;
+          if (activeReg === 'PAID_ONLY') {
+            finalMergedParking = finalMergedParking.filter(t => t !== 'FREE');
+            if (!finalMergedParking.includes('PAID')) finalMergedParking.push('PAID');
+          } else if (activeReg === 'FREE_ONLY') {
+            finalMergedParking = finalMergedParking.filter(t => t !== 'PAID');
+            if (!finalMergedParking.includes('FREE')) finalMergedParking.push('FREE');
+          } else if (activeReg === 'MIXED') {
+            if (!finalMergedParking.includes('PAID')) finalMergedParking.push('PAID');
+            if (!finalMergedParking.includes('FREE')) finalMergedParking.push('FREE');
+          }
+
           const optimisticGuardian = computeStreetGuardian(updatedReviews, resolveAuthorLevelHelper);
 
           return {
@@ -7489,7 +7711,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             reviewsCount: newCount,
             avgOverallRating: newAvg,
             categoryAverages: updatedCat,
-            commonParkingTypes: mergedParking,
+            commonParkingTypes: finalMergedParking,
             parkingRules: resolvedNextParkingRules || s.parkingRules || null,
             hasCyclePath: mergedCycle,
             amenities: mergedAmenities,
@@ -9460,6 +9682,19 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                           <span key={t} className={`text-xs font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${colorCls}`}>
                             <span>{icon}</span>
                             <span>{label}</span>
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAdminRemoveParkingTag(selectedStreet, t);
+                                }}
+                                title={`Rimuovi tag "${label}" da questa via (Admin)`}
+                                className="ml-1 w-4 h-4 rounded-full bg-black/10 hover:bg-rose-600 hover:text-white flex items-center justify-center text-[10px] font-black leading-none cursor-pointer transition-colors"
+                              >
+                                ✕
+                              </button>
+                            )}
                           </span>
                         );
                       })}
@@ -9635,7 +9870,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setInlineParkingDraft(createDefaultParkingRulesDraft(pRules));
+                                    setInlineParkingDraft(createDefaultParkingRulesDraft(pRules, selectedStreet.commonParkingTypes || []));
                                     setIsInlineParkingEditOpen(!isInlineParkingEditOpen);
                                   }}
                                   className="px-3 py-1.5 rounded-xl text-[11px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 transition-all cursor-pointer flex items-center gap-1"
@@ -9664,7 +9899,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const initDraft = createDefaultParkingRulesDraft(null);
+                                  const initDraft = createDefaultParkingRulesDraft(null, pTypes);
                                   initDraft.disc.enabled = pTypes.includes('PARKING_DISC');
                                   initDraft.paid.enabled = pTypes.includes('PAID') || !pTypes.includes('PARKING_DISC');
                                   setInlineParkingDraft(initDraft);
@@ -10163,6 +10398,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               currentUser={currentUser}
               initialData={editingReview}
               existingParkingRules={selectedStreet.parkingRules || null}
+              existingParkingTypes={selectedStreet.commonParkingTypes || []}
               onConfirmExistingParkingRules={() => handleConfirmParkingRules(selectedStreet)}
               defaultStreetSegment={prefilledStreetSegment}
               isPioneerCandidate={
@@ -10863,10 +11099,15 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       );
     }
 
-    // --- PANNELLO CONFIGURAZIONE PROGRESSIVE DISCLOSURE: DISCO ORARIO & STRISCE BLU (STAGIONALI E MULTI-PERIODO) ---
-    function ParkingRulesConfigPanel({ showDisc, showPaid, draft, onChangeDraft }) {
-      if (!showDisc && !showPaid) return null;
-
+    // --- PANNELLO CONFIGURAZIONE PROGRESSIVE DISCLOSURE: REGIME DI SOSTA, DISCO ORARIO & STRISCE BLU ---
+    function ParkingRulesConfigPanel({
+      showDisc = false,
+      showPaid = false,
+      draft,
+      onChangeDraft,
+      parkingTypes = null,
+      onUpdateParkingTypes = null,
+    }) {
       const disc = draft?.disc || { enabled: false, maxLimit: '1h', daysValidity: 'WEEKDAYS' };
       const paid = draft?.paid || {
         enabled: false,
@@ -10883,6 +11124,52 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           { fromDay: 1, fromMonth: 9, toDay: 15, toMonth: 9, regime: 'HOLIDAYS_PREHOLIDAYS' },
         ],
       };
+
+      const currentRegime = draft?.parkingRegime || (
+        draft?.paid?.enabled
+          ? (parkingTypes?.includes('FREE') ? 'MIXED' : 'PAID_ONLY')
+          : 'FREE_ONLY'
+      );
+
+      const handleSelectRegime = (regime) => {
+        if (regime === 'PAID_ONLY') {
+          onChangeDraft(prev => ({
+            ...prev,
+            parkingRegime: 'PAID_ONLY',
+            paid: { ...(prev.paid || {}), enabled: true },
+          }));
+          if (onUpdateParkingTypes) {
+            onUpdateParkingTypes(prev => Array.from(new Set(prev.filter(t => t !== 'FREE').concat('PAID'))));
+          }
+        } else if (regime === 'MIXED') {
+          onChangeDraft(prev => ({
+            ...prev,
+            parkingRegime: 'MIXED',
+            paid: { ...(prev.paid || {}), enabled: true },
+          }));
+          if (onUpdateParkingTypes) {
+            onUpdateParkingTypes(prev => Array.from(new Set([...prev, 'PAID', 'FREE'])));
+          }
+        } else if (regime === 'FREE_ONLY') {
+          onChangeDraft(prev => ({
+            ...prev,
+            parkingRegime: 'FREE_ONLY',
+            paid: { ...(prev.paid || {}), enabled: false },
+          }));
+          if (onUpdateParkingTypes) {
+            onUpdateParkingTypes(prev => Array.from(new Set(prev.filter(t => t !== 'PAID').concat('FREE'))));
+          }
+        }
+      };
+
+      const isPaidSectionActive = Boolean(
+        showPaid ||
+        currentRegime === 'PAID_ONLY' ||
+        currentRegime === 'MIXED' ||
+        paid.enabled
+      );
+
+      const isDiscSectionActive = Boolean(showDisc || disc.enabled);
 
       const updateDisc = (patch) => {
         onChangeDraft(prev => ({
@@ -10919,8 +11206,58 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
       return (
         <div className="space-y-3 pt-1 animate-fade-in">
+          {/* SELETTORE REGIME DI SOSTA COMPLESSIVO */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-300 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
+                <span>🏛️</span>
+                <span>Regime complessivo della sosta</span>
+              </p>
+              <span className="text-[10px] font-bold text-slate-500">Regolamentazione strada</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleSelectRegime('PAID_ONLY')}
+                className={`px-2.5 py-2 rounded-xl text-xs font-extrabold border transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center ${
+                  currentRegime === 'PAID_ONLY'
+                    ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span>🅿️</span>
+                <span>Solo a Pagamento (100% Strisce Blu)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectRegime('MIXED')}
+                className={`px-2.5 py-2 rounded-xl text-xs font-extrabold border transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center ${
+                  currentRegime === 'MIXED'
+                    ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span>🔀</span>
+                <span>Misto (Strisce Blu + Tratti Gratuiti/Bianche)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectRegime('FREE_ONLY')}
+                className={`px-2.5 py-2 rounded-xl text-xs font-extrabold border transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center ${
+                  currentRegime === 'FREE_ONLY'
+                    ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span>🟢</span>
+                <span>Interamente Gratuito</span>
+              </button>
+            </div>
+          </div>
+
           {/* A) PANNELLO DISCO ORARIO (PARKING_DISC) */}
-          {showDisc && (
+          {isDiscSectionActive && (
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-300 space-y-2.5">
               <div className="flex items-center justify-between">
                 <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
@@ -10987,7 +11324,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           )}
 
           {/* B) PANNELLO PARCHEGGIO A PAGAMENTO / STRISCE BLU (PAID) */}
-          {showPaid && (
+          {isPaidSectionActive && currentRegime !== 'FREE_ONLY' && (
             <div className="p-3.5 rounded-2xl bg-blue-50/60 border border-blue-300 space-y-3">
               <div className="flex items-center justify-between">
                 <p className="font-extrabold text-blue-950 text-xs flex items-center gap-1.5">
@@ -11274,7 +11611,20 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
     }
 
     // --- SOTTORAPPRESENTAZIONE MODALE RECENSIONE INTERATTIVA ---
-    function ReviewModal({ streetName, currentUser, initialData, existingParkingRules = null, onConfirmExistingParkingRules = null, defaultStreetSegment = '', isPioneerCandidate, onClose, onSubmit, onDelete, onOpenPrivacy }) {
+    function ReviewModal({
+      streetName,
+      currentUser,
+      initialData,
+      existingParkingRules = null,
+      existingParkingTypes = [],
+      onConfirmExistingParkingRules = null,
+      defaultStreetSegment = '',
+      isPioneerCandidate,
+      onClose,
+      onSubmit,
+      onDelete,
+      onOpenPrivacy,
+    }) {
       const isEditing = Boolean(initialData);
 
       // Risoluzione iniziale tipologia strada (priorità: dato salvato in precedenza, altrimenti rilevamento da nome via)
@@ -11334,9 +11684,12 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       };
 
       const [ratings, setRatings] = useState(buildRatingsState);
-      const [parkingTypes, setParkingTypes] = useState(initialData?.parkingTypes || ['FREE']);
+      const [parkingTypes, setParkingTypes] = useState(initialData?.parkingTypes || (existingParkingTypes.length > 0 ? existingParkingTypes : ['FREE']));
       const [parkingRulesDraft, setParkingRulesDraft] = useState(() =>
-        createDefaultParkingRulesDraft(initialData?.parkingRules || existingParkingRules || null)
+        createDefaultParkingRulesDraft(
+          initialData?.parkingRules || existingParkingRules || null,
+          initialData?.parkingTypes || existingParkingTypes || ['FREE']
+        )
       );
       const hasExistingActiveParkingRules = Boolean(
         existingParkingRules &&
@@ -11388,7 +11741,12 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           });
           setHasTouchedTechnical(hadTechnical);
           setIsAccordionOpen(hadTechnical);
-          setParkingTypes(initialData.parkingTypes || []);
+          const loadedParking = initialData.parkingTypes || [];
+          setParkingTypes(loadedParking);
+          setParkingRulesDraft(createDefaultParkingRulesDraft(
+            initialData.parkingRules || existingParkingRules || null,
+            loadedParking.length > 0 ? loadedParking : existingParkingTypes
+          ));
           setHasCyclePath(initialData.hasCyclePath || false);
           setAmenities(initialData.amenities || []);
           setRoadObstacles(Array.isArray(initialData.roadObstacles) ? initialData.roadObstacles : []);
@@ -11401,7 +11759,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           setRatings(buildRatingsState());
           setHasTouchedTechnical(false);
           setIsAccordionOpen(false);
-          setParkingTypes(['FREE']);
+          const defaultTypes = existingParkingTypes.length > 0 ? existingParkingTypes : ['FREE'];
+          setParkingTypes(defaultTypes);
+          setParkingRulesDraft(createDefaultParkingRulesDraft(existingParkingRules || null, defaultTypes));
           setHasCyclePath(false);
           setAmenities([]);
           setRoadObstacles([]);
@@ -11434,7 +11794,38 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       };
 
       const toggleParking = (type) => {
-        setParkingTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
+        setParkingTypes(prev => {
+          const willHave = !prev.includes(type);
+          const next = willHave ? [...prev, type] : prev.filter(t => t !== type);
+          if (type === 'PAID') {
+            if (willHave) {
+              setParkingRulesDraft(d => ({
+                ...d,
+                parkingRegime: next.includes('FREE') ? 'MIXED' : 'PAID_ONLY',
+                paid: { ...(d.paid || {}), enabled: true }
+              }));
+            } else {
+              setParkingRulesDraft(d => ({
+                ...d,
+                parkingRegime: 'FREE_ONLY',
+                paid: { ...(d.paid || {}), enabled: false }
+              }));
+            }
+          } else if (type === 'FREE') {
+            if (willHave) {
+              setParkingRulesDraft(d => ({
+                ...d,
+                parkingRegime: next.includes('PAID') ? 'MIXED' : 'FREE_ONLY'
+              }));
+            } else {
+              setParkingRulesDraft(d => ({
+                ...d,
+                parkingRegime: next.includes('PAID') ? 'PAID_ONLY' : d.parkingRegime
+              }));
+            }
+          }
+          return next;
+        });
       };
 
       const toggleAmenity = (val) => {
@@ -11537,19 +11928,36 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             includeTechnical,
             comment: finalComment,
             streetSegment: finalSegment,
-            parkingTypes: includeTechnical ? parkingTypes : (isEditing ? (initialData?.parkingTypes || []) : []),
+            parkingTypes: (() => {
+              let pts = includeTechnical ? parkingTypes : (isEditing ? (initialData?.parkingTypes || []) : []);
+              const reg = parkingRulesDraft.parkingRegime || (
+                parkingRulesDraft.paid?.enabled ? (pts.includes('FREE') ? 'MIXED' : 'PAID_ONLY') : 'FREE_ONLY'
+              );
+              if (reg === 'PAID_ONLY') {
+                pts = pts.filter(t => t !== 'FREE');
+                if (!pts.includes('PAID')) pts.push('PAID');
+              } else if (reg === 'FREE_ONLY') {
+                pts = pts.filter(t => t !== 'PAID');
+                if (!pts.includes('FREE')) pts.push('FREE');
+              } else if (reg === 'MIXED') {
+                if (!pts.includes('PAID')) pts.push('PAID');
+                if (!pts.includes('FREE')) pts.push('FREE');
+              }
+              return pts;
+            })(),
             parkingRules: (
               includeTechnical &&
-              (parkingTypes.includes('PARKING_DISC') || parkingTypes.includes('PAID')) &&
+              (parkingTypes.includes('PARKING_DISC') || parkingTypes.includes('PAID') || parkingRulesDraft.parkingRegime) &&
               (!hasExistingActiveParkingRules || isEditingExistingParking)
             ) ? {
+              parkingRegime: parkingRulesDraft.parkingRegime || (parkingRulesDraft.paid?.enabled ? (parkingTypes.includes('FREE') ? 'MIXED' : 'PAID_ONLY') : 'FREE_ONLY'),
               disc: {
                 ...parkingRulesDraft.disc,
                 enabled: parkingTypes.includes('PARKING_DISC'),
               },
               paid: {
                 ...parkingRulesDraft.paid,
-                enabled: parkingTypes.includes('PAID'),
+                enabled: parkingRulesDraft.parkingRegime === 'FREE_ONLY' ? false : (parkingTypes.includes('PAID') || parkingRulesDraft.parkingRegime === 'PAID_ONLY' || parkingRulesDraft.parkingRegime === 'MIXED'),
               },
             } : null,
             confirmExistingParkingRules: Boolean(includeTechnical && hasConfirmedExistingParking),
@@ -12002,13 +12410,15 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                         </div>
                       )}
 
-                      {/* Progressive Disclosure: Pannelli Disco Orario & Strisce Blu */}
+                      {/* Progressive Disclosure: Pannelli Disco Orario & Strisce Blu & Regime */}
                       {(!hasExistingActiveParkingRules || isEditingExistingParking) && (
                         <ParkingRulesConfigPanel
                           showDisc={parkingTypes.includes('PARKING_DISC')}
-                          showPaid={parkingTypes.includes('PAID')}
+                          showPaid={parkingTypes.includes('PAID') || parkingRulesDraft.parkingRegime === 'PAID_ONLY' || parkingRulesDraft.parkingRegime === 'MIXED'}
                           draft={parkingRulesDraft}
                           onChangeDraft={setParkingRulesDraft}
+                          parkingTypes={parkingTypes}
+                          onUpdateParkingTypes={setParkingTypes}
                         />
                       )}
                     </div>
