@@ -123,6 +123,8 @@
     .animate-slide-up { animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
     .custom-street-marker { background: transparent; border: none; }
+    .custom-street-dot { background: transparent; border: none; }
+    .street-marker-label { display: none !important; }
     /* Adattamento contenitore suggerimenti su mobile */
     .pac-container {
       width: calc(100vw - 32px) !important;
@@ -525,6 +527,95 @@
         'acquaviva-picena': '63075',
       };
       return map[cityKey] || '';
+    };
+
+    const PROVINCE_TO_REGION = {
+      // Marche
+      'AP': 'Marche', 'FM': 'Marche', 'MC': 'Marche', 'AN': 'Marche', 'PU': 'Marche',
+      // Abruzzo
+      'TE': 'Abruzzo', 'PE': 'Abruzzo', 'AQ': 'Abruzzo', 'CH': 'Abruzzo',
+      // Lombardia
+      'MI': 'Lombardia', 'BG': 'Lombardia', 'BS': 'Lombardia', 'CO': 'Lombardia', 'CR': 'Lombardia',
+      'LC': 'Lombardia', 'LO': 'Lombardia', 'MN': 'Lombardia', 'MB': 'Lombardia', 'PV': 'Lombardia',
+      'SO': 'Lombardia', 'VA': 'Lombardia',
+      // Lazio
+      'RM': 'Lazio', 'FR': 'Lazio', 'LT': 'Lazio', 'RI': 'Lazio', 'VT': 'Lazio',
+      // Emilia-Romagna
+      'BO': 'Emilia-Romagna', 'FE': 'Emilia-Romagna', 'FC': 'Emilia-Romagna', 'FO': 'Emilia-Romagna',
+      'MO': 'Emilia-Romagna', 'PR': 'Emilia-Romagna', 'PC': 'Emilia-Romagna', 'RA': 'Emilia-Romagna',
+      'RE': 'Emilia-Romagna', 'RN': 'Emilia-Romagna',
+      // Toscana
+      'FI': 'Toscana', 'AR': 'Toscana', 'GR': 'Toscana', 'LI': 'Toscana', 'LU': 'Toscana',
+      'MS': 'Toscana', 'PI': 'Toscana', 'PT': 'Toscana', 'PO': 'Toscana', 'SI': 'Toscana',
+      // Veneto
+      'VE': 'Veneto', 'BL': 'Veneto', 'PD': 'Veneto', 'RO': 'Veneto', 'TV': 'Veneto',
+      'VR': 'Veneto', 'VI': 'Veneto',
+      // Piemonte
+      'TO': 'Piemonte', 'AL': 'Piemonte', 'AT': 'Piemonte', 'BI': 'Piemonte', 'CN': 'Piemonte',
+      'NO': 'Piemonte', 'VB': 'Piemonte', 'VC': 'Piemonte',
+      // Campania
+      'NA': 'Campania', 'AV': 'Campania', 'BN': 'Campania', 'CE': 'Campania', 'SA': 'Campania',
+      // Puglia
+      'BA': 'Puglia', 'BT': 'Puglia', 'BR': 'Puglia', 'FG': 'Puglia', 'LE': 'Puglia', 'TA': 'Puglia',
+      // Sicilia
+      'PA': 'Sicilia', 'AG': 'Sicilia', 'CL': 'Sicilia', 'CT': 'Sicilia', 'EN': 'Sicilia',
+      'ME': 'Sicilia', 'RG': 'Sicilia', 'SR': 'Sicilia', 'TP': 'Sicilia',
+      // Liguria
+      'GE': 'Liguria', 'IM': 'Liguria', 'SP': 'Liguria', 'SV': 'Liguria',
+      // Calabria
+      'CZ': 'Calabria', 'CS': 'Calabria', 'KR': 'Calabria', 'RC': 'Calabria', 'VV': 'Calabria',
+      // Sardegna
+      'CA': 'Sardegna', 'NU': 'Sardegna', 'OR': 'Sardegna', 'SS': 'Sardegna', 'SU': 'Sardegna',
+      // Friuli-Venezia Giulia
+      'TS': 'Friuli-Venezia Giulia', 'GO': 'Friuli-Venezia Giulia', 'PN': 'Friuli-Venezia Giulia', 'UD': 'Friuli-Venezia Giulia',
+      // Trentino-Alto Adige
+      'TN': 'Trentino-Alto Adige', 'BZ': 'Trentino-Alto Adige',
+      // Umbria
+      'PG': 'Umbria', 'TR': 'Umbria',
+      // Basilicata
+      'PZ': 'Basilicata', 'MT': 'Basilicata',
+      // Molise
+      'CB': 'Molise', 'IS': 'Molise',
+      // Valle d'Aosta
+      'AO': "Valle d'Aosta",
+    };
+
+    const PROVINCE_FULL_NAMES = {
+      'AP': 'Ascoli Piceno', 'FM': 'Fermo', 'MC': 'Macerata', 'AN': 'Ancona', 'PU': 'Pesaro e Urbino',
+      'TE': 'Teramo', 'PE': 'Pescara', 'AQ': "L'Aquila", 'CH': 'Chieti',
+      'MI': 'Milano', 'BG': 'Bergamo', 'BS': 'Brescia', 'CO': 'Como', 'CR': 'Cremona', 'LC': 'Lecco', 'LO': 'Lodi', 'MN': 'Mantova', 'MB': 'Monza e Brianza', 'PV': 'Pavia', 'SO': 'Sondrio', 'VA': 'Varese',
+      'RM': 'Roma', 'FR': 'Frosinone', 'LT': 'Latina', 'RI': 'Rieti', 'VT': 'Viterbo',
+      'BO': 'Bologna', 'FE': 'Ferrara', 'FC': 'Forlì-Cesena', 'MO': 'Modena', 'PR': 'Parma', 'PC': 'Piacenza', 'RA': 'Ravenna', 'RE': 'Reggio Emilia', 'RN': 'Rimini',
+      'FI': 'Firenze', 'AR': 'Arezzo', 'GR': 'Grosseto', 'LI': 'Livorno', 'LU': 'Lucca', 'MS': 'Massa-Carrara', 'PI': 'Pisa', 'PT': 'Pistoia', 'PO': 'Prato', 'SI': 'Siena',
+      'VE': 'Venezia', 'BL': 'Belluno', 'PD': 'Padova', 'RO': 'Rovigo', 'TV': 'Treviso', 'VR': 'Verona', 'VI': 'Vicenza',
+      'TO': 'Torino', 'AL': 'Alessandria', 'AT': 'Asti', 'BI': 'Biella', 'CN': 'Cuneo', 'NO': 'Novara', 'VB': 'Verbano-Cusio-Ossola', 'VC': 'Vercelli',
+      'NA': 'Napoli', 'AV': 'Avellino', 'BN': 'Benevento', 'CE': 'Caserta', 'SA': 'Salerno',
+      'BA': 'Bari', 'BT': 'Barletta-Andria-Trani', 'BR': 'Brindisi', 'FG': 'Foggia', 'LE': 'Lecce', 'TA': 'Taranto',
+      'PA': 'Palermo', 'AG': 'Agrigento', 'CL': 'Caltanissetta', 'CT': 'Catania', 'EN': 'Enna', 'ME': 'Messina', 'RG': 'Ragusa', 'SR': 'Siracusa', 'TP': 'Trapani',
+      'GE': 'Genova', 'IM': 'Imperia', 'SP': 'La Spezia', 'SV': 'Savona',
+      'CZ': 'Catanzaro', 'CS': 'Cosenza', 'KR': 'Crotone', 'RC': 'Reggio Calabria', 'VV': 'Vibo Valentia',
+      'CA': 'Cagliari', 'NU': 'Nuoro', 'OR': 'Oristano', 'SS': 'Sassari', 'SU': 'Sud Sardegna',
+      'TS': 'Trieste', 'GO': 'Gorizia', 'PN': 'Pordenone', 'UD': 'Udine',
+      'TN': 'Trento', 'BZ': 'Bolzano',
+      'PG': 'Perugia', 'TR': 'Terni',
+      'PZ': 'Potenza', 'MT': 'Matera',
+      'CB': 'Campobasso', 'IS': 'Isernia',
+      'AO': 'Aosta'
+    };
+
+    const resolveRegionFromProvince = (prov, lat = null, lng = null) => {
+      const p = (prov || '').trim().toUpperCase();
+      if (PROVINCE_TO_REGION[p]) return PROVINCE_TO_REGION[p];
+      const numLat = Number(lat);
+      const numLng = Number(lng);
+      if (numLat && numLng) {
+        if (numLat >= 42.6 && numLat <= 44.0 && numLng >= 12.0 && numLng <= 14.2) return 'Marche';
+        if (numLat >= 41.7 && numLat <= 42.9 && numLng >= 13.0 && numLng <= 14.8) return 'Abruzzo';
+        if (numLat >= 41.2 && numLat <= 42.8 && numLng >= 11.4 && numLng <= 14.0) return 'Lazio';
+        if (numLat >= 44.0 && numLat <= 45.2 && numLng >= 9.2 && numLng <= 12.8) return 'Emilia-Romagna';
+        if (numLat >= 44.7 && numLat <= 46.6 && numLng >= 8.5 && numLng <= 11.5) return 'Lombardia';
+      }
+      return 'Italia';
     };
 
     const normalizeProvinceCode = (province, cityKey = '', lat = null, lng = null) => {
@@ -6527,21 +6618,12 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               googleMapRef.current = gmap;
               setMapEngine('google');
 
-              // Listener zoom_changed e idle per Marker Clustering dinamico, Viewport Rendering e visibilità etichette
+              // Listener zoom_changed e idle per Marker Clustering a 15 scatti e Viewport Rendering
               const syncGoogleViewport = () => {
                 if (!isMounted || !gmap) return;
                 const z = gmap.getZoom();
                 if (typeof z === 'number') {
                   setMapZoom(z);
-                  const shouldShow = z >= ZOOM_THRESHOLD_STREET_NAMES;
-                  const labels = document.querySelectorAll('.street-marker-label');
-                  labels.forEach(el => {
-                    if (el.getAttribute('data-selected') === 'true') {
-                      el.style.display = 'block';
-                    } else {
-                      el.style.display = shouldShow ? 'block' : 'none';
-                    }
-                  });
                 }
                 const b = gmap.getBounds();
                 if (b) {
@@ -6791,20 +6873,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           leafletMapRef.current = lmap;
           setMapEngine('leaflet');
 
-          // Listener zoomend e moveend per Marker Clustering dinamico, Viewport Rendering e visibilità etichette su Leaflet
+          // Listener zoomend e moveend per Marker Clustering a 15 scatti e Viewport Rendering su Leaflet
           const syncLeafletViewport = () => {
             if (!isMounted || !lmap) return;
             const z = lmap.getZoom();
             setMapZoom(z);
-            const shouldShow = z >= ZOOM_THRESHOLD_STREET_NAMES;
-            const labels = document.querySelectorAll('.street-marker-label');
-            labels.forEach(el => {
-              if (el.getAttribute('data-selected') === 'true') {
-                el.style.display = 'block';
-              } else {
-                el.style.display = shouldShow ? 'block' : 'none';
-              }
-            });
             const b = lmap.getBounds();
             if (b) {
               setMapBounds({
@@ -6958,13 +7031,22 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         });
       }, [streets, filterStreetType, filterCategoryThresholds, filterFreeNow, filterEvCharging, filterDisabledParking, filterPinkParking, filterLoadingZone, filterCyclePath, filterDrinkingFountain, filterDogArea, filterPlayground, filterRoadObstacles]);
 
-      // OTTIMIZZAZIONE VIEWPORT RENDERING (Zoom >= 14): renderizza nel DOM solo i marker nell'area visibile (+ margine di buffer)
+      // GERARCHIA PROGRESSIVA SU 15 LIVELLI DI ZOOM (Zoom 4 - 18):
+      // 1-2 (z 4-5): Nazionale (Macro-Badge Italia)
+      // 3-4 (z 6-7): Regionale (Badge per Regione)
+      // 5-7 (z 8-10): Provinciale (Badge per Provincia)
+      // 8-9 (z 11-12): Comunale (Badge per Comune)
+      // 10-11 (z 13-14): Micro-Dots (Cerchietti 10px per tutte le strade)
+      // 12-13 (z 15-16): Top 10 (Pillola per le 10 vie più recensite, micro-dot 10px per le altre)
+      // 14-15 (z 17-18+): Completo a Terra (Pillola per tutte le strade, zero etichette nome)
+
+      // VIEWPORT RENDERING: per Zoom >= 13 renderizza le singole strade nell'area visibile (+ buffer)
       const viewportStreets = useMemo(() => {
-        if (mapZoom < 14) return [];
+        if (mapZoom < 13) return [];
         if (!mapBounds) return visibleStreets;
 
-        const latBuffer = Math.max(0.008, (mapBounds.north - mapBounds.south) * 0.25);
-        const lngBuffer = Math.max(0.008, (mapBounds.east - mapBounds.west) * 0.25);
+        const latBuffer = Math.max(0.015, (mapBounds.north - mapBounds.south) * 0.3);
+        const lngBuffer = Math.max(0.015, (mapBounds.east - mapBounds.west) * 0.3);
         const minLat = mapBounds.south - latBuffer;
         const maxLat = mapBounds.north + latBuffer;
         const minLng = mapBounds.west - lngBuffer;
@@ -6981,11 +7063,151 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         });
       }, [visibleStreets, mapZoom, mapBounds, selectedStreet]);
 
-      // MARKER CLUSTERING DINAMICO (Zoom < 14): raggruppa le strade per Comune / zona geografica
-      const cityClusters = useMemo(() => {
-        if (mapZoom >= 14) return [];
-        const groups = new Map();
+      // CALCOLO TOP 10 PER SCATTI 12-13 (Zoom 15-16): le 10 vie con più recensioni (o voto più alto)
+      const top10StreetIds = useMemo(() => {
+        if (mapZoom < 15 || mapZoom > 16) return new Set();
+        const pool = viewportStreets.length > 0 ? viewportStreets : visibleStreets;
+        const sorted = [...pool].sort((a, b) => {
+          const countA = Number(a.reviewsCount ?? a.reviewCount ?? 0);
+          const countB = Number(b.reviewsCount ?? b.reviewCount ?? 0);
+          if (countB !== countA) return countB - countA;
+          const rateA = Number(a.avgOverallRating ?? a.ratingOverall ?? 0);
+          const rateB = Number(b.avgOverallRating ?? b.ratingOverall ?? 0);
+          return rateB - rateA;
+        });
+        return new Set(sorted.slice(0, 10).map(s => s.id || s.streetKey));
+      }, [viewportStreets, visibleStreets, mapZoom]);
 
+      // CLUSTER PROGRESSIVI PER SCATTI 1-9 (Zoom < 13: Nazionale, Regionale, Provinciale, Comunale)
+      const activeClusters = useMemo(() => {
+        if (mapZoom >= 13 || visibleStreets.length === 0) return [];
+
+        // SCATTI 1-2 (Zoom 4 - 5): LIVELLO NAZIONALE (Unico grande Macro-Badge Italia)
+        if (mapZoom <= 5) {
+          let latSum = 0;
+          let lngSum = 0;
+          let ratingSum = 0;
+          let reviewedCount = 0;
+          let count = 0;
+
+          visibleStreets.forEach(s => {
+            const lat = Number(s.latitude);
+            const lng = Number(s.longitude);
+            if (!lat || !lng) return;
+            latSum += lat;
+            lngSum += lng;
+            count++;
+            if ((s.reviewsCount || 0) > 0 && (s.avgOverallRating || 0) > 0) {
+              reviewedCount++;
+              ratingSum += Number(s.avgOverallRating);
+            }
+          });
+
+          if (count === 0) return [];
+          return [{
+            id: 'cluster-national-italy',
+            title: '🇮🇹 Italia',
+            streetsCount: count,
+            avgOverallRating: reviewedCount > 0 ? Number((ratingSum / reviewedCount).toFixed(1)) : 0,
+            latitude: Number((latSum / count).toFixed(5)),
+            longitude: Number((lngSum / count).toFixed(5)),
+            targetZoom: 7,
+          }];
+        }
+
+        // SCATTI 3-4 (Zoom 6 - 7): LIVELLO REGIONALE (Raggruppato per Regione)
+        if (mapZoom <= 7) {
+          const groups = new Map();
+          visibleStreets.forEach(s => {
+            const lat = Number(s.latitude);
+            const lng = Number(s.longitude);
+            if (!lat || !lng) return;
+
+            const prov = (s.province || s.streetProvince || '').toUpperCase().trim();
+            const regionName = resolveRegionFromProvince(prov, lat, lng);
+
+            if (!groups.has(regionName)) {
+              groups.set(regionName, {
+                id: `cluster-reg-${regionName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+                title: regionName,
+                streetsCount: 0,
+                reviewedCount: 0,
+                ratingSum: 0,
+                latSum: 0,
+                lngSum: 0,
+                latitude: lat,
+                longitude: lng,
+                targetZoom: 9,
+              });
+            }
+
+            const g = groups.get(regionName);
+            g.streetsCount += 1;
+            g.latSum += lat;
+            g.lngSum += lng;
+            g.latitude = Number((g.latSum / g.streetsCount).toFixed(5));
+            g.longitude = Number((g.lngSum / g.streetsCount).toFixed(5));
+
+            if ((s.reviewsCount || 0) > 0 && (s.avgOverallRating || 0) > 0) {
+              g.reviewedCount += 1;
+              g.ratingSum += Number(s.avgOverallRating);
+            }
+          });
+
+          return Array.from(groups.values()).map(g => ({
+            ...g,
+            avgOverallRating: g.reviewedCount > 0 ? Number((g.ratingSum / g.reviewedCount).toFixed(1)) : 0,
+          }));
+        }
+
+        // SCATTI 5-7 (Zoom 8 - 10): LIVELLO PROVINCIALE (Raggruppato per Provincia)
+        if (mapZoom <= 10) {
+          const groups = new Map();
+          visibleStreets.forEach(s => {
+            const lat = Number(s.latitude);
+            const lng = Number(s.longitude);
+            if (!lat || !lng) return;
+
+            const prov = (s.province || s.streetProvince || 'AP').toUpperCase().trim();
+            const provFullName = PROVINCE_FULL_NAMES[prov];
+            const provLabel = provFullName ? `${provFullName} (${prov})` : prov;
+
+            if (!groups.has(prov)) {
+              groups.set(prov, {
+                id: `cluster-prov-${prov.toLowerCase()}`,
+                title: provLabel,
+                streetsCount: 0,
+                reviewedCount: 0,
+                ratingSum: 0,
+                latSum: 0,
+                lngSum: 0,
+                latitude: lat,
+                longitude: lng,
+                targetZoom: 12,
+              });
+            }
+
+            const g = groups.get(prov);
+            g.streetsCount += 1;
+            g.latSum += lat;
+            g.lngSum += lng;
+            g.latitude = Number((g.latSum / g.streetsCount).toFixed(5));
+            g.longitude = Number((g.lngSum / g.streetsCount).toFixed(5));
+
+            if ((s.reviewsCount || 0) > 0 && (s.avgOverallRating || 0) > 0) {
+              g.reviewedCount += 1;
+              g.ratingSum += Number(s.avgOverallRating);
+            }
+          });
+
+          return Array.from(groups.values()).map(g => ({
+            ...g,
+            avgOverallRating: g.reviewedCount > 0 ? Number((g.ratingSum / g.reviewedCount).toFixed(1)) : 0,
+          }));
+        }
+
+        // SCATTI 8-9 (Zoom 11 - 12): LIVELLO CITTADINO / COMUNALE (Raggruppato per Comune)
+        const groups = new Map();
         visibleStreets.forEach(s => {
           const lat = Number(s.latitude);
           const lng = Number(s.longitude);
@@ -6999,18 +7221,16 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
           if (!groups.has(cityKey)) {
             groups.set(cityKey, {
-              id: `cluster-${cityKey}`,
-              cityKey,
-              cityName: canonicalCity,
-              shortCity,
-              province: s.province || '',
+              id: `cluster-mun-${cityKey}`,
+              title: shortCity,
               streetsCount: 0,
-              reviewedStreetsCount: 0,
+              reviewedCount: 0,
               ratingSum: 0,
               latSum: 0,
               lngSum: 0,
               latitude: lat,
               longitude: lng,
+              targetZoom: 14,
             });
           }
 
@@ -7022,22 +7242,20 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           g.longitude = Number((g.lngSum / g.streetsCount).toFixed(5));
 
           if ((s.reviewsCount || 0) > 0 && (s.avgOverallRating || 0) > 0) {
-            g.reviewedStreetsCount += 1;
+            g.reviewedCount += 1;
             g.ratingSum += Number(s.avgOverallRating);
           }
         });
 
         return Array.from(groups.values()).map(g => ({
           ...g,
-          avgOverallRating: g.reviewedStreetsCount > 0
-            ? Number((g.ratingSum / g.reviewedStreetsCount).toFixed(1))
-            : 0,
+          avgOverallRating: g.reviewedCount > 0 ? Number((g.ratingSum / g.reviewedCount).toFixed(1)) : 0,
         }));
       }, [visibleStreets, mapZoom]);
 
-      // RENDER DEI MARKER DINAMICI (Cluster Cittadini a Zoom < 14 oppure Singoli PIN in Viewport a Zoom >= 14)
+      // RENDER DEI MARKER DINAMICI A 15 SCATTI (Cluster progressivi o Singole Strade con Dot/Pillole)
       useEffect(() => {
-        const isClusterMode = mapZoom < 14;
+        const isClusterMode = mapZoom < 13;
 
         // 1. Render su Google Maps Platform
         if (mapEngine === 'google' && googleMapRef.current && window.google) {
@@ -7045,8 +7263,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           googleOverlaysRef.current = [];
 
           if (isClusterMode) {
-            // MODALITÀ CLUSTER (Zoom < 14)
-            cityClusters.forEach(cluster => {
+            // MODALITÀ CLUSTER (Zoom 4 - 12)
+            activeClusters.forEach(cluster => {
               const Overlay = new window.google.maps.OverlayView();
               let div = null;
 
@@ -7070,7 +7288,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     border:2px solid #fbbf24;
                     transition:transform 0.2s ease;
                   ">
-                    <span style="color:#38bdf8;font-weight:900;">${cluster.shortCity}</span>
+                    <span style="color:#38bdf8;font-weight:900;">${cluster.title}</span>
                     <span style="color:#94a3b8;">•</span>
                     <span style="color:#f8fafc;font-weight:700;">${countLabel}</span>
                     <span style="color:#94a3b8;">•</span>
@@ -7081,7 +7299,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 div.onclick = (e) => {
                   e.stopPropagation();
                   googleMapRef.current.panTo({ lat: cluster.latitude, lng: cluster.longitude });
-                  googleMapRef.current.setZoom(15);
+                  googleMapRef.current.setZoom(cluster.targetZoom);
                 };
 
                 this.getPanes().overlayMouseTarget.appendChild(div);
@@ -7104,19 +7322,23 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               googleOverlaysRef.current.push(Overlay);
             });
           } else {
-            // MODALITÀ SINGOLI PIN IN VIEWPORT (Zoom >= 14)
+            // MODALITÀ STRADE SINGOLE (Zoom 13 - 18+): MICRO-DOTS (10px) O PILLOLE
             viewportStreets.forEach(street => {
-              const isNew = street.reviewsCount === 0;
+              const reviewNum = Number(street.reviewsCount ?? street.reviewCount ?? 0);
+              const ratingNum = Number(street.avgOverallRating ?? street.ratingOverall ?? 0);
+              const isNew = reviewNum === 0;
               const isSelected = selectedStreet ? (selectedStreet.id === street.id || isSameStreet(selectedStreet, street)) : false;
-              const pinBgColor = isNew ? '#808080' : getRatingColor(street.avgOverallRating);
-              const pinTextColor = isNew ? '#FFFFFF' : getRatingTextColor(street.avgOverallRating);
+              const isTop10 = top10StreetIds.has(street.id || street.streetKey);
+
+              // Scatti 10-11 (Zoom 13-14): Solo Micro-Dot 10px (tranne se selezionata)
+              // Scatti 12-13 (Zoom 15-16): Top 10 mostrano la Pillola, le altre Micro-Dot 10px
+              // Scatti 14-15 (Zoom 17-18+): Tutte mostrano la Pillola
+              const renderAsPill = (mapZoom >= 17) || (mapZoom >= 15 && isTop10) || isSelected;
+
+              const pinBgColor = isNew ? '#808080' : getRatingColor(ratingNum);
+              const pinTextColor = isNew ? '#FFFFFF' : getRatingTextColor(ratingNum);
               const pinTextShadow = pinTextColor === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.45)' : 'none';
               const pinBorderColor = pinTextColor === '#FFFFFF' ? 'white' : 'rgba(15,23,42,0.35)';
-
-              // Visibilità condizionale del nome della via:
-              // Per Zoom < 16 viene mostrata solo la pillola del voto per evitare sovrapposizioni.
-              // Per Zoom >= 16 o se la via è selezionata (o cercata), il nome è visibile.
-              const showStreetLabel = (mapZoom >= ZOOM_THRESHOLD_STREET_NAMES) || isSelected;
 
               const Overlay = new window.google.maps.OverlayView();
               let div = null;
@@ -7125,51 +7347,54 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 div = document.createElement('div');
                 div.style.position = 'absolute';
                 div.style.cursor = 'pointer';
-                div.style.transform = 'translate(-50%, -100%)';
-                div.style.zIndex = isSelected ? '9999' : '100';
+                div.style.transform = 'translate(-50%, -50%)';
+                div.style.zIndex = isSelected ? '9999' : (renderAsPill ? '200' : '100');
 
-                div.innerHTML = `
-                  <div style="display:flex;flex-direction:column;align-items:center;">
+                if (renderAsPill) {
+                  // PILLOLA COMPATTA CON VOTO E STELLA (ZERO ETICHETTE NOME STRADA)
+                  div.innerHTML = `
                     <div class="street-marker-pill" style="
                       display:flex;align-items:center;gap:4px;
                       background:${pinBgColor};
                       color:${pinTextColor};padding:4px 10px;border-radius:9999px;
-                      font-weight:800;font-size:11px;
+                      font-weight:800;font-size:11px;white-space:nowrap;
                       box-shadow:0 8px 16px rgba(0,0,0,0.25);
                       text-shadow:${pinTextShadow};
                       border:2px solid ${pinBorderColor};
                       transition:transform 0.2s;
-                      ${isSelected ? 'transform:scale(1.25);box-shadow:0 0 0 4px rgba(59,130,246,0.5);' : ''}
+                      ${isSelected ? 'transform:scale(1.25);box-shadow:0 0 0 4px rgba(59,130,246,0.6);' : ''}
                     ">
-                      ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${street.avgOverallRating.toFixed(1)}</span>`}
+                      ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${ratingNum.toFixed(1)}</span>`}
                     </div>
-                    <div class="street-marker-label" data-selected="${isSelected ? 'true' : 'false'}" style="
-                      background:rgba(255,255,255,0.95);
-                      backdrop-filter:blur(4px);
-                      padding:2px 8px;border-radius:6px;
-                      font-size:10px;font-weight:700;color:#0f172a;
-                      white-space:nowrap;margin-top:3px;
-                      box-shadow:0 2px 4px rgba(0,0,0,0.1);
-                      border:1px solid #e2e8f0;
-                      display:${showStreetLabel ? 'block' : 'none'};
-                      pointer-events:none;
-                    ">
-                      ${street.name}
-                    </div>
-                  </div>
-                `;
+                  `;
 
-                div.onclick = (e) => {
-                  e.stopPropagation();
-                  setSelectedStreet(street);
-                  setSheetSnap('half');
-                  googleMapRef.current.panTo({ lat: street.latitude, lng: street.longitude });
-                  const myLabel = div.querySelector('.street-marker-label');
-                  if (myLabel) {
-                    myLabel.style.display = 'block';
-                    myLabel.setAttribute('data-selected', 'true');
-                  }
-                };
+                  div.onclick = (e) => {
+                    e.stopPropagation();
+                    setSelectedStreet(street);
+                    setSheetSnap('half');
+                    googleMapRef.current.panTo({ lat: street.latitude, lng: street.longitude });
+                  };
+                } else {
+                  // MICRO-DOT CIRCOLARE MINIMALE DA 10PX
+                  div.innerHTML = `
+                    <div class="street-marker-dot" style="
+                      width:10px;height:10px;border-radius:50%;
+                      background:${pinBgColor};
+                      border:1.5px solid #ffffff;
+                      box-shadow:0 2px 4px rgba(0,0,0,0.3);
+                      transition:transform 0.15s ease;
+                      ${isSelected ? 'transform:scale(1.5);box-shadow:0 0 0 3px rgba(59,130,246,0.85);' : ''}
+                    "></div>
+                  `;
+
+                  div.onclick = (e) => {
+                    e.stopPropagation();
+                    googleMapRef.current.panTo({ lat: street.latitude, lng: street.longitude });
+                    googleMapRef.current.setZoom(17);
+                    setSelectedStreet(street);
+                    setSheetSnap('half');
+                  };
+                }
 
                 this.getPanes().overlayMouseTarget.appendChild(div);
               };
@@ -7199,13 +7424,14 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           layer.clearLayers();
 
           if (isClusterMode) {
-            cityClusters.forEach(cluster => {
+            // MODALITÀ CLUSTER LEAFLET (Zoom 4 - 12)
+            activeClusters.forEach(cluster => {
               const ratingLabel = cluster.avgOverallRating > 0 ? `★ ${cluster.avgOverallRating.toFixed(1)}` : 'Nuova';
               const countLabel = `${cluster.streetsCount} ${cluster.streetsCount === 1 ? 'via' : 'vie'}`;
 
               const clusterHtml = `
                 <div class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900 text-white font-extrabold text-[11px] whitespace-nowrap shadow-xl border-2 border-amber-400 ring-2 ring-cyan-400/70 cursor-pointer hover:scale-105 transition-transform">
-                  <span class="text-sky-400 font-black">${cluster.shortCity}</span>
+                  <span class="text-sky-400 font-black">${cluster.title}</span>
                   <span class="text-slate-400">•</span>
                   <span class="text-white font-bold">${countLabel}</span>
                   <span class="text-slate-400">•</span>
@@ -7216,69 +7442,81 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               const clusterIcon = L.divIcon({
                 html: clusterHtml,
                 className: 'custom-street-cluster',
-                iconSize: [200, 36],
-                iconAnchor: [100, 18],
+                iconSize: [220, 36],
+                iconAnchor: [110, 18],
               });
 
               const marker = L.marker([cluster.latitude, cluster.longitude], { icon: clusterIcon });
               marker.on('click', () => {
-                leafletMapRef.current.setView([cluster.latitude, cluster.longitude], 15, { animate: true });
+                leafletMapRef.current.setView([cluster.latitude, cluster.longitude], cluster.targetZoom, { animate: true });
               });
 
               layer.addLayer(marker);
             });
           } else {
+            // MODALITÀ STRADE SINGOLE LEAFLET (Zoom 13 - 18+)
             viewportStreets.forEach(street => {
-              const isNew = street.reviewsCount === 0;
+              const reviewNum = Number(street.reviewsCount ?? street.reviewCount ?? 0);
+              const ratingNum = Number(street.avgOverallRating ?? street.ratingOverall ?? 0);
+              const isNew = reviewNum === 0;
               const isSelected = selectedStreet ? (selectedStreet.id === street.id || isSameStreet(selectedStreet, street)) : false;
-              const pinBgColor = isNew ? '#808080' : getRatingColor(street.avgOverallRating);
-              const pinTextColor = isNew ? '#FFFFFF' : getRatingTextColor(street.avgOverallRating);
+              const isTop10 = top10StreetIds.has(street.id || street.streetKey);
+              const renderAsPill = (mapZoom >= 17) || (mapZoom >= 15 && isTop10) || isSelected;
+
+              const pinBgColor = isNew ? '#808080' : getRatingColor(ratingNum);
+              const pinTextColor = isNew ? '#FFFFFF' : getRatingTextColor(ratingNum);
               const pinTextShadow = pinTextColor === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.45)' : 'none';
               const pinBorderColor = pinTextColor === '#FFFFFF' ? 'white' : 'rgba(15,23,42,0.35)';
 
-              // Visibilità condizionale del nome della via:
-              // Per Zoom < 16 viene mostrata solo la pillola del voto per evitare sovrapposizioni.
-              // Per Zoom >= 16 o se la via è selezionata (o cercata), il nome è visibile.
-              const showStreetLabel = (mapZoom >= ZOOM_THRESHOLD_STREET_NAMES) || isSelected;
-
-              const markerHtml = `
-                <div class="flex flex-col items-center cursor-pointer transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
-                  <div class="street-marker-pill flex items-center gap-1 px-2.5 py-1 rounded-full font-extrabold text-xs shadow-lg border-2" style="background-color: ${pinBgColor}; color: ${pinTextColor}; border-color: ${pinBorderColor}; text-shadow: ${pinTextShadow};">
-                    ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${street.avgOverallRating.toFixed(1)}</span>`}
+              if (renderAsPill) {
+                // PILLOLA COMPATTA CON VOTO E STELLA (ZERO ETICHETTE NOME STRADA)
+                const pillHtml = `
+                  <div class="street-marker-pill inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-extrabold text-xs shadow-lg border-2 whitespace-nowrap cursor-pointer transition-transform duration-200 ${isSelected ? 'scale-125 ring-4 ring-blue-500/60' : 'hover:scale-110'}" style="background-color: ${pinBgColor}; color: ${pinTextColor}; border-color: ${pinBorderColor}; text-shadow: ${pinTextShadow};">
+                    ${isNew ? '<span>— Nuova</span>' : `<span>★</span><span>${ratingNum.toFixed(1)}</span>`}
                   </div>
-                  <div class="street-marker-label mt-1 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-md shadow-sm border border-slate-200 text-[10px] font-bold text-slate-800 text-center whitespace-nowrap pointer-events-none" data-selected="${isSelected ? 'true' : 'false'}" style="display: ${showStreetLabel ? 'block' : 'none'};">
-                    ${street.name}
-                  </div>
-                </div>
-              `;
+                `;
 
-              const customIcon = L.divIcon({
-                html: markerHtml,
-                className: 'custom-street-marker',
-                iconSize: [120, 50],
-                iconAnchor: [60, 25],
-              });
+                const customIcon = L.divIcon({
+                  html: pillHtml,
+                  className: 'custom-street-marker',
+                  iconSize: [60, 28],
+                  iconAnchor: [30, 14],
+                });
 
-              const marker = L.marker([street.latitude, street.longitude], { icon: customIcon });
-              marker.on('click', () => {
-                setSelectedStreet(street);
-                setSheetSnap('half');
-                leafletMapRef.current.setView([street.latitude, street.longitude], 16, { animate: true });
-                const el = marker.getElement();
-                if (el) {
-                  const lbl = el.querySelector('.street-marker-label');
-                  if (lbl) {
-                    lbl.style.display = 'block';
-                    lbl.setAttribute('data-selected', 'true');
-                  }
-                }
-              });
+                const marker = L.marker([street.latitude, street.longitude], { icon: customIcon });
+                marker.on('click', () => {
+                  setSelectedStreet(street);
+                  setSheetSnap('half');
+                  leafletMapRef.current.setView([street.latitude, street.longitude], Math.max(16, mapZoom), { animate: true });
+                });
 
-              layer.addLayer(marker);
+                layer.addLayer(marker);
+              } else {
+                // MICRO-DOT CIRCOLARE MINIMALE DA 10PX
+                const dotHtml = `
+                  <div class="street-marker-dot cursor-pointer rounded-full border-[1.5px] border-white shadow-md transition-transform duration-150 ${isSelected ? 'scale-150 ring-4 ring-blue-500/85' : 'hover:scale-125'}" style="width: 10px; height: 10px; background-color: ${pinBgColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>
+                `;
+
+                const customIcon = L.divIcon({
+                  html: dotHtml,
+                  className: 'custom-street-dot',
+                  iconSize: [10, 10],
+                  iconAnchor: [5, 5],
+                });
+
+                const marker = L.marker([street.latitude, street.longitude], { icon: customIcon });
+                marker.on('click', () => {
+                  leafletMapRef.current.setView([street.latitude, street.longitude], 17, { animate: true });
+                  setSelectedStreet(street);
+                  setSheetSnap('half');
+                });
+
+                layer.addLayer(marker);
+              }
             });
           }
         }
-      }, [viewportStreets, cityClusters, mapZoom, selectedStreet, mapEngine]);
+      }, [viewportStreets, activeClusters, top10StreetIds, mapZoom, selectedStreet, mapEngine]);
 
       // COMPORTAMENTO ALLA RICERCA DELLA VIA:
       // Lookup preventivo sui dati esistenti (streetsRef.current): se la via esiste già, apre la sua scheda e centra il marker;
