@@ -224,6 +224,7 @@
     // A livelli di zoom < 16 mostra solo le pillole compatte con voto/stella per evitare sovrapposizioni.
     // A livelli di zoom >= 16 (o per la via selezionata) mostra l'etichetta con il nome della strada.
     const ZOOM_THRESHOLD_STREET_NAMES = 16;
+    const ZOOM_MAX_STREET = 18; // Scatto 15: massimo livello di dettaglio a terra
 
     // Verifica se le coordinate ricadono nel comprensorio storico della Riviera delle Palme (usato solo per inferenza comune locale)
     const isInsideRivieraBounds = (lat, lng) => {
@@ -5899,9 +5900,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             const lng = pos.coords.longitude;
             if (googleMapRef.current) {
               googleMapRef.current.panTo({ lat, lng });
-              googleMapRef.current.setZoom(16);
+              googleMapRef.current.setZoom(ZOOM_MAX_STREET);
             } else if (leafletMapRef.current) {
-              leafletMapRef.current.setView([lat, lng], 16, { animate: true });
+              leafletMapRef.current.setView([lat, lng], ZOOM_MAX_STREET, { animate: true });
             }
           },
           (err) => {
@@ -6499,9 +6500,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               setTimeout(() => {
                 if (googleMapRef.current) {
                   googleMapRef.current.panTo({ lat, lng });
-                  googleMapRef.current.setZoom(16);
+                  googleMapRef.current.setZoom(ZOOM_MAX_STREET);
                 } else if (leafletMapRef.current) {
-                  leafletMapRef.current.setView([lat, lng], 16, { animate: true });
+                  leafletMapRef.current.setView([lat, lng], ZOOM_MAX_STREET, { animate: true });
                 }
               }, 250);
             }
@@ -7401,6 +7402,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     setSelectedStreet(street);
                     setSheetSnap('half');
                     googleMapRef.current.panTo({ lat: street.latitude, lng: street.longitude });
+                    googleMapRef.current.setZoom(ZOOM_MAX_STREET);
                   };
                 } else {
                   // MICRO-DOT CIRCOLARE MINIMALE DA 10PX
@@ -7418,7 +7420,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   div.onclick = (e) => {
                     e.stopPropagation();
                     googleMapRef.current.panTo({ lat: street.latitude, lng: street.longitude });
-                    googleMapRef.current.setZoom(17);
+                    googleMapRef.current.setZoom(ZOOM_MAX_STREET);
                     setSelectedStreet(street);
                     setSheetSnap('half');
                   };
@@ -7515,7 +7517,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 marker.on('click', () => {
                   setSelectedStreet(street);
                   setSheetSnap('half');
-                  leafletMapRef.current.setView([street.latitude, street.longitude], Math.max(16, mapZoom), { animate: true });
+                  leafletMapRef.current.setView([street.latitude, street.longitude], ZOOM_MAX_STREET, { animate: true });
                 });
 
                 layer.addLayer(marker);
@@ -7534,7 +7536,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
                 const marker = L.marker([street.latitude, street.longitude], { icon: customIcon });
                 marker.on('click', () => {
-                  leafletMapRef.current.setView([street.latitude, street.longitude], 17, { animate: true });
+                  leafletMapRef.current.setView([street.latitude, street.longitude], ZOOM_MAX_STREET, { animate: true });
                   setSelectedStreet(street);
                   setSheetSnap('half');
                 });
@@ -7599,9 +7601,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           if (panLat && panLng) {
             if (googleMapRef.current) {
               googleMapRef.current.panTo({ lat: panLat, lng: panLng });
-              googleMapRef.current.setZoom(16);
+              googleMapRef.current.setZoom(ZOOM_MAX_STREET);
             } else if (leafletMapRef.current) {
-              leafletMapRef.current.setView([panLat, panLng], 16, { animate: true });
+              leafletMapRef.current.setView([panLat, panLng], ZOOM_MAX_STREET, { animate: true });
             }
           }
           return;
@@ -7663,9 +7665,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
         if (googleMapRef.current) {
           googleMapRef.current.panTo({ lat: panLat, lng: panLng });
-          googleMapRef.current.setZoom(16);
+          googleMapRef.current.setZoom(ZOOM_MAX_STREET);
         } else if (leafletMapRef.current) {
-          leafletMapRef.current.setView([panLat, panLng], 16, { animate: true });
+          leafletMapRef.current.setView([panLat, panLng], ZOOM_MAX_STREET, { animate: true });
         }
       };
       handleSelectStreetRef.current = handleSelectStreet;
