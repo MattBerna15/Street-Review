@@ -238,211 +238,8 @@
              nLng >= GEOFENCE.rivieraBounds.west && nLng <= GEOFENCE.rivieraBounds.east;
     };
 
-    // --- STRADARIO STORICO LOCALE (HUB SAN BENEDETTO DEL TRONTO E RIVIERA DELLE PALME) ---
-    const LOCAL_GAZETTEER = [
-      {
-        streetKey: 'corso-giuseppe-mazzini_grottammare_ap',
-        legacyKeys: ['corso-giuseppe-mazzini_grottammare', 'corso-mazzini_grottammare', 'corso-mazzini_grottammare_ap'],
-        name: 'Corso Giuseppe Mazzini',
-        city: 'Grottammare',
-        province: 'AP',
-        postalCode: '63066',
-        lat: 42.990443190632796,
-        lng: 13.869663126569428
-      },
-      {
-        streetKey: 'viale-della-vittoria_alba-adriatica_te',
-        legacyKeys: ['viale-della-vittoria_alba-adriatica', 'viale-vittoria_alba-adriatica'],
-        name: 'Viale della Vittoria',
-        city: 'Alba Adriatica',
-        province: 'TE',
-        postalCode: '64011',
-        lat: 42.83605895341866,
-        lng: 13.926245266469673
-      },
-      {
-        streetKey: 'via-giuseppe-mazzini_alba-adriatica_te',
-        legacyKeys: ['via-giuseppe-mazzini_alba-adriatica', 'via-mazzini_alba-adriatica', 'corso-giuseppe-mazzini_alba-adriatica_te'],
-        name: 'Via Giuseppe Mazzini',
-        city: 'Alba Adriatica',
-        province: 'TE',
-        postalCode: '64011',
-        lat: 42.83284835747221,
-        lng: 13.926373810644503
-      },
-      {
-        streetKey: 'piazza-g-carducci_grottammare_ap',
-        legacyKeys: ['piazza-g-carducci_san-benedetto-del-tronto_ap', 'piazza-carducci_san-benedetto-del-tronto_ap', 'piazza-carducci_grottammare_ap', 'piazza-g-carducci_grottammare'],
-        name: 'Piazza G. Carducci',
-        city: 'Grottammare',
-        province: 'AP',
-        postalCode: '63066',
-        lat: 42.96336244509739,
-        lng: 13.875948479968113
-      },
-      {
-        streetKey: 'via-firenze_grottammare_ap',
-        legacyKeys: ['via-firenze_san-benedetto-del-tronto', 'via-firenze_san-benedetto-del-tronto_ap', 'via-firenze_grottammare'],
-        name: 'Via Firenze',
-        city: 'Grottammare',
-        province: 'AP',
-        postalCode: '63066',
-        lat: 42.962981492069545,
-        lng: 13.87075809346326
-      },
-      {
-        streetKey: 'contrada-san-donato_monteprandone_ap',
-        legacyKeys: ['contrada-san-donato_san-benedetto-del-tronto', 'contrada-san-donato_san-benedetto-del-tronto_ap', 'contrada-san-donato_monteprandone'],
-        name: 'Contrada San Donato',
-        city: 'Monteprandone',
-        province: 'AP',
-        postalCode: '63076',
-        lat: 42.91209543811305,
-        lng: 13.860065210654204
-      },
-      {
-        streetKey: 'via-dei-piceni_grottammare_ap',
-        name: 'Via dei Piceni',
-        city: 'Grottammare',
-        province: 'AP',
-        postalCode: '63066',
-        lat: 42.9878,
-        lng: 13.8700
-      },
-      {
-        streetKey: 'via-ballestra_grottammare_ap',
-        name: 'Via Ballestra',
-        city: 'Grottammare',
-        province: 'AP',
-        postalCode: '63066',
-        lat: 42.9856,
-        lng: 13.8691
-      },
-      {
-        streetKey: 'lungomare-alcide-de-gasperi_grottammare_ap',
-        name: 'Lungomare Alcide De Gasperi',
-        city: 'Grottammare',
-        province: 'AP',
-        postalCode: '63066',
-        lat: 42.9744,
-        lng: 13.8769
-      },
-      {
-        streetKey: 'piazza-pericle-fazzini_grottammare_ap',
-        name: 'Piazza Pericle Fazzini',
-        city: 'Grottammare',
-        province: 'AP',
-        postalCode: '63066',
-        lat: 42.9906,
-        lng: 13.8687
-      },
-      {
-        streetKey: 'viale-secondo-moretti_san-benedetto-del-tronto_ap',
-        name: 'Viale Secondo Moretti',
-        city: 'San Benedetto del Tronto',
-        province: 'AP',
-        postalCode: '63074',
-        lat: 42.9517,
-        lng: 13.8822
-      },
-      {
-        streetKey: 'lungomare-san-benedetto-del-tronto_san-benedetto-del-tronto_ap',
-        name: 'Lungomare San Benedetto del Tronto',
-        city: 'San Benedetto del Tronto',
-        province: 'AP',
-        postalCode: '63074',
-        lat: 42.9380,
-        lng: 13.8890
-      },
-      {
-        streetKey: 'lungomare-nord-giardini-tematici_san-benedetto-del-tronto_ap',
-        name: 'Lungomare Nord (Giardini Tematici)',
-        city: 'San Benedetto del Tronto',
-        province: 'AP',
-        postalCode: '63074',
-        lat: 42.9492,
-        lng: 13.8864
-      },
-      {
-        streetKey: 'lungomare-sud-rotonda-porto-d-ascoli_san-benedetto-del-tronto_ap',
-        name: 'Lungomare Sud (Rotonda Porto d\'Ascoli)',
-        city: 'San Benedetto del Tronto',
-        province: 'AP',
-        postalCode: '63074',
-        lat: 42.9165,
-        lng: 13.9039
-      },
-      {
-        streetKey: 'via-mare-porto-d-ascoli_san-benedetto-del-tronto_ap',
-        name: 'Via Mare (Porto d\'Ascoli)',
-        city: 'San Benedetto del Tronto',
-        province: 'AP',
-        postalCode: '63074',
-        lat: 42.9156,
-        lng: 13.8967
-      },
-      {
-        streetKey: 'piazza-carlo-giorgini_san-benedetto-del-tronto_ap',
-        name: 'Piazza Carlo Giorgini',
-        city: 'San Benedetto del Tronto',
-        province: 'AP',
-        postalCode: '63074',
-        lat: 42.9523,
-        lng: 13.8847
-      },
-      {
-        streetKey: 'viale-alcide-de-gasperi_san-benedetto-del-tronto_ap',
-        name: 'Viale Alcide De Gasperi',
-        city: 'San Benedetto del Tronto',
-        province: 'AP',
-        postalCode: '63074',
-        lat: 42.9458,
-        lng: 13.8830
-      },
-      {
-        streetKey: 'via-xxvii-novembre-1943_san-benedetto-del-tronto_ap',
-        legacyKeys: [
-          'via-xxvii-novembre_san-benedetto-del-tronto_ap',
-          'via-xxvii-novembre_san-benedetto-del-tronto',
-          'via-27-novembre_san-benedetto-del-tronto_ap',
-          'via-27-novembre_san-benedetto-del-tronto',
-          'via-27-novembre-1943_san-benedetto-del-tronto_ap'
-        ],
-        name: 'Via XXVII Novembre 1943',
-        city: 'San Benedetto del Tronto',
-        province: 'AP',
-        postalCode: '63074',
-        lat: 42.9491,
-        lng: 13.8765
-      },
-      {
-        streetKey: 'via-salaria-centobuchi_monteprandone_ap',
-        name: 'Via Salaria (Centobuchi)',
-        city: 'Monteprandone',
-        province: 'AP',
-        postalCode: '63076',
-        lat: 42.8977,
-        lng: 13.8498
-      },
-      {
-        streetKey: 'piazza-dell-aquila-borgo-storico_monteprandone_ap',
-        name: 'Piazza dell\'Aquila (Borgo Storico)',
-        city: 'Monteprandone',
-        province: 'AP',
-        postalCode: '63076',
-        lat: 42.9200,
-        lng: 13.8356
-      },
-      {
-        streetKey: 'piazza-del-forte_acquaviva-picena_ap',
-        name: 'Piazza del Forte',
-        city: 'Acquaviva Picena',
-        province: 'AP',
-        postalCode: '63075',
-        lat: 42.9445,
-        lng: 13.8124
-      },
-    ];
+    // --- STRADARIO LOCALE (DISATTIVATO: Coordinate e toponomastica risolte esclusivamente da Google Maps Geocoder) ---
+    const LOCAL_GAZETTEER = [];
 
     const RIVIERA_LEGACY_CITY_KEYS = new Set([
       'san-benedetto-del-tronto',
@@ -452,10 +249,9 @@
     ]);
 
     // Helper di normalizzazione toponomastica completa (preserva 'viale', 'lungomare', 'via', ecc.)
-    // Include Toponym Aliasing per varianti storiche (es. Via XXVII Novembre -> Via XXVII Novembre 1943 a San Benedetto del Tronto)
-    const normalizeStreetKey = (name, city = '') => {
+    const normalizeStreetKey = (name) => {
       if (!name) return '';
-      let slug = name
+      return String(name)
         .toLowerCase()
         .replace(/\bv\.le\b/gi, 'viale')
         .replace(/\bc\.so\b/gi, 'corso')
@@ -463,20 +259,43 @@
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '')
         .trim();
+    };
 
-      // Toponym Aliasing San Benedetto del Tronto: variante senza anno -> con anno 1943
-      if (
-        slug === 'via-xxvii-novembre' ||
-        slug === 'via-27-novembre' ||
-        slug === 'xxvii-novembre' ||
-        slug === '27-novembre'
-      ) {
-        const cKey = city ? normalizeCityKey(city) : '';
-        if (!cKey || cKey === 'san-benedetto-del-tronto' || cKey === 'italia') {
-          return 'via-xxvii-novembre-1943';
-        }
+    // Helper universale per il confronto di varianti toponomastiche e suffissi storici (es. "XXVII Novembre" vs "XXVII Novembre 1943", "4 Novembre" vs "IV Novembre")
+    const areStreetNamesMatchingVariants = (nameA, nameB) => {
+      if (!nameA || !nameB) return false;
+      const sA = normalizeStreetKey(nameA);
+      const sB = normalizeStreetKey(nameB);
+      if (sA === sB) return true;
+
+      // Rimuovi eventuali suffissi di anni o date (es. -1943, -1918, ecc.)
+      const stripDates = (s) => s.replace(/-(18\d\d|19\d\d|20\d\d)\b/g, '').replace(/^-+|-+$/g, '');
+      const dA = stripDates(sA);
+      const dB = stripDates(sB);
+      if (dA && dB && dA === dB) return true;
+
+      // Normalizzazione numeri romani e ordinali comuni nelle intitolazioni stradali
+      const romanToNum = (s) => s
+        .replace(/\biv\b/g, '4')
+        .replace(/\bix\b/g, '9')
+        .replace(/\bxxiv\b/g, '24')
+        .replace(/\bxxvii\b/g, '27')
+        .replace(/\bxx\b/g, '20')
+        .replace(/\bi\b/g, '1')
+        .replace(/\bii\b/g, '2')
+        .replace(/\biii\b/g, '3');
+
+      const rA = romanToNum(dA);
+      const rB = romanToNum(dB);
+      if (rA === rB) return true;
+
+      // Se differiscono solo per un suffisso numerico/anno
+      if (sA.startsWith(sB + '-') || sB.startsWith(sA + '-')) {
+        const rest = sA.startsWith(sB + '-') ? sA.slice(sB.length + 1) : sB.slice(sA.length + 1);
+        if (/^\d+$/.test(rest)) return true;
       }
-      return slug;
+
+      return false;
     };
 
     // Inferenza geografica del comune nel perimetro storico a partire dalle coordinate (solo se dentro la Riviera delle Palme)
@@ -554,22 +373,9 @@
       return isInsideRivieraBounds(lat, lng) ? 'San Benedetto del Tronto' : 'Italia';
     };
 
-    // Toponym Aliasing: risoluzione nome canonico della via
+    // Risoluzione canonica universale del nome strada
     const resolveCanonicalStreetName = (streetName, city = '', lat = null, lng = null) => {
       if (!streetName) return '';
-      const cKey = normalizeCityKey(city, lat, lng);
-      const sSlug = String(streetName)
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .trim();
-
-      if (
-        (cKey === 'san-benedetto-del-tronto' || (!cKey && isInsideRivieraBounds(lat, lng))) &&
-        (sSlug === 'via-xxvii-novembre' || sSlug === 'via-27-novembre' || sSlug === 'xxvii-novembre' || sSlug === '27-novembre' || sSlug.includes('xxvii-novembre') || sSlug.includes('27-novembre'))
-      ) {
-        return 'Via XXVII Novembre 1943';
-      }
       return String(streetName).trim();
     };
 
@@ -692,11 +498,7 @@
     // ${normalizeStreetName(streetName)}_${normalizeCity(streetCity)}_${normalizeProvince(province || 'italia')}
     const createStreetCompositeKey = (streetName, city, lat, lng, province = '') => {
       const cKey = normalizeCity(city, lat, lng);
-      let sKey = normalizeStreetName(streetName, cKey);
-      if ((cKey === 'san-benedetto-del-tronto' || (!cKey && isInsideRivieraBounds(lat, lng))) &&
-          (sKey === 'via-xxvii-novembre' || sKey === 'via-27-novembre' || sKey === 'xxvii-novembre' || sKey === '27-novembre')) {
-        sKey = 'via-xxvii-novembre-1943';
-      }
+      const sKey = normalizeStreetName(streetName, cKey);
       const pKey = normalizeProvince(province, cKey, lat, lng);
       return `${sKey}_${cKey}_${pKey}`;
     };
@@ -704,29 +506,27 @@
     // Verifica equivalenza tra due streetKey con isolamento rigoroso di via, comune e provincia
     const areStreetKeysEquivalent = (keyA, keyB) => {
       if (!keyA || !keyB) return false;
-      let kA = String(keyA).toLowerCase().replace(/^street-/, '').trim();
-      let kB = String(keyB).toLowerCase().replace(/^street-/, '').trim();
-      if (kA === kB) return true;
-
-      // Toponym Aliasing San Benedetto del Tronto: via-xxvii-novembre -> via-xxvii-novembre-1943
-      kA = kA.replace(/via-xxvii-novembre(_san-benedetto-del-tronto)/g, 'via-xxvii-novembre-1943$1')
-             .replace(/via-27-novembre(_san-benedetto-del-tronto)/g, 'via-xxvii-novembre-1943$1');
-      kB = kB.replace(/via-xxvii-novembre(_san-benedetto-del-tronto)/g, 'via-xxvii-novembre-1943$1')
-             .replace(/via-27-novembre(_san-benedetto-del-tronto)/g, 'via-xxvii-novembre-1943$1');
+      const kA = String(keyA).toLowerCase().replace(/^street-/, '').trim();
+      const kB = String(keyB).toLowerCase().replace(/^street-/, '').trim();
       if (kA === kB) return true;
 
       const partsA = kA.split('_');
       const partsB = kB.split('_');
       // Nome via e comune (prime due parti) devono coincidere tassativamente
       if (partsA.length < 2 || partsB.length < 2) return false;
-      if (partsA[0] !== partsB[0] || partsA[1] !== partsB[1]) return false;
+      if (partsA[1] !== partsB[1]) return false;
 
       // Se entrambe specificano la provincia (3 parti), devono coincidere anche nella provincia
       if (partsA.length >= 3 && partsB.length >= 3) {
-        return partsA[2] === partsB[2];
+        if (partsA[2] !== partsB[2]) return false;
       }
-      // Retrocompatibilità solo se una delle due chiavi è legacy a 2 parti (senza provincia)
-      return true;
+
+      // Se le due chiavi corrispondono come varianti toponomastiche nello stesso comune
+      if (partsA[0] === partsB[0] || areStreetNamesMatchingVariants(partsA[0], partsB[0])) {
+        return true;
+      }
+
+      return false;
     };
 
     // Calcolo distanza Haversine in km tra due punti geografici
@@ -786,11 +586,12 @@
         return false;
       }
 
-      // Alias speciale San Benedetto del Tronto per Via XXVII Novembre 1943
-      if (cKeyA === 'san-benedetto-del-tronto' && cKeyB === 'san-benedetto-del-tronto') {
-        const isXXVII_A = sNormA.includes('xxvii-novembre') || sNormA.includes('27-novembre');
-        const isXXVII_B = sNormB.includes('xxvii-novembre') || sNormB.includes('27-novembre');
-        if (isXXVII_A && isXXVII_B) return true;
+      const nameA = a.name || a.streetName || a.canonicalName || '';
+      const nameB = b.name || b.streetName || b.canonicalName || '';
+
+      // Se il comune coincide, verifica se i nomi coincidono o sono varianti toponomastiche dello stesso asse stradale
+      if (cKeyA && cKeyB && cKeyA !== 'italia' && cKeyB !== 'italia' && cKeyA === cKeyB) {
+        if (areStreetNamesMatchingVariants(nameA, nameB)) return true;
       }
 
       // Due vie sono la stessa via SOLO se hanno lo stesso nome normalizzato E lo stesso comune normalizzato
@@ -833,10 +634,8 @@
         const sCompKey = s.streetKey || createStreetCompositeKey(s.name, s.city, s.latitude, s.longitude, sProv);
         if (areStreetKeysEquivalent(sCompKey, candCompKey)) return true;
         if (isSameStreet(s, { name: candName, city: candCity, province: candProv, lat: candLat, lng: candLng, streetKey: candCompKey })) return true;
-        if (sNormCity === 'san-benedetto-del-tronto' && candNormCity === 'san-benedetto-del-tronto') {
-          const sIsXXVII = normalizeStreetName(s.name).includes('xxvii-novembre') || normalizeStreetName(s.name).includes('27-novembre');
-          const candIsXXVII = candNormName.includes('xxvii-novembre') || candNormName.includes('27-novembre');
-          if (sIsXXVII && candIsXXVII) return true;
+        if (sNormCity === candNormCity && areStreetNamesMatchingVariants(s.name, candName)) {
+          return true;
         }
         return normalizeStreetName(s.name) === candNormName && sNormCity === candNormCity;
       }) || null;
@@ -855,72 +654,13 @@
       const resolvedProvince = normalizeProvince(fallbackProvince, resolvedCityKey, fallbackLat, fallbackLng);
       const defaultPostal = resolveDefaultPostalCode(resolvedCityKey);
 
-      if (!streetName) {
-        return {
-          lat: fallbackLat,
-          lng: fallbackLng,
-          city: resolvedCity,
-          province: resolvedProvince,
-          postalCode: defaultPostal,
-          canonicalName: streetName
-        };
-      }
-
-      const sNorm = normalizeStreetName(streetName);
-
-      // BLINDATURA CATEGORICA:
-      // Se il comune dichiarato NON è San Benedetto del Tronto, NON DEVE MAI restituire San Benedetto del Tronto!
-      const match = LOCAL_GAZETTEER.find(g => {
-        const gCNorm = normalizeCityKey(g.city);
-
-        // Vincolo vincolante: il comune deve coincidere se dichiarato
-        if (resolvedCityKey && resolvedCityKey !== 'italia' && gCNorm !== resolvedCityKey) {
-          return false;
-        }
-        if (resolvedCityKey !== 'san-benedetto-del-tronto' && gCNorm === 'san-benedetto-del-tronto') {
-          return false;
-        }
-
-        const gSNorm = normalizeStreetName(g.name);
-        if (gSNorm === sNorm) return true;
-
-        // Gestione speciale omonimie e alias locali
-        if (resolvedCityKey === 'grottammare' && gCNorm === 'grottammare') {
-          if (sNorm.includes('mazzini') && gSNorm.includes('mazzini')) return true;
-          if (sNorm.includes('carducci') && gSNorm.includes('carducci')) return true;
-          if (sNorm.includes('firenze') && gSNorm.includes('firenze')) return true;
-        }
-        if (resolvedCityKey === 'san-benedetto-del-tronto' && gCNorm === 'san-benedetto-del-tronto') {
-          if (sNorm.includes('mazzini') && gSNorm.includes('mazzini')) return true;
-          if ((sNorm.includes('xxvii-novembre') || sNorm.includes('27-novembre')) && (gSNorm.includes('xxvii-novembre') || gSNorm.includes('27-novembre'))) return true;
-        }
-        if (resolvedCityKey === 'monteprandone' && gCNorm === 'monteprandone') {
-          if (sNorm.includes('san-donato') && gSNorm.includes('san-donato')) return true;
-        }
-
-        return false;
-      });
-
-      if (match) {
-        return {
-          streetKey: match.streetKey,
-          lat: match.lat,
-          lng: match.lng,
-          city: match.city,
-          province: match.province || 'AP',
-          postalCode: match.postalCode,
-          canonicalName: match.name
-        };
-      }
-
-      // Se la strada non appartiene al LOCAL_GAZETTEER, preserva le coordinate senza forzare San Benedetto
       return {
         lat: fallbackLat,
         lng: fallbackLng,
         city: resolvedCity,
         province: resolvedProvince,
         postalCode: defaultPostal,
-        canonicalName: streetName
+        canonicalName: resolveCanonicalStreetName(streetName, resolvedCity, fallbackLat, fallbackLng) || streetName
       };
     };
 
@@ -1018,118 +758,102 @@
       return null;
     };
 
-    // Geocoding Canonico Rigoroso con Vincolo Territoriale Rigido sul Comune (locality) e Pin Ufficiale Google Maps (geometry.location)
-    const resolveExactStreetRouteCoordinates = async (streetName, streetCity, province = '', fallbackLat = null, fallbackLng = null) => {
-      const normName = normalizeStreetName(streetName);
-      const cleanCity = resolveCanonicalCityName(streetCity, fallbackLat, fallbackLng);
+    // Canale Unificato di Risoluzione Geografica Universale (Google Maps Geocoder & Geometria Ufficiale Route)
+    async function resolveCanonicalStreetGeometry(streetName, city, province = '', fallbackLat = null, fallbackLng = null) {
+      const cleanCity = resolveCanonicalCityName(city, fallbackLat, fallbackLng);
+      const cleanStreet = extractCivicNumberFromQuery(streetName || '').cleanQuery || streetName || '';
+      const canonicalStreetName = resolveCanonicalStreetName(cleanStreet, cleanCity, fallbackLat, fallbackLng) || cleanStreet;
       const cityKey = normalizeCityKey(cleanCity);
+      const provCode = normalizeProvinceCode(province, cityKey, fallbackLat, fallbackLng);
 
-      // 1. Priorità assoluta: Ancoraggio certificato nel LOCAL_GAZETTEER (solo se Comune e Nome Via coincidono)
-      const anchor = getCanonicalStreetAnchor(streetName, cleanCity, fallbackLat, fallbackLng, province);
-      const isGazetteerMatch = LOCAL_GAZETTEER.some(g => {
-        const gSNorm = normalizeStreetName(g.name);
-        const gCNorm = normalizeCityKey(g.city);
-        if (gCNorm !== cityKey) return false;
-        return (gSNorm === normName) ||
-          (cityKey === 'grottammare' && normName.includes('mazzini') && gSNorm.includes('mazzini')) ||
-          (cityKey === 'grottammare' && normName.includes('carducci') && gSNorm.includes('carducci')) ||
-          (cityKey === 'grottammare' && normName.includes('firenze') && gSNorm.includes('firenze')) ||
-          (cityKey === 'san-benedetto-del-tronto' && (normName.includes('xxvii-novembre') || normName.includes('27-novembre')) && (gSNorm.includes('xxvii-novembre') || gSNorm.includes('27-novembre'))) ||
-          (cityKey === 'monteprandone' && normName.includes('san-donato') && gSNorm.includes('san-donato'));
-      });
-
-      if (isGazetteerMatch && anchor && anchor.lat && anchor.lng) {
-        return {
-          lat: Number(anchor.lat),
-          lng: Number(anchor.lng),
-          city: anchor.city,
-          province: anchor.province || province || 'AP',
-          postalCode: anchor.postalCode || resolveDefaultPostalCode(cityKey),
-          canonicalName: anchor.canonicalName || streetName,
-          placeId: anchor.streetKey || null,
-          snapped: true
-        };
-      }
-
-      // 2. Query a Google Geocoding per l'intera via ('route') nel Comune e Provincia specifici:
-      //    restituisce ESATTAMENTE il geometry.location principale di Google Maps (lo stesso punto di quando si cerca la via su Google Maps)
-      if (window.google && window.google.maps && window.google.maps.Geocoder) {
-        try {
-          const geocoder = new window.google.maps.Geocoder();
-          const cleanStreetQuery = extractCivicNumberFromQuery(streetName).cleanQuery || streetName;
-          const addressQuery = province
-            ? `${cleanStreetQuery}, ${cleanCity}, ${province}, Italia`
-            : `${cleanStreetQuery}, ${cleanCity}, Italia`;
-
-          const geoResult = await new Promise((resolve) => {
-            geocoder.geocode({ address: addressQuery, componentRestrictions: { country: 'it' } }, (results, status) => {
-              if (status === 'OK' && results && results.length > 0) {
-                // Priorità 1: risultato di tipo 'route' (la via intera) nello stesso Comune
-                const matchingRoute = results.find(r => {
-                  const isRoute = r.types && r.types.includes('route');
-                  const details = extractAddressDetails(r.address_components, r.formatted_address || '');
-                  const rCityKey = normalizeCityKey(details.city);
-                  return isRoute && (!cityKey || cityKey === 'italia' || rCityKey === cityKey);
-                });
-                if (matchingRoute) return resolve(matchingRoute);
-
-                // Priorità 2: risultato route o street_address nello stesso Comune
-                const matchingLocality = results.find(r => {
-                  const isRouteOrAddress = r.types && (r.types.includes('route') || r.types.includes('street_address'));
-                  const details = extractAddressDetails(r.address_components, r.formatted_address || '');
-                  const rCityKey = normalizeCityKey(details.city);
-                  return isRouteOrAddress && (!cityKey || cityKey === 'italia' || rCityKey === cityKey);
-                });
-                resolve(matchingLocality || null);
-              } else {
-                resolve(null);
-              }
-            });
-          });
-
-          if (geoResult && geoResult.geometry && geoResult.geometry.location) {
-            // Usa ESCLUSIVAMENTE geometry.location (il Pin ufficiale di Google Maps per quella via)
-            const resLat = typeof geoResult.geometry.location.lat === 'function'
-              ? geoResult.geometry.location.lat()
-              : Number(geoResult.geometry.location.lat);
-            const resLng = typeof geoResult.geometry.location.lng === 'function'
-              ? geoResult.geometry.location.lng()
-              : Number(geoResult.geometry.location.lng);
-            const details = extractAddressDetails(
-              geoResult.address_components,
-              geoResult.formatted_address || '',
-              resLat,
-              resLng
-            );
-            return {
-              lat: Number(resLat),
-              lng: Number(resLng),
-              city: details.city || cleanCity,
-              province: details.province || province || 'AP',
-              postalCode: details.postalCode || anchor.postalCode || resolveDefaultPostalCode(cityKey),
-              canonicalName: details.route || cleanStreetQuery,
-              placeId: geoResult.place_id || null,
-              snapped: true
-            };
-          }
-        } catch (e) {
-          console.warn('[ExactRouteGeocoding] Lookup warning:', e);
-        }
-      }
-
-      return {
-        lat: fallbackLat || anchor.lat,
-        lng: fallbackLng || anchor.lng,
+      const fallbackResult = {
+        lat: fallbackLat,
+        lng: fallbackLng,
         city: cleanCity,
-        province: province || 'AP',
-        postalCode: anchor.postalCode || resolveDefaultPostalCode(cityKey),
-        canonicalName: anchor.canonicalName || streetName,
+        province: provCode,
+        postalCode: resolveDefaultPostalCode(cityKey),
+        canonicalName: canonicalStreetName,
         placeId: null,
+        formattedAddress: '',
         snapped: false
       };
-    };
 
-    const resolveCanonicalRouteCoordinates = resolveExactStreetRouteCoordinates;
+      if (!window.google || !window.google.maps || !window.google.maps.Geocoder) {
+        return fallbackResult;
+      }
+
+      try {
+        const geocoder = new window.google.maps.Geocoder();
+        const addressQuery = provCode && provCode !== 'italia'
+          ? `${canonicalStreetName}, ${cleanCity}, ${provCode}, Italia`
+          : `${canonicalStreetName}, ${cleanCity}, Italia`;
+
+        const geoResult = await new Promise((resolve) => {
+          geocoder.geocode({ address: addressQuery, componentRestrictions: { country: 'it' } }, (results, status) => {
+            if (status === 'OK' && Array.isArray(results) && results.length > 0) {
+              resolve(results);
+            } else {
+              resolve(null);
+            }
+          });
+        });
+
+        if (!geoResult || geoResult.length === 0) {
+          return fallbackResult;
+        }
+
+        // Ispeziona i risultati filtrando per types.includes('route') (o fallback su street_address / intersection)
+        let best = geoResult.find(r => r.types && r.types.includes('route'));
+        if (!best) {
+          best = geoResult.find(r => r.types && (r.types.includes('street_address') || r.types.includes('intersection')));
+        }
+        if (!best) {
+          best = geoResult[0];
+        }
+
+        // Ricava il punto medio: se dispone di viewport calcola il centro, altrimenti usa location
+        let geomLat = fallbackLat;
+        let geomLng = fallbackLng;
+
+        if (best.geometry) {
+          if (best.geometry.viewport) {
+            const ne = typeof best.geometry.viewport.getNorthEast === 'function' ? best.geometry.viewport.getNorthEast() : best.geometry.viewport.northEast;
+            const sw = typeof best.geometry.viewport.getSouthWest === 'function' ? best.geometry.viewport.getSouthWest() : best.geometry.viewport.southWest;
+            const neLat = typeof ne.lat === 'function' ? ne.lat() : Number(ne.lat);
+            const neLng = typeof ne.lng === 'function' ? ne.lng() : Number(ne.lng);
+            const swLat = typeof sw.lat === 'function' ? sw.lat() : Number(sw.lat);
+            const swLng = typeof sw.lng === 'function' ? sw.lng() : Number(sw.lng);
+            geomLat = Number(((neLat + swLat) / 2).toFixed(6));
+            geomLng = Number(((neLng + swLng) / 2).toFixed(6));
+          } else if (best.geometry.location) {
+            geomLat = typeof best.geometry.location.lat === 'function' ? best.geometry.location.lat() : Number(best.geometry.location.lat);
+            geomLng = typeof best.geometry.location.lng === 'function' ? best.geometry.location.lng() : Number(best.geometry.location.lng);
+          }
+        }
+
+        const addrDetails = extractAddressDetails(best.address_components, best.formatted_address || '', geomLat, geomLng);
+        const resolvedRouteName = addrDetails.route || canonicalStreetName;
+        const finalCanonicalName = resolveCanonicalStreetName(resolvedRouteName, addrDetails.city || cleanCity, geomLat, geomLng);
+
+        return {
+          lat: geomLat !== null ? Number(geomLat) : fallbackLat,
+          lng: geomLng !== null ? Number(geomLng) : fallbackLng,
+          city: addrDetails.city || cleanCity,
+          province: addrDetails.province || provCode,
+          postalCode: addrDetails.postalCode || resolveDefaultPostalCode(cityKey),
+          canonicalName: finalCanonicalName,
+          placeId: best.place_id || null,
+          formattedAddress: best.formatted_address || '',
+          snapped: true
+        };
+      } catch (err) {
+        console.warn('[resolveCanonicalStreetGeometry] Errore Geocoding Google Maps:', err);
+        return fallbackResult;
+      }
+    }
+
+    const resolveExactStreetRouteCoordinates = resolveCanonicalStreetGeometry;
+    const resolveCanonicalRouteCoordinates = resolveCanonicalStreetGeometry;
 
     // Funzione rapida per aggiornare le coordinate di qualsiasi recensione/strada su Firestore
     window.updateStreetReviewCoordinates = async (streetTargetName, newLat, newLng) => {
@@ -3505,30 +3229,8 @@ Imposta allowed: true per:
             ? Number((validCoords.reduce((acc, rev) => acc + Number(rev.longitude), 0) / validCoords.length).toFixed(6))
             : (Number(sample?.longitude) || 13.8690));
 
-      // CASI SPECIALI AUTORITATIVI (applicati ESCLUSIVAMENTE se il comune corrisponde):
+      // Coordinate baricentriche determinate esclusivamente dai dati e fallback senza sovrascritture fisse
       const normRawName = normalizeStreetName(rawName);
-      if (normRawName.includes('vittoria') && declaredCityKey === 'alba-adriatica') {
-        baryLat = 42.83605895341866;
-        baryLng = 13.926245266469673;
-      } else if (normRawName.includes('mazzini') && declaredCityKey === 'alba-adriatica') {
-        baryLat = 42.83284835747221;
-        baryLng = 13.926373810644503;
-      } else if (normRawName.includes('mazzini') && declaredCityKey === 'grottammare') {
-        baryLat = 42.990443190632796;
-        baryLng = 13.869663126569428;
-      } else if (normRawName.includes('carducci') && declaredCityKey === 'grottammare') {
-        baryLat = 42.96336244509739;
-        baryLng = 13.875948479968113;
-      } else if (normRawName.includes('firenze') && declaredCityKey === 'grottammare') {
-        baryLat = 42.962981492069545;
-        baryLng = 13.87075809346326;
-      } else if (normRawName.includes('san-donato') && declaredCityKey === 'monteprandone') {
-        baryLat = 42.91209543811305;
-        baryLng = 13.860065210654204;
-      } else if ((normRawName.includes('xxvii-novembre') || normRawName.includes('27-novembre')) && declaredCityKey === 'san-benedetto-del-tronto') {
-        baryLat = 42.9491;
-        baryLng = 13.8765;
-      }
 
       const anchor = getCanonicalStreetAnchor(rawName, declaredCity, baryLat, baryLng, fallbackMeta.province || sample?.province);
       const streetName = anchor.canonicalName || rawName;
@@ -4982,458 +4684,148 @@ Imposta allowed: true per:
     };
 
     // Routine Autoritativa di Fusione Toponomastica e Pulizia Database per Via XXVII Novembre 1943 (San Benedetto del Tronto)
-    window.mergeViaXXVIINovembre = async () => {
+    // Motore Universale di Auto-Riparazione Batch delle Coordinate Stradali (Google Maps Geocoder)
+    window.autoHealAllStreetsDatabase = async (onProgress = null) => {
       const firestore = window.db;
       if (!firestore) {
-        console.error("[MergeViaXXVIINovembre] Firestore non disponibile in window.db");
+        console.error("[AutoHeal] Firestore non disponibile in window.db");
         return { success: false, error: "Database not connected" };
       }
 
-      console.log("[MergeViaXXVIINovembre] Avvio fusione toponomastica e pulizia duplicati per Via XXVII Novembre 1943 (San Benedetto del Tronto)...");
+      console.log("[AutoHeal] Avvio scansione universale e riparazione coordinate su collezione 'streets'...");
       try {
-        const canonicalLat = 42.9491;
-        const canonicalLng = 13.8765;
-        const canonicalStreetKey = "via-xxvii-novembre-1943_san-benedetto-del-tronto_ap";
-        const canonicalName = "Via XXVII Novembre 1943";
-        const canonicalCity = "San Benedetto del Tronto";
-        const canonicalProvince = "AP";
-        const canonicalPostalCode = "63074";
+        const streetsSnap = await firestore.collection('streets').get();
+        const total = streetsSnap.docs.length;
+        console.log(`[AutoHeal] Trovate ${total} strade da verificare.`);
 
-        // 1. Trova tutte le recensioni relative a Via XXVII Novembre (con o senza 1943) in 'reviews'
-        const reviewsSnap = await firestore.collection('reviews').get();
-        const batch = firestore.batch();
-        let deletedFlashCount = 0;
-        let officialReview = null;
-        let officialDocRef = null;
+        let healedStreetsCount = 0;
+        let healedReviewsCount = 0;
+        let processed = 0;
 
-        reviewsSnap.forEach(docSnap => {
-          const r = docSnap.data();
-          const rName = (r.streetName || r.name || '').toLowerCase();
-          const rKey = (r.streetKey || docSnap.id || '').toLowerCase();
-          const rCity = (r.streetCity || r.city || '').toLowerCase();
-
-          const isXXVII = (rName.includes('xxvii') || rName.includes('27')) && (rName.includes('novembre') || rKey.includes('novembre'));
-          const isSBT = !rCity || rCity.includes('san benedetto') || rKey.includes('san-benedetto');
-
-          if (isXXVII && isSBT) {
-            const isFlashOrDuplicate =
-              r.isFlash === true ||
-              r.reviewType === 'flash' ||
-              Number(r.ratingOverall) === 2.0 ||
-              (!rName.includes('1943') && !rKey.includes('1943'));
-
-            // Rimuovi la recensione Flash duplicata (voto 2.0 o variante senza 1943) per rispettare 1 recensione per utente
-            if (isFlashOrDuplicate && (Number(r.ratingOverall) === 2.0 || !rName.includes('1943'))) {
-              console.log(`[MergeViaXXVIINovembre] Rimozione recensione Flash duplicata ID: ${docSnap.id} (voto: ${r.ratingOverall})`);
-              batch.delete(docSnap.ref);
-              deletedFlashCount++;
-            } else {
-              // Mantieni e aggiorna la recensione ufficiale completa (voto 2.1)
-              officialReview = {
-                ...r,
-                streetName: canonicalName,
-                streetCity: canonicalCity,
-                streetProvince: canonicalProvince,
-                province: canonicalProvince,
-                postalCode: canonicalPostalCode,
-                streetKey: canonicalStreetKey,
-                latitude: canonicalLat,
-                longitude: canonicalLng,
-                ratingOverall: 2.1,
-                rawOverallRating: r.rawOverallRating || 2.1,
-                updatedAt: new Date().toISOString()
-              };
-              officialDocRef = docSnap.ref;
-            }
-          }
-        });
-
-        if (officialDocRef && officialReview) {
-          batch.update(officialDocRef, {
-            streetName: canonicalName,
-            streetCity: canonicalCity,
-            streetProvince: canonicalProvince,
-            province: canonicalProvince,
-            postalCode: canonicalPostalCode,
-            streetKey: canonicalStreetKey,
-            latitude: canonicalLat,
-            longitude: canonicalLng,
-            ratingOverall: 2.1,
-            rawOverallRating: officialReview.rawOverallRating || 2.1,
-            updatedAt: new Date().toISOString()
-          });
-        }
-
-        if (deletedFlashCount > 0 || officialDocRef) {
-          await batch.commit();
-          console.log(`[MergeViaXXVIINovembre] Eliminate ${deletedFlashCount} recensioni duplicate e allineata recensione ufficiale (voto 2.1).`);
-        }
-
-        // 2. Documento 'streets/via-xxvii-novembre-1943_san-benedetto-del-tronto_ap'
-        const officialReviewsList = officialReview ? [officialReview] : [];
-        const canonicalStreetDoc = {
-          streetKey: canonicalStreetKey,
-          streetName: canonicalName,
-          streetCity: canonicalCity,
-          province: canonicalProvince,
-          streetProvince: canonicalProvince,
-          postalCode: canonicalPostalCode,
-          latitude: canonicalLat,
-          longitude: canonicalLng,
-          ratingOverall: 2.1,
-          avgOverallRating: 2.1,
-          reviewCount: 1,
-          reviewsCount: 1,
-          streetType: "🏡 Urbana",
-          reviews: officialReviewsList,
-          updatedAt: new Date().toISOString()
+        const updateStatus = (msg) => {
+          console.log(`[AutoHeal] ${msg}`);
+          if (typeof onProgress === 'function') onProgress(msg);
+          if (typeof window.setHealStatusToast === 'function') window.setHealStatusToast(msg);
         };
 
-        await firestore.collection('streets').doc(canonicalStreetKey).set(canonicalStreetDoc, { merge: true });
-        console.log(`[MergeViaXXVIINovembre] Aggiornato documento streets/${canonicalStreetKey} (baricentro ${canonicalLat}, ${canonicalLng}, rating: 2.1, reviewCount: 1)`);
+        updateStatus(`Riparazione database in corso: 0 di ${total} vie verificate...`);
 
-        // 3. Elimina definitivamente da Firestore i documenti duplicati 'streets'
-        const duplicateStreetKeys = [
-          "via-xxvii-novembre_san-benedetto-del-tronto_ap",
-          "via-xxvii-novembre_san-benedetto-del-tronto",
-          "via-27-novembre_san-benedetto-del-tronto_ap",
-          "via-27-novembre_san-benedetto-del-tronto",
-          "street-via-xxvii-novembre_san-benedetto-del-tronto_ap",
-          "street-via-xxvii-novembre_san-benedetto-del-tronto"
-        ];
+        // Helper sleep per il rate limiting di 150ms
+        const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
-        for (const dupKey of duplicateStreetKeys) {
-          const dupDoc = await firestore.collection('streets').doc(dupKey).get();
-          if (dupDoc.exists) {
-            await dupDoc.ref.delete();
-            console.log(`[MergeViaXXVIINovembre] Eliminato documento duplicato streets/${dupKey}`);
-          }
-        }
+        for (const sDoc of streetsSnap.docs) {
+          processed++;
+          const data = sDoc.data() || {};
+          const streetName = data.streetName || data.name || '';
+          const streetCity = data.streetCity || data.city || '';
+          const streetProv = data.streetProvince || data.province || '';
+          const curLat = Number(data.latitude ?? data.lat);
+          const curLng = Number(data.longitude ?? data.lng);
 
-        // Pulizia esaustiva su qualsiasi altro documento streets duplicato privo di '1943'
-        const allStreetsSnap = await firestore.collection('streets').get();
-        for (const sDoc of allStreetsSnap.docs) {
-          if (sDoc.id === canonicalStreetKey) continue;
-          const sData = sDoc.data() || {};
-          const sName = (sData.streetName || sData.name || '').toLowerCase();
-          const sCity = (sData.streetCity || sData.city || '').toLowerCase();
-          const sKey = (sData.streetKey || sDoc.id).toLowerCase();
-          if (
-            (sKey.includes('xxvii-novembre') || sName.includes('xxvii novembre') || sKey.includes('27-novembre')) &&
-            !sKey.includes('1943') &&
-            !sName.includes('1943') &&
-            (!sCity || sCity.includes('san benedetto'))
-          ) {
-            await sDoc.ref.delete();
-            console.log(`[MergeViaXXVIINovembre] Rimosso record orfano streets/${sDoc.id}`);
-          }
-        }
-
-        console.log("[MergeViaXXVIINovembre] Fusione e pulizia toponomastica completate con successo.");
-        return { success: true };
-      } catch (err) {
-        console.error("[MergeViaXXVIINovembre] Errore durante la fusione:", err);
-        throw err;
-      }
-    };
-
-    // Tabella di Correzione Forzata Immediata e Autoritativa (streets e reviews) per le vie cablate
-    window.forcePinpointFourStreets = async () => {
-      const firestore = window.db;
-      if (!firestore) {
-        console.error("[ForcePinpointFourStreets] Firestore non disponibile in window.db");
-        return { success: false, error: "Database not connected" };
-      }
-
-      console.log("[ForcePinpointFourStreets] Avvio allineamento autoritativo per Mazzini (Grottammare), Mazzini (Alba Adriatica), Carducci (Grottammare), Firenze (Grottammare) e San Donato (Monteprandone)...");
-      try {
-        const PINPOINT_TARGETS = [
-          {
-            id: "viale_della_vittoria_alba_adriatica",
-            streetName: "Viale della Vittoria",
-            streetCity: "Alba Adriatica",
-            province: "TE",
-            postalCode: "64011",
-            latitude: 42.83605895341866,
-            longitude: 13.926245266469673,
-            streetKey: "viale-della-vittoria_alba-adriatica_te",
-            legacyKeys: [
-              "viale-della-vittoria_alba-adriatica",
-              "viale-vittoria_alba-adriatica"
-            ],
-            matches: (name, city, key, r) => {
-              const rComment = (r?.comment || '').toLowerCase();
-              return name.includes("vittoria") || key.includes("vittoria") || rComment.includes("rifare da cima a fondo");
-            }
-          },
-          {
-            id: "mazzini_alba_adriatica",
-            streetName: "Via Giuseppe Mazzini",
-            streetCity: "Alba Adriatica",
-            province: "TE",
-            postalCode: "64011",
-            latitude: 42.83284835747221,
-            longitude: 13.926373810644503,
-            streetKey: "via-giuseppe-mazzini_alba-adriatica_te",
-            legacyKeys: [
-              "via-giuseppe-mazzini_alba-adriatica",
-              "via-mazzini_alba-adriatica",
-              "corso-giuseppe-mazzini_alba-adriatica_te"
-            ],
-            matches: (name, city, key, r) => {
-              const rComment = (r?.comment || '').toLowerCase();
-              if (rComment.includes("rifare da cima a fondo") || name.includes("vittoria") || key.includes("vittoria")) {
-                return false;
-              }
-              const isAlba = (city && city.includes("alba")) || (key && key.includes("alba")) || rComment.includes("alba adriatica");
-              return (name.includes("mazzini") || key.includes("mazzini")) && isAlba;
-            }
-          },
-          {
-            id: "mazzini_grottammare",
-            streetName: "Corso Giuseppe Mazzini",
-            streetCity: "Grottammare",
-            province: "AP",
-            postalCode: "63066",
-            latitude: 42.990443190632796,
-            longitude: 13.869663126569428,
-            streetKey: "corso-giuseppe-mazzini_grottammare_ap",
-            legacyKeys: [
-              "corso-giuseppe-mazzini_grottammare",
-              "corso-mazzini_grottammare",
-              "corso-mazzini_grottammare_ap",
-              "corso-giuseppe-mazzini_san-benedetto-del-tronto_ap",
-              "corso-giuseppe-mazzini_san-benedetto-del-tronto",
-              "corso-mazzini_san-benedetto-del-tronto",
-              "corso-mazzini_san-benedetto-del-tronto_ap"
-            ],
-            matches: (name, city, key, r) => {
-              const isSimone = (r?.authorName && r.authorName.toLowerCase().includes("simone")) || (r?.author && String(r.author).toLowerCase().includes("simone"));
-              const isAlba = (city && city.includes("alba")) || (key && key.includes("alba")) || (r?.comment && r.comment.toLowerCase().includes("alba adriatica"));
-              if (isSimone || isAlba) return false;
-              return (name.includes("mazzini") || key.includes("mazzini")) && (city.includes("grottammare") || key.includes("grottammare") || (!city.includes("san benedetto") && !city.includes("alba")));
-            }
-          },
-          {
-            id: "carducci_grottammare",
-            streetName: "Piazza G. Carducci",
-            streetCity: "Grottammare",
-            province: "AP",
-            postalCode: "63066",
-            latitude: 42.96336244509739,
-            longitude: 13.875948479968113,
-            streetKey: "piazza-g-carducci_grottammare_ap",
-            legacyKeys: [
-              "piazza-g-carducci_san-benedetto-del-tronto_ap",
-              "piazza-carducci_san-benedetto-del-tronto_ap",
-              "piazza-carducci_grottammare_ap",
-              "piazza-g-carducci_grottammare",
-              "piazza-carducci_grottammare"
-            ],
-            matches: (name, city, key) => name.includes("carducci") || key.includes("carducci")
-          },
-          {
-            id: "firenze_grottammare",
-            streetName: "Via Firenze",
-            streetCity: "Grottammare",
-            province: "AP",
-            postalCode: "63066",
-            latitude: 42.962981492069545,
-            longitude: 13.87075809346326,
-            streetKey: "via-firenze_grottammare_ap",
-            legacyKeys: [
-              "via-firenze_san-benedetto-del-tronto",
-              "via-firenze_san-benedetto-del-tronto_ap",
-              "via-firenze_grottammare"
-            ],
-            matches: (name, city, key) => name.includes("firenze") || key.includes("firenze")
-          },
-          {
-            id: "san_donato_monteprandone",
-            streetName: "Contrada San Donato",
-            streetCity: "Monteprandone",
-            province: "AP",
-            postalCode: "63076",
-            latitude: 42.91209543811305,
-            longitude: 13.860065210654204,
-            streetKey: "contrada-san-donato_monteprandone_ap",
-            legacyKeys: [
-              "contrada-san-donato_san-benedetto-del-tronto",
-              "contrada-san-donato_san-benedetto-del-tronto_ap",
-              "contrada-san-donato_monteprandone"
-            ],
-            matches: (name, city, key) => name.includes("san donato") || key.includes("san-donato")
-          },
-          {
-            id: "via_xxvii_novembre_1943_sbt",
-            streetName: "Via XXVII Novembre 1943",
-            streetCity: "San Benedetto del Tronto",
-            province: "AP",
-            postalCode: "63074",
-            latitude: 42.9491,
-            longitude: 13.8765,
-            streetKey: "via-xxvii-novembre-1943_san-benedetto-del-tronto_ap",
-            legacyKeys: [
-              "via-xxvii-novembre_san-benedetto-del-tronto_ap",
-              "via-xxvii-novembre_san-benedetto-del-tronto",
-              "via-27-novembre_san-benedetto-del-tronto_ap",
-              "via-27-novembre_san-benedetto-del-tronto",
-              "via-27-novembre-1943_san-benedetto-del-tronto_ap"
-            ],
-            matches: (name, city, key) => (name.includes("xxvii") || name.includes("27")) && (name.includes("novembre") || key.includes("novembre"))
-          }
-        ];
-
-        // 1. Aggiornamento a cascata su collezione 'reviews'
-        const reviewsSnap = await firestore.collection('reviews').get();
-        const batch = firestore.batch();
-        let healedReviewsCount = 0;
-        const matchingReviewsByTarget = {};
-        PINPOINT_TARGETS.forEach(t => { matchingReviewsByTarget[t.id] = []; });
-
-        reviewsSnap.forEach(docSnap => {
-          const r = docSnap.data();
-          const rName = (r.streetName || r.name || '').toLowerCase();
-          const rCity = (r.streetCity || r.city || '').toLowerCase();
-          const rKey = (r.streetKey || docSnap.id || '').toLowerCase();
-
-          for (const target of PINPOINT_TARGETS) {
-            if (target.matches(rName, rCity, rKey, r)) {
-              const needsFix =
-                Math.abs((Number(r.latitude) || 0) - target.latitude) > 0.00001 ||
-                Math.abs((Number(r.longitude) || 0) - target.longitude) > 0.00001 ||
-                r.streetCity !== target.streetCity ||
-                r.streetKey !== target.streetKey ||
-                r.streetName !== target.streetName;
-
-              const updatedReview = {
-                ...r,
-                streetName: target.streetName,
-                streetCity: target.streetCity,
-                streetProvince: target.province,
-                province: target.province,
-                postalCode: target.postalCode,
-                latitude: target.latitude,
-                longitude: target.longitude,
-                streetKey: target.streetKey,
-                updatedAt: new Date().toISOString()
-              };
-
-              matchingReviewsByTarget[target.id].push({ id: docSnap.id, ...updatedReview });
-
-              if (needsFix) {
-                batch.update(docSnap.ref, {
-                  streetName: target.streetName,
-                  streetCity: target.streetCity,
-                  streetProvince: target.province,
-                  province: target.province,
-                  postalCode: target.postalCode,
-                  latitude: target.latitude,
-                  longitude: target.longitude,
-                  streetKey: target.streetKey,
-                  updatedAt: new Date().toISOString()
-                });
-                healedReviewsCount++;
-              }
-              break;
-            }
-          }
-        });
-
-        if (healedReviewsCount > 0) {
-          await batch.commit();
-          console.log(`[ForcePinpointFourStreets] Aggiornate forzatamente ${healedReviewsCount} recensioni in 'reviews'.`);
-        }
-
-        // 2. Aggiornamento a cascata su collezione 'streets' e migrazione/eliminazione record orfani
-        const streetsSnap = await firestore.collection('streets').get();
-        let healedStreetsCount = 0;
-
-        for (const target of PINPOINT_TARGETS) {
-          const canonicalMeta = {
-            streetKey: target.streetKey,
-            streetName: target.streetName,
-            streetCity: target.streetCity,
-            province: target.province,
-            postalCode: target.postalCode,
-            latitude: target.latitude,
-            longitude: target.longitude,
-            updatedAt: new Date().toISOString()
-          };
-
-          let existingMergedData = {};
-          const orphanDocsToDelete = [];
-
-          for (const sDoc of streetsSnap.docs) {
-            const sd = sDoc.data();
-            const sName = (sd.streetName || sd.name || '').toLowerCase();
-            const sCity = (sd.streetCity || sd.city || '').toLowerCase();
-            const sKey = (sDoc.id || sd.streetKey || '').toLowerCase();
-
-            const isCanonical = sDoc.id === target.streetKey;
-            const isLegacyOrMatch = target.legacyKeys.includes(sDoc.id) || target.matches(sName, sCity, sKey, sd);
-
-            if (isCanonical || isLegacyOrMatch) {
-              if (!existingMergedData.streetKey || (Number(sd.reviewCount ?? sd.reviewsCount ?? 0) > Number(existingMergedData.reviewCount ?? existingMergedData.reviewsCount ?? 0))) {
-                existingMergedData = { ...sd };
-              }
-              if (!isCanonical) {
-                orphanDocsToDelete.push(sDoc);
-              }
-            }
+          if (!streetName) {
+            continue;
           }
 
-          const matchedRevs = matchingReviewsByTarget[target.id] || [];
-          let streetSummaryDoc;
+          updateStatus(`Riparazione database in corso: ${processed} di ${total} vie verificate... (${streetName})`);
 
-          if (matchedRevs.length > 0) {
-            streetSummaryDoc = buildStreetSummaryDocFromReviews(matchedRevs, canonicalMeta);
+          // Rate limiting di 150ms tra una richiesta e l'altra per rispetto quote API Google Maps
+          await sleep(150);
+          const geom = await resolveCanonicalStreetGeometry(streetName, streetCity, streetProv, curLat, curLng);
+
+          if (!geom || geom.lat == null || geom.lng == null) {
+            continue;
+          }
+
+          const newLat = Number(geom.lat);
+          const newLng = Number(geom.lng);
+
+          // Calcola distanza tra coordinate correnti e baricentro Google Maps (differenza > 150 metri)
+          let shouldUpdate = false;
+          if (isNaN(curLat) || isNaN(curLng) || curLat === 0 || curLng === 0) {
+            shouldUpdate = true;
           } else {
-            streetSummaryDoc = {
-              ...existingMergedData,
-              ...canonicalMeta,
-              streetType: existingMergedData.streetType || '🏡 Urbana',
-              ratingOverall: existingMergedData.ratingOverall ?? existingMergedData.avgOverallRating ?? 0,
-              avgOverallRating: existingMergedData.avgOverallRating ?? existingMergedData.ratingOverall ?? 0,
-              reviewCount: existingMergedData.reviewCount ?? existingMergedData.reviewsCount ?? 0,
-              reviewsCount: existingMergedData.reviewsCount ?? existingMergedData.reviewCount ?? 0,
-              categoryAverages: existingMergedData.categoryAverages || {},
-              parkingTypes: existingMergedData.parkingTypes || [],
-              amenities: existingMergedData.amenities || [],
-              roadObstacles: existingMergedData.roadObstacles || []
-            };
+            const distKm = getDistanceKm(curLat, curLng, newLat, newLng);
+            if (distKm > 0.150) { // Più di 150 metri di discrepanza
+              shouldUpdate = true;
+              console.log(`[AutoHeal] Discrepanza rilevata per "${streetName}" (${streetCity}): delta = ${(distKm * 1000).toFixed(0)}m`);
+            }
           }
 
-          await firestore.collection('streets').doc(target.streetKey).set({
-            ...streetSummaryDoc,
-            ...canonicalMeta,
-            streetName: target.streetName,
-            streetCity: target.streetCity,
-            streetKey: target.streetKey,
-            latitude: target.latitude,
-            longitude: target.longitude
-          }, { merge: true });
-          healedStreetsCount++;
+          if (shouldUpdate) {
+            const nowIso = new Date().toISOString();
 
-          for (const orphanDoc of orphanDocsToDelete) {
-            await orphanDoc.ref.delete();
-            console.log(`[ForcePinpointFourStreets] Migrato ed eliminato documento orfano streets/${orphanDoc.id} -> ${target.streetKey}`);
+            // 1. Aggiorna documento 'streets'
+            await sDoc.ref.set({
+              latitude: newLat,
+              longitude: newLng,
+              updatedAt: nowIso
+            }, { merge: true });
+            healedStreetsCount++;
+
+            // 2. Aggiornamento a cascata su 'reviews' collegate
+            const revsByKeySnap = await firestore.collection('reviews')
+              .where('streetKey', '==', sDoc.id)
+              .get();
+
+            const batch = firestore.batch();
+            let streetRevsUpdated = 0;
+
+            revsByKeySnap.forEach(rDoc => {
+              batch.update(rDoc.ref, {
+                latitude: newLat,
+                longitude: newLng,
+                updatedAt: nowIso
+              });
+              streetRevsUpdated++;
+            });
+
+            // Se la streetKey ha prefissi o varianti, cerca anche recensioni con lo stesso nome e comune
+            if (streetRevsUpdated === 0 && streetName) {
+              const revsByNameSnap = await firestore.collection('reviews')
+                .where('streetName', '==', streetName)
+                .get();
+              revsByNameSnap.forEach(rDoc => {
+                const rData = rDoc.data() || {};
+                const rCity = normalizeCityKey(rData.streetCity || rData.city);
+                const sCityNorm = normalizeCityKey(streetCity);
+                if (!rCity || rCity === sCityNorm) {
+                  batch.update(rDoc.ref, {
+                    latitude: newLat,
+                    longitude: newLng,
+                    updatedAt: nowIso
+                  });
+                  streetRevsUpdated++;
+                }
+              });
+            }
+
+            if (streetRevsUpdated > 0) {
+              await batch.commit();
+              healedReviewsCount += streetRevsUpdated;
+            }
           }
         }
 
-        console.log("[ForcePinpointFourStreets] Allineamento completato al 100% senza fallback distruttivi.");
+        const finalMsg = `✅ Allineamento completato: ${healedStreetsCount} strade e ${healedReviewsCount} recensioni sincronizzate con Google Maps.`;
+        updateStatus(finalMsg);
+        setTimeout(() => {
+          if (typeof window.setHealStatusToast === 'function') window.setHealStatusToast(null);
+        }, 7000);
+
         return {
           success: true,
+          healedStreetsCount,
           healedReviewsCount,
-          healedStreetsCount
+          totalVerified: total,
+          message: finalMsg
         };
       } catch (err) {
-        console.error("[ForcePinpointFourStreets] Errore durante l'allineamento forzato:", err);
+        console.error("[AutoHeal] Errore durante l'auto-riparazione batch:", err);
         throw err;
       }
     };
 
-    window.healStreetCoordinatesDatabase = window.fixMazziniGrottammareAndAlbaAdriatica;
+    window.healStreetCoordinatesDatabase = window.autoHealAllStreetsDatabase;
     window.forceFixCorsoMazziniGrottammare = window.fixMazziniGrottammareAndAlbaAdriatica;
     window.fixCorsoMazziniGrottammare = window.fixMazziniGrottammareAndAlbaAdriatica;
     window.auditAndFixStreetCoordinates = window.fixMazziniGrottammareAndAlbaAdriatica;
@@ -5890,6 +5282,12 @@ Imposta allowed: true per:
       const [shareToast, setShareToast] = useState(null);
       const [reportToast, setReportToast] = useState(null);
       const [geoWarnToast, setGeoWarnToast] = useState(null);
+      const [healToast, setHealToast] = useState(null);
+
+      useEffect(() => {
+        window.setHealStatusToast = (msg) => setHealToast(msg);
+        return () => { window.setHealStatusToast = null; };
+      }, []);
       const [adminReports, setAdminReports] = useState([]);
       const [isAdminReportsOpen, setIsAdminReportsOpen] = useState(false);
       const [isRecalculatingRatings, setIsRecalculatingRatings] = useState(false);
@@ -6857,61 +6255,8 @@ Imposta allowed: true per:
                 const rawCitySnap = (uiStreet.streetCity || uiStreet.city || '').toLowerCase();
                 const rawKeySnap = (uiStreet.streetKey || '').toLowerCase();
 
-                if ((rawNameSnap.includes('san donato') || rawKeySnap.includes('san-donato')) && (rawCitySnap.includes('monteprandone') || rawCitySnap.includes('san benedetto') || rawKeySnap.includes('monteprandone'))) {
-                  uiStreet.name = 'Contrada San Donato';
-                  uiStreet.streetCity = 'Monteprandone';
-                  uiStreet.city = 'Monteprandone';
-                  uiStreet.latitude = 42.91209543811305;
-                  uiStreet.longitude = 13.860065210654204;
-                  uiStreet.streetKey = 'contrada-san-donato_monteprandone_ap';
-                } else if ((rawNameSnap.includes('carducci') || rawKeySnap.includes('carducci')) && (rawCitySnap.includes('grottammare') || rawKeySnap.includes('grottammare'))) {
-                  uiStreet.name = 'Piazza G. Carducci';
-                  uiStreet.streetCity = 'Grottammare';
-                  uiStreet.city = 'Grottammare';
-                  uiStreet.latitude = 42.96336244509739;
-                  uiStreet.longitude = 13.875948479968113;
-                  uiStreet.streetKey = 'piazza-g-carducci_grottammare_ap';
-                } else if ((rawNameSnap.includes('firenze') || rawKeySnap.includes('firenze')) && (rawCitySnap.includes('grottammare') || rawKeySnap.includes('grottammare'))) {
-                  uiStreet.name = 'Via Firenze';
-                  uiStreet.streetCity = 'Grottammare';
-                  uiStreet.city = 'Grottammare';
-                  uiStreet.latitude = 42.962981492069545;
-                  uiStreet.longitude = 13.87075809346326;
-                  uiStreet.streetKey = 'via-firenze_grottammare_ap';
-                } else if ((rawNameSnap.includes('vittoria') || rawKeySnap.includes('vittoria')) && (rawCitySnap.includes('alba') || rawKeySnap.includes('alba-adriatica'))) {
-                  uiStreet.name = 'Viale della Vittoria';
-                  uiStreet.streetCity = 'Alba Adriatica';
-                  uiStreet.city = 'Alba Adriatica';
-                  uiStreet.province = 'TE';
-                  uiStreet.latitude = 42.83605895341866;
-                  uiStreet.longitude = 13.926245266469673;
-                  uiStreet.streetKey = 'viale-della-vittoria_alba-adriatica_te';
-                } else if ((rawNameSnap.includes('mazzini') || rawKeySnap.includes('mazzini')) && (rawCitySnap.includes('alba') || rawKeySnap.includes('alba-adriatica'))) {
-                  uiStreet.name = 'Via Giuseppe Mazzini';
-                  uiStreet.streetCity = 'Alba Adriatica';
-                  uiStreet.city = 'Alba Adriatica';
-                  uiStreet.province = 'TE';
-                  uiStreet.latitude = 42.83284835747221;
-                  uiStreet.longitude = 13.926373810644503;
-                  uiStreet.streetKey = 'via-giuseppe-mazzini_alba-adriatica_te';
-                } else if ((rawNameSnap.includes('mazzini') || rawKeySnap.includes('mazzini')) && (rawCitySnap.includes('grottammare') || rawKeySnap.includes('grottammare'))) {
-                  uiStreet.name = 'Corso Giuseppe Mazzini';
-                  uiStreet.streetCity = 'Grottammare';
-                  uiStreet.city = 'Grottammare';
-                  uiStreet.province = 'AP';
-                  uiStreet.latitude = 42.990443190632796;
-                  uiStreet.longitude = 13.869663126569428;
-                  uiStreet.streetKey = 'corso-giuseppe-mazzini_grottammare_ap';
-                } else if ((rawNameSnap.includes('xxvii') || rawNameSnap.includes('27') || rawKeySnap.includes('xxvii-novembre') || rawKeySnap.includes('27-novembre')) && (rawCitySnap.includes('san benedetto') || rawKeySnap.includes('san-benedetto-del-tronto') || !rawCitySnap)) {
-                  uiStreet.name = 'Via XXVII Novembre 1943';
-                  uiStreet.streetCity = 'San Benedetto del Tronto';
-                  uiStreet.city = 'San Benedetto del Tronto';
-                  uiStreet.province = 'AP';
-                  uiStreet.postalCode = '63074';
-                  uiStreet.latitude = 42.9491;
-                  uiStreet.longitude = 13.8765;
-                  uiStreet.streetKey = 'via-xxvii-novembre-1943_san-benedetto-del-tronto_ap';
-                }
+                // Risoluzione canonica toponomastica senza sovrascritture fisse delle coordinate
+                uiStreet.name = resolveCanonicalStreetName(uiStreet.name, uiStreet.streetCity || uiStreet.city, uiStreet.latitude, uiStreet.longitude);
 
                 const existingIdx = updated.findIndex(u => areStreetKeysEquivalent(u.streetKey || u.id, uiStreet.streetKey || uiStreet.id));
                 if (existingIdx === -1) {
@@ -6970,44 +6315,7 @@ Imposta allowed: true per:
             }
           );
 
-        // Esecuzione automatica all'avvio del riallineamento Viale della Vittoria, Piazza Carducci, Via Firenze, San Donato e disaccoppiamento Mazzini
-        setTimeout(() => {
-          if (typeof window.fixVialeDellaVittoriaAlbaAdriatica === 'function') {
-            window.fixVialeDellaVittoriaAlbaAdriatica().catch(err => {
-              console.warn('[Startup] FixVittoria notice:', err);
-            });
-          }
-          if (typeof window.fixPiazzaCarducciGrottammare === 'function') {
-            window.fixPiazzaCarducciGrottammare().catch(err => {
-              console.warn('[Startup] FixPiazzaCarducci notice:', err);
-            });
-          }
-          if (typeof window.fixViaFirenzeGrottammare === 'function') {
-            window.fixViaFirenzeGrottammare().catch(err => {
-              console.warn('[Startup] FixViaFirenze notice:', err);
-            });
-          }
-          if (typeof window.fixContradaSanDonatoMonteprandone === 'function') {
-            window.fixContradaSanDonatoMonteprandone().catch(err => {
-              console.warn('[Startup] FixSanDonato notice:', err);
-            });
-          }
-          if (typeof window.fixMazziniGrottammareAndAlbaAdriatica === 'function') {
-            window.fixMazziniGrottammareAndAlbaAdriatica().catch(err => {
-              console.warn('[Startup] FixMazzini notice:', err);
-            });
-          }
-          if (typeof window.forcePinpointFourStreets === 'function') {
-            window.forcePinpointFourStreets().catch(err => {
-              console.warn('[Startup] ForcePinpoint notice:', err);
-            });
-          }
-          if (typeof window.mergeViaXXVIINovembre === 'function') {
-            window.mergeViaXXVIINovembre().catch(err => {
-              console.warn('[Startup] MergeViaXXVIINovembre notice:', err);
-            });
-          }
-        }, 600);
+        // Avvio pulito senza routine invasive di patch sovrascrittiva al caricamento
 
         // Listener 3: Collezione 'reviews' per alimentare in tempo reale le Classifiche per Città, il titolo Sindaco e i 12 Badge
         const unsubscribeReviews = firestore.collection('reviews').onSnapshot(
@@ -7528,28 +6836,19 @@ Imposta allowed: true per:
                     let targetProvince = resolvedProvince;
                     let targetPostal = addrDetails.postalCode;
 
-                    if (detectedStreetNumber) {
-                      const canonicalRoute = await resolveCanonicalRouteCoordinates(
-                        resolvedName,
-                        resolvedCity,
-                        resolvedProvince,
-                        exactPinLat,
-                        exactPinLng
-                      );
-                      targetLat = canonicalRoute.lat || exactPinLat;
-                      targetLng = canonicalRoute.lng || exactPinLng;
-                      targetName = canonicalRoute.canonicalName || resolvedName;
-                      targetCity = canonicalRoute.city || resolvedCity;
-                      targetProvince = canonicalRoute.province || resolvedProvince;
-                      targetPostal = canonicalRoute.postalCode || addrDetails.postalCode;
-                    } else {
-                      // Controlla solo se è una delle vie storiche cablate nel LOCAL_GAZETTEER per quello specifico comune
-                      const anchor = getCanonicalStreetAnchor(resolvedName, resolvedCity, exactPinLat, exactPinLng, resolvedProvince);
-                      if (anchor && anchor.streetKey) {
-                        targetLat = anchor.lat;
-                        targetLng = anchor.lng;
-                      }
-                    }
+                    const canonicalGeom = await resolveCanonicalStreetGeometry(
+                      resolvedName,
+                      resolvedCity,
+                      resolvedProvince,
+                      exactPinLat,
+                      exactPinLng
+                    );
+                    targetLat = canonicalGeom.lat || exactPinLat;
+                    targetLng = canonicalGeom.lng || exactPinLng;
+                    targetName = canonicalGeom.canonicalName || resolvedName;
+                    targetCity = canonicalGeom.city || resolvedCity;
+                    targetProvince = canonicalGeom.province || resolvedProvince;
+                    targetPostal = canonicalGeom.postalCode || addrDetails.postalCode;
 
                     const newStreetTarget = {
                       streetKey: createStreetCompositeKey(targetName, targetCity, targetLat, targetLng, targetProvince),
@@ -7651,8 +6950,8 @@ Imposta allowed: true per:
                     return;
                   }
 
-                  // Validazione di coerenza territoriale e baricentro ufficiale route
-                  const canonicalRoute = await resolveCanonicalRouteCoordinates(
+                  // Risoluzione canonica universale con centro geometrico route ufficiale
+                  const canonicalRoute = await resolveCanonicalStreetGeometry(
                     streetName,
                     streetCity,
                     streetProvince,
@@ -7667,7 +6966,7 @@ Imposta allowed: true per:
                     postalCode: canonicalRoute.postalCode || addrDetails.postalCode,
                     lat: canonicalRoute.lat,
                     lng: canonicalRoute.lng,
-                    placeId: routeResult.place_id || null,
+                    placeId: routeResult.place_id || canonicalRoute.placeId || null,
                     streetNumber: addrDetails.streetNumber || '',
                   };
                   setSearchQuery(clickTarget.name);
@@ -10302,17 +9601,17 @@ Imposta allowed: true per:
                         type="button"
                         onClick={async () => {
                           setIsUserMenuOpen(false);
-                          const ok = window.confirm("Avviare l'auto-riparazione e normalizzazione delle coordinate stradali su Firestore (Mazzini Grottammare + controlli territoriali)?");
+                          const ok = window.confirm("Avviare la scansione universale e auto-riparazione batch delle coordinate stradali su Google Maps Geocoder?");
                           if (!ok) return;
                           try {
-                            const res = await window.healStreetCoordinatesDatabase();
-                            alert(`Auto-riparazione completata con successo!\n\nRecensioni rettificate: ${res.healedReviewsCount}\nVie allineate: ${res.healedStreetsCount}`);
+                            const res = await window.autoHealAllStreetsDatabase();
+                            alert(res.message || `Auto-riparazione completata con successo!\n\nStrade riparate: ${res.healedStreetsCount}\nRecensioni allineate: ${res.healedReviewsCount}`);
                           } catch (err) {
                             alert("Errore durante l'auto-riparazione: " + (err.message || err));
                           }
                         }}
                         className="w-full text-left px-3 py-2 text-xs font-bold text-sky-800 bg-sky-50 hover:bg-sky-100/80 rounded-xl flex items-center justify-between border border-sky-200/80 transition-colors cursor-pointer my-1"
-                        title="Riallinea forzatamente Corso Giuseppe Mazzini a Grottammare e verifica tutte le strade"
+                        title="Verifica tutte le strade su Firestore tramite Google Maps Geocoder e aggiorna a cascata le coordinate errate"
                       >
                         <span className="flex items-center gap-2">
                           <span>🗺️</span>
@@ -10365,8 +9664,27 @@ Imposta allowed: true per:
         </div>
 
           {/* NOTIFICHE TOAST CELEBRATIVE (XP GUADAGNATI, LIVELLI, BADGE, EMAIL TRAGUARDI, ELIMINAZIONE, CONDIVISIONE, SEGNALAZIONI & AVVISI GEO) */}
-          {(rewardToast || milestoneEmailToast || deleteToast || shareToast || reportToast || geoWarnToast) && (
+          {(rewardToast || milestoneEmailToast || deleteToast || shareToast || reportToast || geoWarnToast || healToast) && (
             <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[90] w-[calc(100vw-32px)] max-w-md pointer-events-auto space-y-2">
+              {healToast && (
+                <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-sky-400/60 flex items-center justify-between gap-3 animate-slide-up">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-lg shrink-0">
+                      ⚙️
+                    </div>
+                    <p className="text-xs sm:text-sm font-extrabold text-sky-100 leading-snug">
+                      {healToast}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setHealToast(null)}
+                    className="p-1 text-slate-400 hover:text-white shrink-0 cursor-pointer"
+                  >
+                    <IconClose size={16} />
+                  </button>
+                </div>
+              )}
               {geoWarnToast && (
                 <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-amber-400/60 flex items-center justify-between gap-3 animate-slide-up">
                   <div className="flex items-center gap-3 min-w-0">
