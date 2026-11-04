@@ -1472,11 +1472,9 @@
     };
 
     const validateReviewComment = (text) => {
-      if (!text) return { valid: true };
+      if (!text) return { valid: true, allowed: true, reason: '', message: '' };
       const raw = String(text).trim();
-      if (!raw || !isMeaningfulReviewComment(raw)) {
-        return { valid: true };
-      }
+      if (!raw) return { valid: true, allowed: true, reason: '', message: '' };
 
       // Normalizzazione base e de-obfuscation anti-leetspeak
       const baseClean = String(raw).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[’‘`]/g, "'");
@@ -1491,6 +1489,7 @@
         ) {
           return {
             valid: false,
+            allowed: false,
             reason: 'person_defamation_doxxing',
             message: 'Il commento è stato respinto perché contiene riferimenti denigratori a persone fisiche o violazioni delle linee guida sulla privacy e il rispetto della persona.',
           };
@@ -1507,6 +1506,7 @@
         ) {
           return {
             valid: false,
+            allowed: false,
             reason: 'residential_privacy',
             message: 'Per motivi di privacy e GDPR, è vietato indicare nomi di privati cittadini o riferimenti a chi abita nella via.',
           };
@@ -1518,13 +1518,14 @@
         if (ETHNO_RELIGIOUS_REGEX.test(t) || DEMOGRAPHIC_STIGMA_REGEX.test(t)) {
           return {
             valid: false,
+            allowed: false,
             reason: 'discrimination',
             message: 'Il commento viola le linee guida della community: sono vietati riferimenti a confessioni religiose, etnie, nazionalità o forme di profilazione discriminatoria.',
           };
         }
       }
 
-      // 4. Controllo Anti-Omofobia, Riferimenti Anatomici, Linguaggio d'Odio, Volgarità Sessuali
+      // 4. Controllo Anti-Omofobia, Riferimenti Anatomici, Linguaggio d\'Odio, Volgarità Sessuali
       for (const t of textsToCheck) {
         if (
           HOMOPHOBIC_SLURS_REGEX.test(t) ||
@@ -1539,51 +1540,56 @@
         ) {
           return {
             valid: false,
+            allowed: false,
             reason: 'hate_speech_profanity',
             message: "Il commento è stato bloccato perché contiene linguaggio d'odio, insulti discriminatori o contenuti sessualmente espliciti non ammessi.",
           };
         }
       }
 
-      // 4. Controllo Sostanze Stupefacenti e Attività Illecite (Anti-Diffamazione)
+      // 5. Controllo Sostanze Stupefacenti e Attività Illecite (Anti-Diffamazione)
       for (const t of [baseClean, normalizedText]) {
         if (ILLICIT_SUBSTANCES_REGEX.test(t)) {
           return {
             valid: false,
+            allowed: false,
             reason: 'illicit_substances',
-            message: "Il commento è stato bloccato perché contiene linguaggio d'odio, insulti discriminatori o contenuti sessualmente espliciti non ammessi.",
+            message: "Il commento è stato bloccato perché contiene riferimenti a sostanze illecite o attività non ammesse.",
           };
         }
       }
 
-      // 5. Controllo Targhe Automobilistiche Italiane (es. AB123CD o AB 123 CD)
+      // 6. Controllo Targhe Automobilistiche Italiane (es. AB123CD o AB 123 CD)
       if (ITALIAN_PLATE_REGEX.test(raw)) {
         return {
           valid: false,
+          allowed: false,
           reason: 'plate',
           message: 'Per tutelare la privacy e il rispetto della community, rimuovi linguaggio offensivo, numeri di targa o contatti personali dal commento. (Rilevato possibile numero di targa)',
         };
       }
 
-      // 6. Controllo Numeri di Telefono (9-10+ cifre consecutive o separate da spazi/trattini)
+      // 7. Controllo Numeri di Telefono (9-10+ cifre consecutive o separate da spazi/trattini)
       if (PHONE_NUMBER_REGEX.test(raw)) {
         return {
           valid: false,
+          allowed: false,
           reason: 'phone',
           message: 'Per tutelare la privacy e il rispetto della community, rimuovi linguaggio offensivo, numeri di targa o contatti personali dal commento. (Rilevato possibile numero di telefono)',
         };
       }
 
-      // 7. Controllo Indirizzi Email nel testo del commento
+      // 8. Controllo Indirizzi Email nel testo del commento
       if (EMAIL_IN_COMMENT_REGEX.test(raw)) {
         return {
           valid: false,
+          allowed: false,
           reason: 'email',
           message: 'Per tutelare la privacy e il rispetto della community, rimuovi linguaggio offensivo, numeri di targa o contatti personali dal commento. (Rilevato indirizzo email nel commento)',
         };
       }
 
-      return { valid: true };
+      return { valid: true, allowed: true, reason: '', message: '' };
     };
 
     // --- MODERAZIONE AI MULTILINGUA CON GOOGLE GEMINI 3.8 FLASH (FALLBACK GEMINI-3.5-FLASH-LITE) ---
@@ -1592,6 +1598,15 @@
     const moderateWithGemini = async (commentText) => {
       if (!commentText || !String(commentText).trim()) {
         return { allowed: true, reason: '' };
+      }
+
+      // 1. FILTRO LOCALE OBBLIGATORIO E INVALICABILE (Priorità 1)
+      const localCheck = validateReviewComment(commentText);
+      if (!localCheck.valid || localCheck.allowed === false) {
+        return {
+          allowed: false,
+          reason: localCheck.message || localCheck.reason || "Contenuto non conforme alle linee guida della community."
+        };
       }
 
       // Timeout globale di salvaguardia di 5 secondi per non bloccare mai l'utente con spinner infiniti
@@ -5449,7 +5464,7 @@ Imposta allowed: true per:
         }, 5500);
       };
 
-      const triggerGeoWarnToast = (message = "⚠️ Nessuna strada rilevata in questo punto. Clicca direttamente su una via o piazza per recensirla.") => {
+      const triggerGeoWarnToast = (message = "⚠️ Nessuna strada rilevata in questo punto. Clicca direttamente su una via per recensirla.") => {
         if (geoWarnToastTimerRef.current) clearTimeout(geoWarnToastTimerRef.current);
         setGeoWarnToast(message);
         geoWarnToastTimerRef.current = setTimeout(() => {
@@ -6937,108 +6952,122 @@ Imposta allowed: true per:
               // Click listener su Google Maps per posizionamento o selezione della via in tutta Italia
               const geocoder = new window.google.maps.Geocoder();
               gmap.addListener('click', (e) => {
-                const lat = e.latLng.lat();
-                const lng = e.latLng.lng();
+                try {
+                  const lat = e.latLng.lat();
+                  const lng = e.latLng.lng();
 
-                geocoder.geocode({ location: { lat, lng } }, async (results, status) => {
-                  if (status !== 'OK' || !results || results.length === 0) {
-                    if (triggerGeoWarnToastRef.current) triggerGeoWarnToastRef.current();
-                    return;
-                  }
+                  geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+                    try {
+                      if (status !== 'OK' || !results || results.length === 0) {
+                        if (triggerGeoWarnToastRef.current) {
+                          triggerGeoWarnToastRef.current("⚠️ Nessuna strada rilevata in questo punto. Clicca direttamente su una via per recensirla.");
+                        }
+                        return;
+                      }
 
-                  // 1. FILTRO ESCLUSIVO SU ASSE STRADALE: Cerca un risultato di tipo 'route' o 'street_address'
-                  const routeResult = results.find(r => r.types && (r.types.includes('route') || r.types.includes('street_address')));
-                  if (!routeResult) {
-                    if (triggerGeoWarnToastRef.current) triggerGeoWarnToastRef.current();
-                    return;
-                  }
+                      // 1. FILTRO ASSE STRADALE REALE
+                      const routeResult = results.find(r => r.types && (r.types.includes('route') || r.types.includes('street_address')));
+                      if (!routeResult) {
+                        if (triggerGeoWarnToastRef.current) {
+                          triggerGeoWarnToastRef.current("⚠️ Nessuna strada rilevata in questo punto. Clicca direttamente su una via per recensirla.");
+                        }
+                        return;
+                      }
 
-                  // 2. BLOCCO RISULTATI NON STRADALI (Plus Code, mare/natural_feature, ecc.) SENZA ROUTE ESPLICITO
-                  const primaryTypes = results[0]?.types || [];
-                  const isPrimaryNonRoad = primaryTypes.some(t => ['plus_code', 'natural_feature', 'political', 'locality', 'establishment'].includes(t));
-                  const hasExplicitRouteComponent = routeResult.address_components && routeResult.address_components.some(c => c.types && c.types.includes('route'));
-                  if (isPrimaryNonRoad && !hasExplicitRouteComponent && !primaryTypes.includes('route') && !primaryTypes.includes('street_address')) {
-                    if (triggerGeoWarnToastRef.current) triggerGeoWarnToastRef.current();
-                    return;
-                  }
+                      // Blocco Plus Code e punti non stradali
+                      const firstPart = (routeResult.formatted_address || '').split(',')[0].trim();
+                      if (isPlusCode(firstPart) || firstPart.includes('+')) {
+                        if (triggerGeoWarnToastRef.current) {
+                          triggerGeoWarnToastRef.current("⚠️ Nessuna strada rilevata in questo punto. Clicca direttamente su una via per recensirla.");
+                        }
+                        return;
+                      }
 
-                  // Snapping obbligatorio su route: calcola il baricentro del segmento stradale
-                  const geomCenter = getGeometryCenter(routeResult.geometry);
-                  const fallbackLat = geomCenter ? geomCenter.lat : (routeResult.geometry?.location ? (typeof routeResult.geometry.location.lat === 'function' ? routeResult.geometry.location.lat() : Number(routeResult.geometry.location.lat)) : lat);
-                  const fallbackLng = geomCenter ? geomCenter.lng : (routeResult.geometry?.location ? (typeof routeResult.geometry.location.lng === 'function' ? routeResult.geometry.location.lng() : Number(routeResult.geometry.location.lng)) : lng);
+                      // 2. ESTRAZIONE DATI STRADALI DAL RISULTATO GOOGLE
+                      let streetName = '';
+                      let streetCity = '';
+                      let province = '';
+                      let postalCode = '';
+                      let streetNumber = '';
 
-                  const addrDetails = extractAddressDetails(
-                    routeResult.address_components,
-                    routeResult.formatted_address || '',
-                    fallbackLat,
-                    fallbackLng
-                  );
-                  let streetName = addrDetails.route;
-                  if (!streetName && routeResult.types && routeResult.types.includes('route')) {
-                    const firstPart = (routeResult.formatted_address || '').split(',')[0].trim();
-                    if (!isPlusCode(firstPart)) {
-                      streetName = firstPart;
-                    }
-                  }
-                  streetName = extractCivicNumberFromQuery(streetName).cleanQuery || streetName;
-                  streetName = (streetName || '').trim();
+                      if (Array.isArray(routeResult.address_components)) {
+                        for (const comp of routeResult.address_components) {
+                          const t = comp.types || [];
+                          if (t.includes('route')) streetName = comp.long_name || comp.short_name;
+                          if (t.includes('locality')) streetCity = comp.long_name;
+                          else if (!streetCity && t.includes('administrative_area_level_3')) streetCity = comp.long_name;
+                          if (t.includes('administrative_area_level_2')) province = comp.short_name || comp.long_name;
+                          if (t.includes('postal_code')) postalCode = comp.long_name;
+                          if (t.includes('street_number')) streetNumber = comp.long_name;
+                        }
+                      }
 
-                  // 3. BLOCCO ASSOLUTO DEI PLUS CODE E DEI NOMI NON STRADALI
-                  if (!streetName || isPlusCode(streetName) || streetName.toLowerCase() === 'via sconosciuta') {
-                    if (triggerGeoWarnToastRef.current) triggerGeoWarnToastRef.current();
-                    return;
-                  }
+                      if (!streetName && routeResult.types && (routeResult.types.includes('route') || routeResult.types.includes('street_address'))) {
+                        streetName = firstPart;
+                      }
+                      streetName = (streetName || '').trim();
 
-                  const streetCity = addrDetails.city;
-                  const streetProvince = addrDetails.province;
+                      if (!streetName || isPlusCode(streetName) || streetName.includes('+') || streetName.toLowerCase() === 'via sconosciuta') {
+                        if (triggerGeoWarnToastRef.current) {
+                          triggerGeoWarnToastRef.current("⚠️ Nessuna strada rilevata in questo punto. Clicca direttamente su una via per recensirla.");
+                        }
+                        return;
+                      }
 
-                  // Risoluzione canonica toponomastica immediata (evita sdoppiamento Via XXVII Novembre / 1943)
-                  streetName = resolveCanonicalStreetName(streetName, streetCity, fallbackLat, fallbackLng);
+                      streetCity = streetCity || resolveCanonicalCityName('', lat, lng) || 'Italia';
+                      province = province || '';
 
-                  // Lookup preventivo sui dati esistenti
-                  const existingStreet = findExistingStreetInList(streetsRef.current, {
-                    name: streetName,
-                    city: streetCity,
-                    province: streetProvince,
-                    lat: fallbackLat,
-                    lng: fallbackLng,
-                  });
+                      // 3. ACQUISIZIONE COORDINATE E ANCORAGGIO DIRETTO
+                      const streetLat = routeResult.geometry?.location
+                        ? (typeof routeResult.geometry.location.lat === 'function' ? routeResult.geometry.location.lat() : Number(routeResult.geometry.location.lat))
+                        : lat;
+                      const streetLng = routeResult.geometry?.location
+                        ? (typeof routeResult.geometry.location.lng === 'function' ? routeResult.geometry.location.lng() : Number(routeResult.geometry.location.lng))
+                        : lng;
 
-                  if (existingStreet && existingStreet.reviewsCount > 0) {
-                    setSearchQuery(existingStreet.name);
-                    if (handleSelectStreetRef.current) {
-                      handleSelectStreetRef.current({
-                        ...existingStreet,
-                        streetNumber: addrDetails.streetNumber || '',
+                      // Lookup preventivo sui dati esistenti
+                      const existingStreet = findExistingStreetInList(streetsRef.current, {
+                        name: streetName,
+                        city: streetCity,
+                        province: province,
+                        lat: streetLat,
+                        lng: streetLng,
                       });
+
+                      if (existingStreet && existingStreet.reviewsCount > 0) {
+                        setSearchQuery(existingStreet.name);
+                        if (handleSelectStreetRef.current) {
+                          handleSelectStreetRef.current({
+                            ...existingStreet,
+                            streetNumber: streetNumber || '',
+                          });
+                        }
+                        return;
+                      }
+
+                      // Ancoraggio diretto alle coordinate di Google per la via
+                      const clickTarget = {
+                        name: streetName,
+                        city: streetCity,
+                        province: province,
+                        postalCode: postalCode || resolveDefaultPostalCode(normalizeCityKey(streetCity, streetLat, streetLng)),
+                        lat: streetLat,
+                        lng: streetLng,
+                        placeId: routeResult.place_id || null,
+                        streetNumber: streetNumber || '',
+                      };
+
+                      setSearchQuery(clickTarget.name);
+                      if (handleSelectStreetRef.current) {
+                        handleSelectStreetRef.current(clickTarget);
+                      }
+                    } catch (innerErr) {
+                      console.error('[Map Click Geocode Inner Error]', innerErr);
                     }
-                    return;
-                  }
-
-                  // Risoluzione canonica universale con centro geometrico route ufficiale
-                  const canonicalRoute = await resolveCanonicalStreetGeometry(
-                    streetName,
-                    streetCity,
-                    streetProvince,
-                    fallbackLat,
-                    fallbackLng
-                  );
-
-                  const clickTarget = {
-                    name: canonicalRoute.canonicalName || streetName,
-                    city: canonicalRoute.city || streetCity,
-                    province: canonicalRoute.province || streetProvince,
-                    postalCode: canonicalRoute.postalCode || addrDetails.postalCode,
-                    lat: canonicalRoute.lat,
-                    lng: canonicalRoute.lng,
-                    placeId: routeResult.place_id || canonicalRoute.placeId || null,
-                    streetNumber: addrDetails.streetNumber || '',
-                  };
-                  setSearchQuery(clickTarget.name);
-                  if (handleSelectStreetRef.current) {
-                    handleSelectStreetRef.current(clickTarget);
-                  }
-                });
+                  });
+                } catch (clickErr) {
+                  console.error('[Map Click Error]', clickErr);
+                }
               });
 
               return true;
