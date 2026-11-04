@@ -17,6 +17,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
 
   <!-- Inizializzazione Globale Immediata Firebase -->
   <script>
@@ -62,12 +63,13 @@
         // Istanza vincolata al database personalizzato
         const customDb = app.firestore('street-review-database');
         window.db = customDb;
+        window.storage = typeof app.storage === 'function' ? app.storage() : null;
 
         // Sovrascrivi il metodo standard per intercettare qualsiasi chiamata orfana:
         firebase.firestore = () => customDb;
         app.firestore = () => customDb;
 
-        console.log("Firebase App, Auth e Firestore ('street-review-database') inizializzati con successo in <head>.");
+        console.log("Firebase App, Auth, Storage e Firestore ('street-review-database') inizializzati con successo in <head>.");
         console.log("Database target confermato:", (customDb._databaseId && customDb._databaseId.database) || 'street-review-database');
       } else {
         console.error("SDK Firebase non trovato in window.firebase!");
@@ -1857,9 +1859,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const chroniclerXP = isChronicler ? 20 : 0;
       const detailXP = chroniclerXP;
       const isDetailed = isChronicler;
+      const hasPhotos = Array.isArray(rev?.photos) && rev.photos.some(p => p && (p.url || p.dataUrl || p.previewUrl || p.blob));
+      const photoXP = hasPhotos ? 15 : 0;
       const helpfulCount = Math.max(0, Number(rev?.helpfulCount ?? (Array.isArray(rev?.helpfulVoterIds) ? rev.helpfulVoterIds.length : 0)) || 0);
       const helpfulXP = helpfulCount * 10;
-      const activeReviewXP = baseXP + pioneerXP + technicalXP + chroniclerXP;
+      const activeReviewXP = baseXP + pioneerXP + technicalXP + chroniclerXP + photoXP;
       return {
         totalXP: activeReviewXP + helpfulXP,
         activeReviewXP,
@@ -1868,6 +1872,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         technicalXP,
         chroniclerXP,
         detailXP,
+        photoXP,
+        hasPhotos,
         helpfulXP,
         helpfulCount,
         ratedParamsCount,
@@ -1876,6 +1882,389 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         isChronicler,
         isDetailed,
       };
+    };
+
+    // --- FOTO GEOLOCALIZZATE CON RILEVAMENTO CIVICO AUTOMATICO & COMPRESSIONE CLIENT-SIDE ---
+    // 1. Compressione Automatica Client-Side tramite Canvas HTML5 (max 1280px lato lungo, WebP/JPEG qualità 0.75, target ~150-250 KB)
+    const compressReviewPhotoClientSide = (file, maxDimension = 1280, quality = 0.75) => {
+      return new Promise((resolve, reject) => {
+        if (!file || !file.type || !file.type.startsWith('image/')) {
+          reject(new Error('File non valido: seleziona un file immagine.'));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Impossibile leggere il file immagine selezionato.'));
+        reader.onload = (event) => {
+          const img = new Image();
+          img.onerror = () => reject(new Error('Impossibile decodificare l\'immagine selezionata.'));
+          img.onload = () => {
+            try {
+              const origW = img.naturalWidth || img.width || 1;
+              const origH = img.naturalHeight || img.height || 1;
+              let targetW = origW;
+              let targetH = origH;
+
+              if (origW > maxDimension || origH > maxDimension) {
+                if (origW >= origH) {
+                  targetW = maxDimension;
+                  targetH = Math.max(1, Math.round((origH * maxDimension) / origW));
+                } else {
+                  targetH = maxDimension;
+                  targetW = Math.max(1, Math.round((origW * maxDimension) / origH));
+                }
+              }
+
+              const canvas = document.createElement('canvas');
+              canvas.width = targetW;
+              canvas.height = targetH;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, targetW, targetH);
+              }
+
+              let dataUrl = canvas.toDataURL('image/webp', quality);
+              let mimeType = 'image/webp';
+              if (!dataUrl || !dataUrl.startsWith('data:image/webp')) {
+                dataUrl = canvas.toDataURL('image/jpeg', quality);
+                mimeType = 'image/jpeg';
+              }
+
+              canvas.toBlob(
+                (blob) => {
+                  if (blob) {
+                    resolve({
+                      blob,
+                      dataUrl,
+                      mimeType,
+                      width: targetW,
+                      height: targetH,
+                      sizeKB: Math.round(blob.size / 1024),
+                    });
+                  } else {
+                    // Fallback conversione DataURL -> Blob
+                    try {
+                      const parts = dataUrl.split(',');
+                      const byteString = atob(parts[1] || '');
+                      const ab = new ArrayBuffer(byteString.length);
+                      const ia = new Uint8Array(ab);
+                      for (let i = 0; i < byteString.length; i++) {
+                        ia[i] = byteString.charCodeAt(i);
+                      }
+                      const fallbackBlob = new Blob([ab], { type: mimeType });
+                      resolve({
+                        blob: fallbackBlob,
+                        dataUrl,
+                        mimeType,
+                        width: targetW,
+                        height: targetH,
+                        sizeKB: Math.round(fallbackBlob.size / 1024),
+                      });
+                    } catch (convErr) {
+                      reject(convErr);
+                    }
+                  }
+                },
+                mimeType,
+                quality
+              );
+            } catch (err) {
+              reject(err);
+            }
+          };
+          img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    };
+
+    // 2. Estrazione Coordinate GPS da Metadati EXIF (se presenti nel file JPEG)
+    const extractExifGpsFromFile = (file) => {
+      return new Promise((resolve) => {
+        if (!file || typeof FileReader === 'undefined') {
+          resolve(null);
+          return;
+        }
+        try {
+          const slice = file.slice(0, 131072); // Primi 128 KB sufficienti per header EXIF
+          const reader = new FileReader();
+          reader.onerror = () => resolve(null);
+          reader.onload = (e) => {
+            try {
+              const buffer = e.target.result;
+              if (!buffer || buffer.byteLength < 12) {
+                resolve(null);
+                return;
+              }
+              const view = new DataView(buffer);
+              if (view.getUint16(0, false) !== 0xFFD8) {
+                resolve(null);
+                return;
+              }
+              let offset = 2;
+              const length = view.byteLength;
+              while (offset + 4 < length) {
+                const marker = view.getUint16(offset, false);
+                offset += 2;
+                if (marker === 0xFFE1) {
+                  const app1Length = view.getUint16(offset, false);
+                  if (offset + 8 >= length) break;
+                  // Controlla "Exif\0\0"
+                  if (
+                    view.getUint32(offset + 2, false) === 0x45786966 &&
+                    view.getUint16(offset + 6, false) === 0x0000
+                  ) {
+                    const tiffStart = offset + 8;
+                    const littleEndian = view.getUint16(tiffStart, false) === 0x4949;
+                    const firstIfdOffset = view.getUint32(tiffStart + 4, littleEndian);
+                    const ifd0Start = tiffStart + firstIfdOffset;
+                    if (ifd0Start + 2 > length) break;
+                    const entriesCount = view.getUint16(ifd0Start, littleEndian);
+                    let gpsIfdPointer = null;
+                    for (let i = 0; i < entriesCount; i++) {
+                      const entryOffset = ifd0Start + 2 + i * 12;
+                      if (entryOffset + 12 > length) break;
+                      const tag = view.getUint16(entryOffset, littleEndian);
+                      if (tag === 0x8825) {
+                        gpsIfdPointer = view.getUint32(entryOffset + 8, littleEndian);
+                        break;
+                      }
+                    }
+                    if (gpsIfdPointer) {
+                      const gpsStart = tiffStart + gpsIfdPointer;
+                      if (gpsStart + 2 <= length) {
+                        const gpsEntries = view.getUint16(gpsStart, littleEndian);
+                        let latRef = 'N';
+                        let lngRef = 'E';
+                        let latValues = null;
+                        let lngValues = null;
+
+                        const readRationalTriple = (valOffset) => {
+                          const p = tiffStart + valOffset;
+                          if (p + 24 > length) return null;
+                          const dNum = view.getUint32(p, littleEndian);
+                          const dDen = view.getUint32(p + 4, littleEndian) || 1;
+                          const mNum = view.getUint32(p + 8, littleEndian);
+                          const mDen = view.getUint32(p + 12, littleEndian) || 1;
+                          const sNum = view.getUint32(p + 16, littleEndian);
+                          const sDen = view.getUint32(p + 20, littleEndian) || 1;
+                          return [dNum / dDen, mNum / mDen, sNum / sDen];
+                        };
+
+                        for (let j = 0; j < gpsEntries; j++) {
+                          const gEntry = gpsStart + 2 + j * 12;
+                          if (gEntry + 12 > length) break;
+                          const gTag = view.getUint16(gEntry, littleEndian);
+                          if (gTag === 0x0001) {
+                            const ch = view.getUint8(gEntry + 8);
+                            if (ch === 83 || ch === 115) latRef = 'S';
+                          } else if (gTag === 0x0002) {
+                            const valOff = view.getUint32(gEntry + 8, littleEndian);
+                            latValues = readRationalTriple(valOff);
+                          } else if (gTag === 0x0003) {
+                            const ch = view.getUint8(gEntry + 8);
+                            if (ch === 87 || ch === 119) lngRef = 'W';
+                          } else if (gTag === 0x0004) {
+                            const valOff = view.getUint32(gEntry + 8, littleEndian);
+                            lngValues = readRationalTriple(valOff);
+                          }
+                        }
+
+                        if (latValues && lngValues) {
+                          let lat = latValues[0] + latValues[1] / 60 + latValues[2] / 3600;
+                          let lng = lngValues[0] + lngValues[1] / 60 + lngValues[2] / 3600;
+                          if (latRef === 'S') lat = -lat;
+                          if (lngRef === 'W') lng = -lng;
+                          if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) > 0.001 && Math.abs(lng) > 0.001) {
+                            resolve({
+                              lat: Number(lat.toFixed(6)),
+                              lng: Number(lng.toFixed(6)),
+                              source: 'EXIF',
+                            });
+                            return;
+                          }
+                        }
+                      }
+                    }
+                  }
+                  offset += app1Length;
+                } else if ((marker & 0xFF00) !== 0xFF00) {
+                  break;
+                } else {
+                  const segLength = view.getUint16(offset, false);
+                  offset += segLength;
+                }
+              }
+              resolve(null);
+            } catch (parseErr) {
+              resolve(null);
+            }
+          };
+          reader.readAsArrayBuffer(slice);
+        } catch (err) {
+          resolve(null);
+        }
+      });
+    };
+
+    // 3. Coordinate GPS correnti del browser (navigator.geolocation.getCurrentPosition)
+    const getBrowserCurrentGpsPosition = (timeoutMs = 6000) => {
+      return new Promise((resolve) => {
+        if (typeof navigator === 'undefined' || !navigator.geolocation) {
+          resolve(null);
+          return;
+        }
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            resolve(null);
+          }
+        }, timeoutMs);
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            const lat = Number(pos?.coords?.latitude);
+            const lng = Number(pos?.coords?.longitude);
+            if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) > 0.001 && Math.abs(lng) > 0.001) {
+              resolve({
+                lat: Number(lat.toFixed(6)),
+                lng: Number(lng.toFixed(6)),
+                source: 'GPS',
+              });
+            } else {
+              resolve(null);
+            }
+          },
+          () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(null);
+          },
+          { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 30000 }
+        );
+      });
+    };
+
+    // Confronto elastico tra il nome della via della recensione e la route restituita dal Reverse Geocoding Google
+    const doStreetNamesMatchForGeocoding = (streetA, streetB) => {
+      if (!streetA || !streetB) return false;
+      const cleanTokenize = (s) =>
+        String(s)
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/\b(via|viale|corso|piazza|piazzale|largo|contrada|strada|vicolo|lungomare|rotonda|salita|discesa|statale|provinciale)\b/g, ' ')
+          .replace(/[^a-z0-9]+/g, ' ')
+          .trim()
+          .split(/\s+/)
+          .filter(w => w.length >= 2);
+
+      const tokensA = cleanTokenize(streetA);
+      const tokensB = cleanTokenize(streetB);
+      if (tokensA.length === 0 || tokensB.length === 0) return false;
+      const lastA = tokensA[tokensA.length - 1];
+      const lastB = tokensB[tokensB.length - 1];
+      if (lastA === lastB) return true;
+      return tokensA.some(t => t.length >= 3 && tokensB.includes(t));
+    };
+
+    // 4. Reverse Geocoding Google Maps per estrarre numero civico stimato (street_number) e via (route)
+    const reverseGeocodePhotoCoords = (lat, lng, targetStreetName = '') => {
+      return new Promise((resolve) => {
+        const numLat = Number(lat);
+        const numLng = Number(lng);
+        if (isNaN(numLat) || isNaN(numLng) || !window.google || !window.google.maps || !window.google.maps.Geocoder) {
+          resolve(null);
+          return;
+        }
+        try {
+          const geocoder = new window.google.maps.Geocoder();
+          geocoder.geocode({ location: { lat: numLat, lng: numLng } }, (results, status) => {
+            if (status !== 'OK' || !Array.isArray(results) || results.length === 0) {
+              resolve(null);
+              return;
+            }
+            let bestStreetNumber = '';
+            let bestRoute = '';
+            let matchedResultStreetNumber = '';
+            let matchedResultRoute = '';
+
+            for (const res of results) {
+              const comps = Array.isArray(res.address_components) ? res.address_components : [];
+              const numComp = comps.find(c => Array.isArray(c.types) && c.types.includes('street_number'));
+              const routeComp = comps.find(c => Array.isArray(c.types) && c.types.includes('route'));
+              const candidateNumber = numComp ? String(numComp.long_name || numComp.short_name || '').trim() : '';
+              const candidateRoute = routeComp ? String(routeComp.long_name || routeComp.short_name || '').trim() : '';
+
+              if (!bestRoute && candidateRoute) bestRoute = candidateRoute;
+              if (!bestStreetNumber && candidateNumber) bestStreetNumber = candidateNumber;
+
+              if (candidateRoute && targetStreetName && doStreetNamesMatchForGeocoding(candidateRoute, targetStreetName)) {
+                if (!matchedResultRoute) matchedResultRoute = candidateRoute;
+                if (!matchedResultStreetNumber && candidateNumber) {
+                  matchedResultStreetNumber = candidateNumber;
+                }
+              }
+            }
+
+            const finalRoute = matchedResultRoute || bestRoute;
+            const finalStreetNumber = matchedResultStreetNumber || bestStreetNumber;
+            const isStreetMatched = Boolean(
+              targetStreetName &&
+              finalRoute &&
+              doStreetNamesMatchForGeocoding(finalRoute, targetStreetName)
+            );
+            const segmentText = finalStreetNumber ? `Altezza civico ${finalStreetNumber}` : '';
+
+            resolve({
+              streetNumber: finalStreetNumber,
+              route: finalRoute,
+              matchedStreet: isStreetMatched,
+              segmentText,
+              verifiedLocation: isStreetMatched,
+            });
+          });
+        } catch (err) {
+          resolve(null);
+        }
+      });
+    };
+
+    // 5. Upload foto compressa su Firebase Storage al percorso: review_photos/{streetKey}/{timestamp}_{index}.webp
+    const uploadCompressedPhotoToStorage = async (photoItem, streetKey, index, timestampMs = Date.now()) => {
+      if (!photoItem) return null;
+      // Se la foto possiede già una URL remota permanente (es. durante modifica recensione), mantienila
+      if (photoItem.url && !photoItem.blob && !String(photoItem.url).startsWith('blob:')) {
+        return photoItem.url;
+      }
+      const safeStreetKey = String(streetKey || 'generic_street').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const storagePath = `review_photos/${safeStreetKey}/${timestampMs}_${index}.webp`;
+      const storageInstance = window.storage || (window.firebase && typeof window.firebase.storage === 'function' ? window.firebase.storage() : null);
+
+      if (storageInstance && photoItem.blob) {
+        try {
+          const storageRef = storageInstance.ref().child(storagePath);
+          const metadata = {
+            contentType: photoItem.mimeType || 'image/webp',
+            cacheControl: 'public,max-age=31536000',
+          };
+          const snapshot = await storageRef.put(photoItem.blob, metadata);
+          const downloadUrl = await snapshot.ref.getDownloadURL();
+          if (downloadUrl) {
+            return downloadUrl;
+          }
+        } catch (storageErr) {
+          console.warn(`[Firebase Storage] Upload su ${storagePath} non riuscito, utilizzo fallback DataURL compresso:`, storageErr);
+        }
+      }
+
+      return photoItem.dataUrl || photoItem.url || null;
     };
 
     const parseReviewTimestampMs = (rev) => {
@@ -2830,6 +3219,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         hasCyclePath: Boolean(r.hasCyclePath),
         amenities: Array.isArray(r.amenities) ? r.amenities : [],
         roadObstacles: Array.isArray(r.roadObstacles) ? r.roadObstacles : [],
+        photos: Array.isArray(r.photos) ? r.photos.filter(p => p && p.url) : [],
         awardedMilestones: Array.isArray(r.awardedMilestones) ? r.awardedMilestones : [],
         helpfulVoterIds,
         helpfulCount,
@@ -3028,6 +3418,30 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
       const guardianInfo = computeStreetGuardian(safeReviews, fallbackMeta.resolveAuthorLevel || null);
 
+      // Aggrega le foto geolocalizzate dalle recensioni della via
+      const aggregatedPhotos = [];
+      const seenPhotoUrls = new Set();
+      safeReviews.forEach(r => {
+        if (!r || !Array.isArray(r.photos)) return;
+        r.photos.forEach((p, pIdx) => {
+          if (!p || !p.url || seenPhotoUrls.has(p.url)) return;
+          seenPhotoUrls.add(p.url);
+          aggregatedPhotos.push({
+            url: p.url,
+            lat: Number(p.lat ?? r.latitude) || Number(anchor.lat),
+            lng: Number(p.lng ?? r.longitude) || Number(anchor.lng),
+            segment: String(p.segment || r.streetSegment || '').trim(),
+            verifiedLocation: Boolean(p.verifiedLocation),
+            reviewId: r.id || null,
+            photoIndex: pIdx,
+            authorId: r.authorId || r.userId || null,
+            authorName: r.authorName || r.user || 'Cittadino Esploratore',
+            date: r.date || (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString('it-IT') : 'Recente'),
+            createdAt: r.createdAt || r.updatedAt || null,
+          });
+        });
+      });
+
       return {
         streetKey,
         streetName,
@@ -3046,6 +3460,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         hasCyclePath,
         amenities,
         roadObstacles,
+        photos: aggregatedPhotos,
         pioneerAuthorId,
         pioneerReviewId,
         pioneerAuthorName,
@@ -3123,6 +3538,31 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
       const fallbackGuardian = preservedReviews.length > 0 ? computeStreetGuardian(preservedReviews) : null;
 
+      const rawDocPhotos = Array.isArray(docData.photos) ? docData.photos.filter(p => p && p.url) : [];
+      const reviewsPhotos = [];
+      const seenReviewPhotoUrls = new Set();
+      preservedReviews.forEach(r => {
+        if (!r || !Array.isArray(r.photos)) return;
+        r.photos.forEach((p, pIdx) => {
+          if (!p || !p.url || seenReviewPhotoUrls.has(p.url)) return;
+          seenReviewPhotoUrls.add(p.url);
+          reviewsPhotos.push({
+            url: p.url,
+            lat: Number(p.lat ?? r.latitude) || lat,
+            lng: Number(p.lng ?? r.longitude) || lng,
+            segment: String(p.segment || r.streetSegment || '').trim(),
+            verifiedLocation: Boolean(p.verifiedLocation),
+            reviewId: r.id || null,
+            photoIndex: pIdx,
+            authorId: r.userId || r.authorId || null,
+            authorName: r.user || r.authorName || 'Cittadino Esploratore',
+            date: r.date || 'Recente',
+            createdAt: r.createdAt || r.updatedAt || null,
+          });
+        });
+      });
+      const mergedPhotos = preservedReviews.length > 0 ? reviewsPhotos : rawDocPhotos;
+
       return {
         id: existingStreet?.id || canonicalId,
         streetKey,
@@ -3141,6 +3581,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         hasCyclePath: mergedCyclePath,
         amenities: mergedAmenities,
         roadObstacles: mergedRoadObstacles,
+        photos: mergedPhotos,
         pioneerAuthorId: docData.pioneerAuthorId || existingStreet?.pioneerAuthorId || null,
         pioneerReviewId: docData.pioneerReviewId || existingStreet?.pioneerReviewId || null,
         pioneerAuthorName: docData.pioneerAuthorName || existingStreet?.pioneerAuthorName || '',
@@ -5102,6 +5543,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const [gamificationTab, setGamificationTab] = useState('progress'); // 'progress' | 'leaderboard'
       const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
       const [reportingReview, setReportingReview] = useState(null);
+      const [lightboxPhoto, setLightboxPhoto] = useState(null);
       const [rewardToast, setRewardToast] = useState(null);
       const [milestoneEmailToast, setMilestoneEmailToast] = useState(null);
       const [deleteToast, setDeleteToast] = useState(null);
@@ -7810,6 +8252,19 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           Number(editingReview?.helpfulCount ?? existingUserRev?.helpfulCount ?? existingHelpfulVoterIds.length) || 0
         );
 
+        const sanitizedReviewPhotos = Array.isArray(reviewPayload.photos)
+          ? reviewPayload.photos
+              .filter(p => p && p.url)
+              .slice(0, 2)
+              .map(p => ({
+                url: String(p.url),
+                lat: Number(p.lat ?? finalLat) || finalLat,
+                lng: Number(p.lng ?? finalLng) || finalLng,
+                segment: String(p.segment || reviewPayload.streetSegment || '').trim().slice(0, 60),
+                verifiedLocation: Boolean(p.verifiedLocation),
+              }))
+          : [];
+
         const xpEarned = computeSingleReviewXP(
           {
             comment: reviewPayload.comment,
@@ -7818,6 +8273,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             amenities: reviewPayload.amenities || [],
             roadObstacles: reviewPayload.roadObstacles || [],
             hasCyclePath: reviewPayload.hasCyclePath,
+            photos: sanitizedReviewPhotos,
             isFlashOnly: reviewPayload.includeTechnical === false,
             helpfulVoterIds: existingHelpfulVoterIds,
             helpfulCount: existingHelpfulCount,
@@ -7902,6 +8358,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               hasCyclePath: reviewPayload.hasCyclePath,
               amenities: reviewPayload.amenities || [],
               roadObstacles: Array.isArray(reviewPayload.roadObstacles) ? reviewPayload.roadObstacles : [],
+              photos: sanitizedReviewPhotos,
               helpfulVoterIds: Array.isArray(oldRev.helpfulVoterIds) ? oldRev.helpfulVoterIds : existingHelpfulVoterIds,
               helpfulCount: Number(oldRev.helpfulCount ?? existingHelpfulCount) || 0,
               date: 'Oggi (modificato)',
@@ -7936,6 +8393,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               hasCyclePath: reviewPayload.hasCyclePath,
               amenities: reviewPayload.amenities || [],
               roadObstacles: Array.isArray(reviewPayload.roadObstacles) ? reviewPayload.roadObstacles : [],
+              photos: sanitizedReviewPhotos,
               helpfulVoterIds: [],
               helpfulCount: 0,
             };
@@ -8031,6 +8489,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           hasCyclePath: reviewPayload.hasCyclePath,
           amenities: reviewPayload.amenities || [],
           roadObstacles: Array.isArray(reviewPayload.roadObstacles) ? reviewPayload.roadObstacles : [],
+          photos: sanitizedReviewPhotos,
           comment: reviewPayload.comment,
           streetSegment: (reviewPayload.streetSegment || '').trim().slice(0, 60),
           helpfulVoterIds: existingHelpfulVoterIds,
@@ -8190,6 +8649,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               technicalXP: xpEarned.technicalXP,
               chroniclerXP: xpEarned.chroniclerXP,
               detailXP: xpEarned.detailXP,
+              photoXP: xpEarned.photoXP,
               newlyReachedLevel,
               newlyUnlockedBadges,
             });
@@ -8614,6 +9074,161 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         })();
 
         return true;
+      };
+
+      // 5.02 ELIMINAZIONE SINGOLA FOTO DA PARTE DI UN ADMIN (m.bernardini15@gmail.com / streetreview.app@gmail.com)
+      const handleAdminDeletePhoto = async (photoEntry) => {
+        if (!photoEntry || !photoEntry.url) return;
+
+        const firebaseAuthUser = (window.firebase && window.firebase.auth && window.firebase.auth().currentUser) || null;
+        const activeEmail = ((firebaseAuthUser && firebaseAuthUser.email) || (currentUser ? currentUser.email : '') || '').trim();
+        const userIsAdmin = isCurrentUserAdmin({ email: activeEmail }) || isAdmin;
+
+        if (!userIsAdmin) {
+          alert('Privilegi insufficienti: solo gli amministratori possono eliminare le foto dalla galleria.');
+          return;
+        }
+
+        const confirmed = window.confirm(
+          'Sei sicuro di voler eliminare definitivamente questa foto dalla recensione e dalla galleria della via?'
+        );
+        if (!confirmed) return;
+
+        const targetUrl = String(photoEntry.url);
+        const targetReviewId = photoEntry.reviewId ? String(photoEntry.reviewId) : null;
+        const targetStreet = selectedStreet;
+        const targetStreetKey = photoEntry.streetKey || targetStreet?.streetKey || '';
+
+        // Chiudi subito la Lightbox e aggiorna ottimisticamente lo stato locale
+        setLightboxPhoto(null);
+
+        const updateStreetPhotosOptimistically = (s) => {
+          if (!s) return s;
+          const isMatch = (targetStreet && s.id === targetStreet.id) || (targetStreetKey && s.streetKey === targetStreetKey);
+          if (!isMatch) return s;
+
+          const nextReviews = Array.isArray(s.reviews)
+            ? s.reviews.map(r => {
+                if (targetReviewId && String(r.id) !== targetReviewId) return r;
+                if (!Array.isArray(r.photos)) return r;
+                return {
+                  ...r,
+                  photos: r.photos.filter(p => p && String(p.url) !== targetUrl),
+                };
+              })
+            : [];
+
+          const nextPhotos = Array.isArray(s.photos)
+            ? s.photos.filter(p => p && String(p.url) !== targetUrl)
+            : [];
+
+          return {
+            ...s,
+            reviews: nextReviews,
+            photos: nextPhotos,
+          };
+        };
+
+        setStreets(prev => {
+          const next = prev.map(updateStreetPhotosOptimistically);
+          streetsRef.current = next;
+          return next;
+        });
+        setSelectedStreet(prev => updateStreetPhotosOptimistically(prev));
+
+        const firestore = window.db;
+        if (!firestore) return;
+
+        try {
+          // 1. Individua il documento recensione su Firestore
+          let reviewDocSnap = null;
+          if (targetReviewId) {
+            const snap = await firestore.collection('reviews').doc(targetReviewId).get();
+            if (snap.exists) reviewDocSnap = snap;
+          }
+          if (!reviewDocSnap && targetStreetKey) {
+            const qSnap = await firestore.collection('reviews').where('streetKey', '==', targetStreetKey).get();
+            qSnap.forEach(d => {
+              const data = d.data();
+              if (Array.isArray(data.photos) && data.photos.some(p => p && String(p.url) === targetUrl)) {
+                reviewDocSnap = d;
+              }
+            });
+          }
+
+          if (reviewDocSnap && reviewDocSnap.exists) {
+            const revData = reviewDocSnap.data();
+            const updatedPhotos = (Array.isArray(revData.photos) ? revData.photos : []).filter(
+              p => p && String(p.url) !== targetUrl
+            );
+            await firestore.collection('reviews').doc(reviewDocSnap.id).set(
+              {
+                photos: updatedPhotos,
+                updatedAt: new Date().toISOString(),
+              },
+              { merge: true }
+            );
+
+            // Rimuovi il file anche da Firebase Storage se ospitato su bucket firebasestorage
+            const storageInstance = window.storage || (window.firebase && typeof window.firebase.storage === 'function' ? window.firebase.storage() : null);
+            if (storageInstance && targetUrl.includes('firebasestorage.googleapis.com')) {
+              try {
+                const fileRef = storageInstance.refFromURL(targetUrl);
+                await fileRef.delete();
+              } catch (storageDelErr) {
+                console.warn('[Firebase Storage] Eliminazione file fisico saltata o già rimossa:', storageDelErr);
+              }
+            }
+
+            // 2. Aggiorna il documento sommario 'streets/{streetKey}'
+            const resolvedStreetKey = revData.streetKey || targetStreetKey;
+            if (resolvedStreetKey) {
+              const streetRevsSnap = await firestore.collection('reviews').where('streetKey', '==', resolvedStreetKey).get();
+              const allStreetRevs = streetRevsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+              if (allStreetRevs.length > 0) {
+                const streetSummaryDoc = buildStreetSummaryDocFromReviews(allStreetRevs, {
+                  streetKey: resolvedStreetKey,
+                  streetName: revData.streetName || targetStreet?.name || '',
+                  streetCity: revData.streetCity || targetStreet?.city || '',
+                  province: revData.streetProvince || targetStreet?.province || '',
+                  latitude: revData.latitude || targetStreet?.latitude,
+                  longitude: revData.longitude || targetStreet?.longitude,
+                  parkingRules: targetStreet?.parkingRules || null,
+                });
+                await firestore.collection('streets').doc(resolvedStreetKey).set(streetSummaryDoc, { merge: true });
+              }
+            }
+
+            // 3. Ricalcola gli XP dell'autore della recensione se aveva ricevuto il bonus +15 XP foto
+            const authorUid = revData.authorId || revData.userId;
+            if (authorUid && !String(authorUid).startsWith('name:')) {
+              const userRevsSnap = await firestore.collection('reviews').where('authorId', '==', authorUid).get();
+              const allUserReviews = userRevsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+              if (allUserReviews.length > 0) {
+                const { userDoc, fullProfile } = buildUserSummaryDocFromReviews(
+                  authorUid,
+                  allUserReviews,
+                  streetsRef.current,
+                  revData.awardedMilestones || [],
+                  {
+                    authorName: revData.authorName || 'Cittadino Esploratore',
+                    authorAvatar: revData.authorAvatar || '',
+                  }
+                );
+                await firestore.collection('users').doc(String(authorUid)).set(userDoc, { merge: true });
+                setCachedUsersById(prev => ({ ...prev, [String(authorUid)]: fullProfile }));
+                if (currentUser && String(currentUser.id) === String(authorUid)) {
+                  setCurrentUserProfileDoc(fullProfile);
+                }
+              }
+            }
+          }
+
+          triggerDeleteToast('🗑️ Foto eliminata dalla recensione e scheda via aggiornata.');
+        } catch (err) {
+          console.error('[Admin Delete Photo] Errore durante la rimozione della foto:', err);
+          alert('Errore durante l\'eliminazione della foto: ' + (err.message || err));
+        }
       };
 
       // 5.05 PULSANTE DI REAZIONE "👍 UTILE (+10 XP ALL'AUTORE)" SUI COMMENTI
@@ -9491,6 +10106,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                             ✍️ +{rewardToast.chroniclerXP || rewardToast.detailXP} XP Cronista
                           </span>
                         )}
+                        {rewardToast.photoXP > 0 && (
+                          <span className="bg-fuchsia-400/25 text-fuchsia-200 border border-fuchsia-400/40 px-2 py-0.5 rounded-full">
+                            📷 +{rewardToast.photoXP} XP Contributo Fotografico
+                          </span>
+                        )}
                       </div>
                       {(rewardToast.newlyReachedLevel || (rewardToast.newlyUnlockedBadges && rewardToast.newlyUnlockedBadges.length > 0)) && (
                         <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[10px] font-black">
@@ -9995,6 +10615,97 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                         );
                       })}
                     </div>
+
+                    {/* GALLERIA FOTOGRAFICA ORIZZONTALE DELLA VIA (Subito sotto la testata e i badge parcheggio) */}
+                    {(() => {
+                      const collectedPhotos = [];
+                      const seenUrls = new Set();
+
+                      (selectedStreet.reviews || []).forEach(r => {
+                        if (!r || !Array.isArray(r.photos)) return;
+                        r.photos.forEach((p, idx) => {
+                          if (!p || !p.url || seenUrls.has(p.url)) return;
+                          seenUrls.add(p.url);
+                          collectedPhotos.push({
+                            url: p.url,
+                            lat: p.lat ?? r.latitude ?? selectedStreet.latitude,
+                            lng: p.lng ?? r.longitude ?? selectedStreet.longitude,
+                            segment: (p.segment || r.streetSegment || '').trim(),
+                            verifiedLocation: Boolean(p.verifiedLocation),
+                            reviewId: r.id,
+                            photoIndex: idx,
+                            authorName: r.user || r.authorName || 'Cittadino Esploratore',
+                            authorId: r.userId || r.authorId || '',
+                            date: r.date || 'Recente',
+                            reviewObj: r,
+                            streetKey: selectedStreet.streetKey || selectedStreet.id,
+                            streetName: selectedStreet.name,
+                            streetCity: selectedStreet.city,
+                            streetProvince: selectedStreet.province,
+                          });
+                        });
+                      });
+
+                      (selectedStreet.photos || []).forEach((p, idx) => {
+                        if (!p || !p.url || seenUrls.has(p.url)) return;
+                        seenUrls.add(p.url);
+                        const matchingRev = (selectedStreet.reviews || []).find(r => r.id && p.reviewId && String(r.id) === String(p.reviewId)) || null;
+                        collectedPhotos.push({
+                          url: p.url,
+                          lat: p.lat ?? selectedStreet.latitude,
+                          lng: p.lng ?? selectedStreet.longitude,
+                          segment: (p.segment || matchingRev?.streetSegment || '').trim(),
+                          verifiedLocation: Boolean(p.verifiedLocation),
+                          reviewId: p.reviewId || matchingRev?.id || null,
+                          photoIndex: p.photoIndex ?? idx,
+                          authorName: p.authorName || matchingRev?.user || 'Cittadino Esploratore',
+                          authorId: p.authorId || matchingRev?.userId || '',
+                          date: p.date || matchingRev?.date || 'Recente',
+                          reviewObj: matchingRev,
+                          streetKey: selectedStreet.streetKey || selectedStreet.id,
+                          streetName: selectedStreet.name,
+                          streetCity: selectedStreet.city,
+                          streetProvince: selectedStreet.province,
+                        });
+                      });
+
+                      if (collectedPhotos.length === 0) return null;
+
+                      return (
+                        <div className="space-y-2 pt-0.5">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                              <span>📷</span>
+                              <span>Foto della Strada ({collectedPhotos.length})</span>
+                            </h4>
+                            <span className="text-[10px] font-semibold text-slate-400">Tocca per ingrandire</span>
+                          </div>
+                          <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 pt-0.5 select-none">
+                            {collectedPhotos.map((photoItem, idx) => (
+                              <button
+                                key={`${photoItem.url}_${idx}`}
+                                type="button"
+                                onClick={() => setLightboxPhoto(photoItem)}
+                                className="group relative w-28 h-28 sm:w-32 sm:h-32 shrink-0 rounded-2xl overflow-hidden border border-slate-200/90 shadow-sm hover:shadow-md hover:border-blue-400 transition-all cursor-pointer bg-slate-900 focus:outline-none"
+                                title={photoItem.segment ? `${photoItem.segment} — Foto di ${photoItem.authorName}` : `Foto di ${photoItem.authorName}`}
+                              >
+                                <img
+                                  src={photoItem.url}
+                                  alt={photoItem.segment || `Foto ${selectedStreet.name}`}
+                                  loading="lazy"
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                                <div className="absolute inset-x-0 bottom-0 bg-slate-950/75 backdrop-blur-[2px] px-2 py-1 text-left">
+                                  <p className="text-[10px] font-bold text-white truncate leading-tight">
+                                    {photoItem.segment ? `📍 ${photoItem.segment}` : '📍 Foto della via'}
+                                  </p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* BOX REGOLE DI SOSTA (Disco Orario, Strisce Blu, Indicatore Live "Si paga adesso?" e Consenso Community) */}
                     {(() => {
@@ -10551,6 +11262,51 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                                 </p>
                               )}
 
+                              {/* Miniature Foto allegate alla singola recensione */}
+                              {Array.isArray(r.photos) && r.photos.length > 0 && (
+                                <div className="flex items-center gap-2 pt-1 overflow-x-auto">
+                                  {r.photos.filter(p => p && p.url).map((p, pIdx) => (
+                                    <button
+                                      key={`${r.id}_photo_${pIdx}`}
+                                      type="button"
+                                      onClick={() =>
+                                        setLightboxPhoto({
+                                          url: p.url,
+                                          lat: p.lat ?? r.latitude ?? selectedStreet.latitude,
+                                          lng: p.lng ?? r.longitude ?? selectedStreet.longitude,
+                                          segment: (p.segment || r.streetSegment || '').trim(),
+                                          verifiedLocation: Boolean(p.verifiedLocation),
+                                          reviewId: r.id,
+                                          photoIndex: pIdx,
+                                          authorName: r.user || 'Cittadino Esploratore',
+                                          authorId: r.userId || r.authorId || '',
+                                          date: r.date || 'Recente',
+                                          reviewObj: r,
+                                          streetKey: selectedStreet.streetKey || selectedStreet.id,
+                                          streetName: selectedStreet.name,
+                                          streetCity: selectedStreet.city,
+                                          streetProvince: selectedStreet.province,
+                                        })
+                                      }
+                                      className="relative w-20 h-20 rounded-xl overflow-hidden border border-slate-200 hover:border-blue-400 shrink-0 group cursor-pointer bg-slate-900 shadow-2xs"
+                                      title={p.segment ? `📍 ${p.segment} (Tocca per ingrandire)` : 'Tocca per ingrandire la foto'}
+                                    >
+                                      <img
+                                        src={p.url}
+                                        alt={p.segment || 'Foto recensione'}
+                                        loading="lazy"
+                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                      />
+                                      {(p.segment || r.streetSegment) && (
+                                        <span className="absolute inset-x-0 bottom-0 bg-slate-950/75 text-white text-[9px] font-bold px-1.5 py-0.5 truncate">
+                                          {p.segment || r.streetSegment}
+                                        </span>
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+
                               {/* Footer Card: Tratto e Controlli Azione */}
                               <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 text-xs">
                                 <div className="flex flex-wrap items-center gap-1.5 min-w-0">
@@ -10659,10 +11415,133 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             </div>
           )}
 
+          {/* 5.5 LIGHTBOX A SCHERMO INTERO PER LE FOTO DELLA STRADA */}
+          {lightboxPhoto && (
+            <div
+              className="fixed inset-0 z-[85] bg-slate-950/92 backdrop-blur-md flex flex-col justify-between p-3 sm:p-6 animate-fade-in select-none"
+              onClick={() => setLightboxPhoto(null)}
+            >
+              {/* Barra Superiore Lightbox: Info Autore, Data, Civico/Tratto e Pulsante "✕ Chiudi" */}
+              <div
+                className="flex items-center justify-between gap-3 bg-slate-900/80 border border-white/10 rounded-2xl px-4 py-3 text-white shadow-xl max-w-4xl w-full mx-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs sm:text-sm font-black text-white truncate">
+                      📷 {lightboxPhoto.streetName || selectedStreet?.name || 'Foto della strada'}
+                    </span>
+                    {lightboxPhoto.segment && (
+                      <span className="text-[11px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                        <span>📍</span>
+                        <span>{lightboxPhoto.segment}</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-300 font-medium truncate">
+                    Caricata da <strong className="text-white">{lightboxPhoto.authorName || 'Cittadino Esploratore'}</strong> • {lightboxPhoto.date || 'Recente'}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setLightboxPhoto(null)}
+                  className="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white font-extrabold text-xs cursor-pointer transition-colors shrink-0 flex items-center gap-1.5 border border-white/15"
+                >
+                  <span>✕</span>
+                  <span>Chiudi</span>
+                </button>
+              </div>
+
+              {/* Immagine ad Alta Definizione Centrale */}
+              <div
+                className="flex-1 flex items-center justify-center overflow-hidden my-3"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <img
+                  src={lightboxPhoto.url}
+                  alt={lightboxPhoto.segment || 'Foto ad alta definizione'}
+                  className="max-h-[74vh] max-w-full w-auto h-auto object-contain rounded-2xl shadow-2xl border border-white/10"
+                />
+              </div>
+
+              {/* Barra Inferiore Lightbox: "🚩 Segnala foto" e (se Admin) "🗑️ Elimina Foto" */}
+              <div
+                className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/80 border border-white/10 rounded-2xl px-4 py-3 text-white shadow-xl max-w-4xl w-full mx-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-2 text-[11px] text-slate-300 font-semibold">
+                  {lightboxPhoto.verifiedLocation ? (
+                    <span className="text-emerald-300 font-bold flex items-center gap-1">
+                      <span>✅</span>
+                      <span>Posizione GPS verificata</span>
+                    </span>
+                  ) : (
+                    <span>📍 Contributo fotografico della community</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!currentUser) {
+                        setLightboxPhoto(null);
+                        setIsAuthOpen(true);
+                        return;
+                      }
+                      const targetRev =
+                        lightboxPhoto.reviewObj ||
+                        (selectedStreet?.reviews || []).find(r => String(r.id) === String(lightboxPhoto.reviewId)) || {
+                          id: lightboxPhoto.reviewId || 'photo_report',
+                          user: lightboxPhoto.authorName || 'Utente',
+                          userId: lightboxPhoto.authorId || '',
+                          comment: `[Foto segnalata - ${lightboxPhoto.segment || 'Nessun tratto'}]`,
+                        };
+                      setReportingReview({
+                        review: targetRev,
+                        reportedPhotoUrl: lightboxPhoto.url,
+                        reportedPhotoSegment: lightboxPhoto.segment || '',
+                        streetKey: lightboxPhoto.streetKey || selectedStreet?.streetKey || selectedStreet?.id,
+                        streetName: lightboxPhoto.streetName || selectedStreet?.name,
+                        streetCity: lightboxPhoto.streetCity || selectedStreet?.city,
+                        streetProvince: lightboxPhoto.streetProvince || selectedStreet?.province,
+                        streetLat: lightboxPhoto.lat || selectedStreet?.latitude,
+                        streetLng: lightboxPhoto.lng || selectedStreet?.longitude,
+                      });
+                      setLightboxPhoto(null);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-rose-500/20 text-slate-300 hover:text-rose-200 border border-white/15 hover:border-rose-400/40 text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5"
+                    title="Segnala questa foto agli amministratori"
+                  >
+                    <span>🚩</span>
+                    <span>Segnala foto</span>
+                  </button>
+
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => handleAdminDeletePhoto(lightboxPhoto)}
+                      className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white border border-rose-500 text-xs font-extrabold cursor-pointer transition-all shadow-lg shadow-rose-600/30 flex items-center gap-1.5"
+                      title="Elimina definitivamente questa foto dalla recensione (Privilegio Admin)"
+                    >
+                      <span>🗑️</span>
+                      <span>Elimina Foto</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 6. MODALE RECENSIONE */}
           {isReviewOpen && selectedStreet && (
             <ReviewModal
               streetName={selectedStreet.name}
+              streetKey={selectedStreet.streetKey || selectedStreet.id}
+              streetCity={selectedStreet.city}
+              streetLat={selectedStreet.latitude}
+              streetLng={selectedStreet.longitude}
               currentUser={currentUser}
               initialData={editingReview}
               existingParkingRules={selectedStreet.parkingRules || null}
@@ -11023,7 +11902,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                         <span className="text-base font-black text-emerald-600 shrink-0">+20 XP</span>
                         <span className="text-[11px] text-slate-700 font-semibold leading-tight">Bonus <strong>Cronista</strong> (commento di almeno 40 caratteri)</span>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-cyan-50/70 border border-cyan-200/70 flex items-center gap-2.5 sm:col-span-2">
+                      <div className="p-2.5 rounded-xl bg-fuchsia-50/70 border border-fuchsia-200/70 flex items-center gap-2.5">
+                        <span className="text-base font-black text-fuchsia-600 shrink-0">+15 XP</span>
+                        <span className="text-[11px] text-slate-700 font-semibold leading-tight">Bonus <strong>Contributo Fotografico</strong> (almeno 1 foto della via)</span>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-cyan-50/70 border border-cyan-200/70 flex items-center gap-2.5">
                         <span className="text-base font-black text-cyan-700 shrink-0">+10 XP</span>
                         <span className="text-[11px] text-slate-700 font-semibold leading-tight">Passivi per ogni <strong>"👍 Utile"</strong> ricevuto dagli altri utenti sulle tue recensioni</span>
                       </div>
@@ -11881,6 +12764,10 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
     // --- SOTTORAPPRESENTAZIONE MODALE RECENSIONE INTERATTIVA ---
     function ReviewModal({
       streetName,
+      streetKey = '',
+      streetCity = '',
+      streetLat = null,
+      streetLng = null,
       currentUser,
       initialData,
       existingParkingRules = null,
@@ -11968,8 +12855,30 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const [hasCyclePath, setHasCyclePath] = useState(initialData?.hasCyclePath || false);
       const [amenities, setAmenities] = useState(initialData?.amenities || []);
       const [roadObstacles, setRoadObstacles] = useState(() => Array.isArray(initialData?.roadObstacles) ? initialData.roadObstacles : []);
-      const [streetSegment, setStreetSegment] = useState(initialData?.streetSegment || '');
+      const [streetSegment, setStreetSegment] = useState(initialData?.streetSegment || defaultStreetSegment || '');
       const [comment, setComment] = useState(initialData?.comment || '');
+      const [photos, setPhotos] = useState(() =>
+        Array.isArray(initialData?.photos)
+          ? initialData.photos
+              .filter(p => p && p.url)
+              .slice(0, 2)
+              .map(p => ({
+                url: p.url,
+                dataUrl: p.url,
+                lat: p.lat ?? streetLat,
+                lng: p.lng ?? streetLng,
+                segment: p.segment || initialData?.streetSegment || '',
+                verifiedLocation: Boolean(p.verifiedLocation),
+                blob: null,
+              }))
+          : []
+      );
+      const [isProcessingPhotos, setIsProcessingPhotos] = useState(false);
+      const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
+      const [detectedCivicBadge, setDetectedCivicBadge] = useState('');
+      const [photoUploadError, setPhotoUploadError] = useState('');
+      const photoFileInputRef = useRef(null);
+      const streetSegmentInputRef = useRef(null);
       const [moderationError, setModerationError] = useState('');
       const [isCheckingModeration, setIsCheckingModeration] = useState(false);
 
@@ -11991,11 +12900,15 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       const isPublishDisabled =
         overallRating === 0 ||
         isCheckingModeration ||
-        (isAccordionOpen && !areAllCategoriesCompleted);
+        isProcessingPhotos ||
+        isUploadingPhotos ||
+        (isAccordionOpen && completedCategoriesCount > 0 && !areAllCategoriesCompleted);
 
       useEffect(() => {
         setModerationError('');
         setIsCheckingModeration(false);
+        setPhotoUploadError('');
+        setDetectedCivicBadge('');
         if (initialData) {
           const loadedType = resolveInitialStreetType();
           setStreetType(loadedType);
@@ -12007,8 +12920,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             const v = initialData.ratings?.[cat.key];
             return v !== null && v !== undefined && v !== 'N/A' && v !== '' && !isNaN(Number(v)) && Number(v) >= 1;
           });
-          setHasTouchedTechnical(hadTechnical);
-          setIsAccordionOpen(hadTechnical);
+          const hadExistingPhotos = Array.isArray(initialData.photos) && initialData.photos.some(p => p && p.url);
+          setHasTouchedTechnical(hadTechnical || hadExistingPhotos);
+          setIsAccordionOpen(hadTechnical || hadExistingPhotos);
           const loadedParking = initialData.parkingTypes || [];
           setParkingTypes(loadedParking);
           setParkingRulesDraft(createDefaultParkingRulesDraft(
@@ -12020,6 +12934,22 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           setRoadObstacles(Array.isArray(initialData.roadObstacles) ? initialData.roadObstacles : []);
           setStreetSegment(initialData.streetSegment || '');
           setComment(initialData.comment || '');
+          setPhotos(
+            Array.isArray(initialData.photos)
+              ? initialData.photos
+                  .filter(p => p && p.url)
+                  .slice(0, 2)
+                  .map(p => ({
+                    url: p.url,
+                    dataUrl: p.url,
+                    lat: p.lat ?? streetLat,
+                    lng: p.lng ?? streetLng,
+                    segment: p.segment || initialData.streetSegment || '',
+                    verifiedLocation: Boolean(p.verifiedLocation),
+                    blob: null,
+                  }))
+              : []
+          );
         } else {
           const autoType = detectStreetTypeFromStreetName(streetName);
           setStreetType(autoType);
@@ -12033,10 +12963,102 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           setHasCyclePath(false);
           setAmenities([]);
           setRoadObstacles([]);
-          setStreetSegment('');
+          setStreetSegment(defaultStreetSegment || '');
           setComment('');
+          setPhotos([]);
         }
       }, [initialData, streetName]);
+
+      // Gestione selezione e compressione client-side delle foto + Estrazione GPS/EXIF + Reverse Geocoding Civico
+      const handlePhotoFilesSelected = async (e) => {
+        const fileList = e.target.files ? Array.from(e.target.files) : [];
+        if (e.target) e.target.value = '';
+        if (fileList.length === 0) return;
+
+        setPhotoUploadError('');
+        const remainingSlots = Math.max(0, 2 - photos.length);
+        if (remainingSlots <= 0) {
+          setPhotoUploadError('Puoi allegare al massimo 2 foto per ogni recensione.');
+          return;
+        }
+        if (fileList.length > remainingSlots) {
+          setPhotoUploadError(`Selezionate ${fileList.length} foto: caricate le prime ${remainingSlots} (massimo 2 foto per recensione).`);
+        }
+
+        const filesToProcess = fileList.slice(0, remainingSlots);
+        setIsProcessingPhotos(true);
+
+        try {
+          // Avvia in parallelo il rilevamento GPS corrente del browser
+          const browserGpsPromise = getBrowserCurrentGpsPosition(5500);
+          const newPhotoItems = [];
+          let latestDetectedSegment = '';
+
+          for (const file of filesToProcess) {
+            // 1. Compressione automatica client-side (max 1280px lato lungo, WebP/JPEG qualità 0.75)
+            const compressed = await compressReviewPhotoClientSide(file, 1280, 0.75);
+
+            // 2. Estrazione coordinate: priorità a EXIF della foto o GPS corrente del browser
+            const exifGps = await extractExifGpsFromFile(file);
+            const browserGps = await browserGpsPromise;
+            const resolvedCoords = exifGps || browserGps;
+
+            const photoLat = resolvedCoords?.lat ?? (Number(streetLat) || 42.9517);
+            const photoLng = resolvedCoords?.lng ?? (Number(streetLng) || 13.8822);
+            let verifiedLocation = Boolean(resolvedCoords);
+            let detectedSegmentForPhoto = '';
+
+            // 3. Reverse Geocoding Google con le coordinate rilevate
+            if (resolvedCoords && resolvedCoords.lat && resolvedCoords.lng) {
+              const geoInfo = await reverseGeocodePhotoCoords(resolvedCoords.lat, resolvedCoords.lng, streetName);
+              if (geoInfo) {
+                verifiedLocation = Boolean(geoInfo.matchedStreet || resolvedCoords);
+                if (geoInfo.matchedStreet && geoInfo.segmentText) {
+                  detectedSegmentForPhoto = geoInfo.segmentText;
+                  latestDetectedSegment = geoInfo.segmentText;
+                } else if (geoInfo.streetNumber && !geoInfo.route) {
+                  detectedSegmentForPhoto = `Altezza civico ${geoInfo.streetNumber}`;
+                  latestDetectedSegment = detectedSegmentForPhoto;
+                }
+              }
+            }
+
+            newPhotoItems.push({
+              url: compressed.dataUrl,
+              dataUrl: compressed.dataUrl,
+              blob: compressed.blob,
+              mimeType: compressed.mimeType || 'image/webp',
+              sizeKB: compressed.sizeKB,
+              lat: Number(Number(photoLat).toFixed(6)),
+              lng: Number(Number(photoLng).toFixed(6)),
+              segment: detectedSegmentForPhoto || streetSegment || '',
+              verifiedLocation,
+            });
+          }
+
+          if (latestDetectedSegment) {
+            setStreetSegment(latestDetectedSegment.slice(0, 60));
+            setDetectedCivicBadge(latestDetectedSegment);
+          }
+
+          setPhotos(prev => [...prev, ...newPhotoItems].slice(0, 2));
+        } catch (err) {
+          console.warn('[ReviewModal] Errore elaborazione foto:', err);
+          setPhotoUploadError(err?.message || 'Impossibile elaborare la foto selezionata.');
+        } finally {
+          setIsProcessingPhotos(false);
+        }
+      };
+
+      const handleRemovePhoto = (idxToRemove) => {
+        setPhotos(prev => {
+          const next = prev.filter((_, idx) => idx !== idxToRemove);
+          if (next.length === 0) {
+            setDetectedCivicBadge('');
+          }
+          return next;
+        });
+      };
 
       // Cambio tipologia strada (non altera le valutazioni tecniche)
       const handleSelectStreetType = (newType) => {
@@ -12105,7 +13127,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         setRoadObstacles(prev => prev.includes(obs) ? prev.filter(o => o !== obs) : [...prev, obs]);
       };
 
-      // Calcolo live degli XP guadagnati (da +50 XP fino a +130 XP)
+      // Calcolo live degli XP guadagnati (da +50 XP fino a +145 XP con contributo fotografico)
       const liveXP = computeSingleReviewXP(
         {
           comment,
@@ -12114,6 +13136,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
           amenities: isAccordionOpen ? amenities : [],
           roadObstacles: isAccordionOpen ? roadObstacles : [],
           hasCyclePath: isAccordionOpen ? hasCyclePath : false,
+          photos,
           isFlashOnly: !isAccordionOpen,
         },
         Boolean(isPioneerCandidate)
@@ -12122,13 +13145,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
       const handleFormSubmit = async (e) => {
         if (e) e.preventDefault();
-        if (isCheckingModeration) return;
+        if (isCheckingModeration || isProcessingPhotos || isUploadingPhotos) return;
         if (overallRating === 0) {
           setModerationError('Seleziona un voto a stelle complessivo (da 1 a 5) prima di pubblicare.');
           return;
         }
 
-        if (isAccordionOpen && !areAllCategoriesCompleted) {
+        if (isAccordionOpen && completedCategoriesCount > 0 && !areAllCategoriesCompleted) {
           setModerationError('Completa tutti i 13 parametri tecnici (con voto da 1 a 5 o [N/A]) prima di pubblicare.');
           return;
         }
@@ -12172,7 +13195,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         // Se l'accordion è aperto al momento dell'invio (o stiamo modificando una recensione che aveva già parametri tecnici),
         // salva i voti validi (1-5) e null per le voci N/A. Se l'accordion è chiuso, salva null per tutti (recensione flash).
         const finalRatings = {};
-        const includeTechnical = isAccordionOpen || (isEditing && hasExistingTechnicalRatings);
+        const includeTechnical = (isAccordionOpen && completedCategoriesCount > 0) || (isEditing && hasExistingTechnicalRatings);
         TECHNICAL_CATEGORIES.forEach(cat => {
           if (!includeTechnical) {
             finalRatings[cat.key] = null;
@@ -12186,6 +13209,35 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         // Calcola il punteggio finale di ratingOverall: 100% sintetico se flash, oppure media ponderata (40% sintetico + 60% categorie) se approfondita
         const finalCalculatedRating = computeWeightedReviewRating(overallRating, finalRatings, includeTechnical);
 
+        // 2. Upload dei file compressi su Firebase Storage al percorso: review_photos/{streetKey}/{timestamp}_{index}.webp
+        const uploadedPhotosPayload = [];
+        if (photos.length > 0) {
+          setIsUploadingPhotos(true);
+          try {
+            const resolvedKey = streetKey || createStreetCompositeKey(streetName, streetCity || 'Italia', streetLat || 42.9517, streetLng || 13.8822);
+            const uploadTs = Date.now();
+            for (let idx = 0; idx < Math.min(2, photos.length); idx++) {
+              const item = photos[idx];
+              const downloadUrl = await uploadCompressedPhotoToStorage(item, resolvedKey, idx, uploadTs);
+              if (downloadUrl) {
+                uploadedPhotosPayload.push({
+                  url: downloadUrl,
+                  lat: Number(item.lat ?? streetLat ?? 42.9517),
+                  lng: Number(item.lng ?? streetLng ?? 13.8822),
+                  segment: String(finalSegment || item.segment || '').trim().slice(0, 60),
+                  verifiedLocation: Boolean(item.verifiedLocation),
+                });
+              }
+            }
+          } catch (upErr) {
+            console.warn('[ReviewModal] Errore upload foto su Firebase Storage:', upErr);
+          } finally {
+            setIsUploadingPhotos(false);
+          }
+        }
+
+        const includeExtraTags = isAccordionOpen || isEditing;
+
         try {
           await onSubmit({
             userName: currentUser ? currentUser.name : 'Tu (Cittadino)',
@@ -12193,11 +13245,12 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             overallRating: finalCalculatedRating,
             rawOverallRating: overallRating,
             ratings: finalRatings,
-            includeTechnical,
+            includeTechnical: includeExtraTags,
             comment: finalComment,
             streetSegment: finalSegment,
+            photos: uploadedPhotosPayload,
             parkingTypes: (() => {
-              let pts = includeTechnical ? parkingTypes : (isEditing ? (initialData?.parkingTypes || []) : []);
+              let pts = includeExtraTags ? parkingTypes : (isEditing ? (initialData?.parkingTypes || []) : []);
               const reg = parkingRulesDraft.parkingRegime || (
                 parkingRulesDraft.paid?.enabled ? (pts.includes('FREE') ? 'MIXED' : 'PAID_ONLY') : 'FREE_ONLY'
               );
@@ -12214,7 +13267,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               return pts;
             })(),
             parkingRules: (
-              includeTechnical &&
+              includeExtraTags &&
               (parkingTypes.includes('PARKING_DISC') || parkingTypes.includes('PAID') || parkingRulesDraft.parkingRegime) &&
               (!hasExistingActiveParkingRules || isEditingExistingParking)
             ) ? {
@@ -12228,10 +13281,10 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 enabled: parkingRulesDraft.parkingRegime === 'FREE_ONLY' ? false : (parkingTypes.includes('PAID') || parkingRulesDraft.parkingRegime === 'PAID_ONLY' || parkingRulesDraft.parkingRegime === 'MIXED'),
               },
             } : null,
-            confirmExistingParkingRules: Boolean(includeTechnical && hasConfirmedExistingParking),
-            hasCyclePath: includeTechnical ? hasCyclePath : (isEditing ? Boolean(initialData?.hasCyclePath) : false),
-            amenities: includeTechnical ? amenities : (isEditing ? (initialData?.amenities || []) : []),
-            roadObstacles: includeTechnical ? roadObstacles : (isEditing ? (initialData?.roadObstacles || []) : []),
+            confirmExistingParkingRules: Boolean(includeExtraTags && hasConfirmedExistingParking),
+            hasCyclePath: includeExtraTags ? hasCyclePath : (isEditing ? Boolean(initialData?.hasCyclePath) : false),
+            amenities: includeExtraTags ? amenities : (isEditing ? (initialData?.amenities || []) : []),
+            roadObstacles: includeExtraTags ? roadObstacles : (isEditing ? (initialData?.roadObstacles || []) : []),
           });
         } catch (err) {
           console.warn('[ReviewModal] Errore invio recensione:', err);
@@ -12312,6 +13365,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   )}
                   {liveXP.chroniclerXP > 0 && (
                     <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">✍️ +20 Cronista</span>
+                  )}
+                  {liveXP.photoXP > 0 && (
+                    <span className="bg-fuchsia-100 text-fuchsia-800 px-1.5 py-0.5 rounded">📷 +15 Foto</span>
                   )}
                 </div>
               </div>
@@ -12491,16 +13547,123 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   <div className="p-4 space-y-4 border-t border-slate-100 animate-slide-up">
                     {/* Tratto o punto di riferimento facoltativo */}
                     <div className="flex items-center gap-2 bg-slate-50 px-3.5 py-2.5 rounded-2xl border border-slate-200 text-xs focus-within:border-sky-400 focus-within:bg-white transition-all">
-                      <span className="shrink-0 text-slate-700 font-bold">📍 Tratto (opzionale):</span>
+                      <span className="shrink-0 text-slate-700 font-bold">📍 Tratto o punto di riferimento:</span>
                       <input
+                        ref={streetSegmentInputRef}
                         type="text"
                         maxLength={60}
                         value={streetSegment}
                         onChange={(e) => setStreetSegment(e.target.value.slice(0, 60))}
-                        placeholder="Es. Civico 12, incrocio, tratto nord..."
+                        placeholder="Es. Altezza civico 143, incrocio, tratto nord..."
                         className="flex-1 bg-transparent border-0 focus:outline-none text-slate-800 placeholder-slate-400 text-xs font-medium"
                       />
                       <span className="text-[10px] text-slate-400 font-semibold">{streetSegment.length}/60</span>
+                    </div>
+
+                    {/* Selettore Foto e Compressione Client-Side con Rilevamento Civico Automatico */}
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-50 via-sky-50/30 to-fuchsia-50/20 border border-slate-200/90 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <label className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
+                          <span>📷 Foto della strada (Opzionale - Max 2 foto)</span>
+                        </label>
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                          photos.length > 0
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : 'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200'
+                        }`}>
+                          {photos.length > 0 ? '✓ +15 XP Contributo Fotografico' : '+15 XP Contributo Fotografico'}
+                        </span>
+                      </div>
+
+                      <p className="text-[11px] text-slate-500 font-medium leading-snug">
+                        Mostra asfalto, buche, marciapiedi o parcheggi. Evita volti e targhe leggibili.
+                      </p>
+
+                      {/* Input file nascosto + Pulsante compatto */}
+                      <input
+                        ref={photoFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handlePhotoFilesSelected}
+                        className="hidden"
+                      />
+
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        {photos.length < 2 && (
+                          <button
+                            type="button"
+                            disabled={isProcessingPhotos || isUploadingPhotos}
+                            onClick={() => photoFileInputRef.current && photoFileInputRef.current.click()}
+                            className="px-3.5 py-2 rounded-xl bg-white hover:bg-sky-50 active:scale-[0.99] text-slate-800 hover:text-sky-900 border border-slate-300 hover:border-sky-400 font-extrabold text-xs shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {isProcessingPhotos ? (
+                              <>
+                                <span className="inline-block w-3.5 h-3.5 border-2 border-sky-600 border-t-transparent rounded-full animate-spin"></span>
+                                <span>Compressione e geolocalizzazione...</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>➕</span>
+                                <span>Scatta o Carica Foto</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+
+                        {/* Anteprime quadrate (thumbnail) delle foto caricate con '✕' di rimozione */}
+                        {photos.map((p, idx) => (
+                          <div
+                            key={`${p.url}_${idx}`}
+                            className="relative w-20 h-20 rounded-2xl overflow-hidden border-2 border-sky-300 shadow-sm bg-slate-900 shrink-0 group"
+                          >
+                            <img
+                              src={p.dataUrl || p.url}
+                              alt={`Anteprima foto ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            {p.sizeKB && (
+                              <span className="absolute bottom-1 left-1 bg-slate-950/75 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md">
+                                {p.sizeKB} KB
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePhoto(idx)}
+                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-slate-950/80 hover:bg-rose-600 text-white text-[10px] font-black flex items-center justify-center shadow-md cursor-pointer transition-colors"
+                              title="Rimuovi questa foto"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Badge verde rassicurante con il civico rilevato (toccabile per modificare il campo tratto) */}
+                      {photos.length > 0 && (detectedCivicBadge || streetSegment) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (streetSegmentInputRef.current) {
+                              streetSegmentInputRef.current.focus();
+                              streetSegmentInputRef.current.select();
+                            }
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-300 text-emerald-900 text-[11px] font-bold flex items-center justify-between gap-2 transition-colors cursor-pointer animate-fade-in"
+                          title="Tocca per modificare liberamente il civico o il tratto"
+                        >
+                          <span>
+                            📍 Posizione rilevata: <strong>{streetSegment || detectedCivicBadge}</strong> <span className="text-emerald-700 font-semibold">(Tocca per modificare se necessario)</span>
+                          </span>
+                          <span className="text-xs shrink-0">✏️</span>
+                        </button>
+                      )}
+
+                      {photoUploadError && (
+                        <p className="text-[11px] font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-xl">
+                          ⚠️ {photoUploadError}
+                        </p>
+                      )}
                     </div>
 
                     <div className="space-y-1">
@@ -12807,6 +13970,13 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     }`}>
                       {liveXP.chroniclerXP > 0 ? '✓ +20 Cronista' : '+20 Cronista'}
                     </span>
+                    <span className={`px-2 py-0.5 rounded-full border ${
+                      liveXP.photoXP > 0
+                        ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                        : 'bg-slate-100/80 border-slate-200 text-slate-400'
+                    }`}>
+                      {liveXP.photoXP > 0 ? '✓ +15 Foto' : '+15 Foto'}
+                    </span>
                   </div>
                 </div>
 
@@ -12847,15 +14017,15 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                   title={
                     overallRating === 0
                       ? 'Seleziona prima la valutazione complessiva a stelle'
-                      : isAccordionOpen && !areAllCategoriesCompleted
+                      : isAccordionOpen && completedCategoriesCount > 0 && !areAllCategoriesCompleted
                       ? `Completa tutti i 13 parametri (${completedCategoriesCount}/13) o chiudi l'approfondimento per pubblicare`
                       : ''
                   }
                 >
-                  {isCheckingModeration ? (
+                  {isCheckingModeration || isUploadingPhotos ? (
                     <span className="flex items-center gap-2">
                       <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                      <span>Verifica in corso...</span>
+                      <span>{isUploadingPhotos ? 'Caricamento foto in corso...' : 'Verifica in corso...'}</span>
                     </span>
                   ) : (
                     <span>{isEditing ? 'Salva modifiche' : 'Pubblica'}</span>
@@ -13160,16 +14330,19 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
       if (!reportData || !reportData.review) return null;
 
-      const { review, streetKey, streetName, streetCity, streetProvince } = reportData;
+      const { review, streetKey, streetName, streetCity, streetProvince, reportedPhotoUrl, reportedPhotoSegment } = reportData;
       const locationStr = `${streetName || 'Via'}${streetCity ? ` (${streetCity}${streetProvince ? ` - ${streetProvince}` : ''})` : ''}`;
-      const subject = `Segnalazione Recensione - ${streetName || 'Strada'}`;
+      const subject = reportedPhotoUrl
+        ? `Segnalazione Foto Stradale - ${streetName || 'Strada'}`
+        : `Segnalazione Recensione - ${streetName || 'Strada'}`;
       const mailtoHref = `mailto:streetreview.app@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(
-        `Segnalazione Recensione su Street Review\n` +
+        `Segnalazione su Street Review\n` +
         `-----------------------------------------\n` +
         `Strada: ${locationStr}\n` +
         `Motivo: ${reason}\n` +
         `ID Recensione: ${review.id || 'N/D'}\n` +
         `Autore Segnalato: ${review.user || review.userName || 'Utente'} (ID: ${review.authorId || review.userId || 'N/D'})\n` +
+        (reportedPhotoUrl ? `Foto Segnalata: ${reportedPhotoUrl}\nTratto Foto: ${reportedPhotoSegment || 'N/D'}\n` : '') +
         `Testo Segnalato: "${review.comment || ''}"\n` +
         `-----------------------------------------\n` +
         `Segnalato da: ${currentUser?.email || 'N/D'} (ID: ${currentUser?.id || 'N/D'})`
@@ -13199,6 +14372,8 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             reportedAuthorId: String(review.authorId || review.userId || '').trim(),
             reportedAuthorName: String(review.user || review.userName || 'Utente').trim(),
             reportedText: String(review.comment || '').trim(),
+            reportedPhotoUrl: reportedPhotoUrl ? String(reportedPhotoUrl) : null,
+            reportedPhotoSegment: reportedPhotoSegment ? String(reportedPhotoSegment) : null,
             reason: reason,
             reporterId: String(currentUser?.id || currentUser?.uid || '').trim(),
             reporterEmail: String(currentUser?.email || '').trim(),
@@ -13226,7 +14401,9 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
               <div className="flex items-center gap-2.5">
                 <span className="text-xl">🚩</span>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">Segnala questa recensione</h3>
+                  <h3 className="text-sm font-black text-slate-900">
+                    {reportedPhotoUrl ? 'Segnala questa foto' : 'Segnala questa recensione'}
+                  </h3>
                   <p className="text-[11px] text-rose-700 font-semibold truncate max-w-[240px] sm:max-w-[280px]">
                     {locationStr}
                   </p>
@@ -13243,12 +14420,25 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
 
             {/* Form & Content */}
             <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 text-xs overflow-y-auto flex-1">
-              {/* Anteprima del testo segnalato e nome autore */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-1.5">
+              {/* Anteprima del testo o foto segnalata e nome autore */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-slate-500 font-semibold">Autore recensione:</span>
                   <span className="font-extrabold text-slate-800">{review.user || review.userName || 'Utente'}</span>
                 </div>
+                {reportedPhotoUrl && (
+                  <div className="flex items-center gap-2.5 pt-1 border-t border-slate-200/60">
+                    <img
+                      src={reportedPhotoUrl}
+                      alt="Foto segnalata"
+                      className="w-16 h-16 rounded-xl object-cover border border-slate-300 shrink-0"
+                    />
+                    <div className="text-[11px] text-slate-600 space-y-0.5">
+                      <p className="font-bold text-slate-800">📷 Foto allegata alla via</p>
+                      {reportedPhotoSegment && <p className="text-slate-500">📍 {reportedPhotoSegment}</p>}
+                    </div>
+                  </div>
+                )}
                 <div className="pt-1 border-t border-slate-200/60">
                   <p className="text-slate-700 italic leading-relaxed text-[11px]">
                     "{review.comment || 'Nessun testo registrato.'}"
