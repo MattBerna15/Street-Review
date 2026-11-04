@@ -758,31 +758,81 @@
       return null;
     };
 
+    // Helper universale globale per estrarre eventuale numero civico da query o indirizzo
+    function extractCivicNumberFromQuery(query) {
+      if (!query || typeof query !== 'string') return { cleanQuery: '', streetNumber: '', civic: '', toString() { return ''; } };
+      const trimmed = String(query).trim();
+      const match = trimmed.match(/^(.*?)[,\s]+(?:n\.?\s*|civ\.?\s*|civico\s*)?(\d{1,4}[a-zA-Z]?(?:\/\d{1,3}[a-zA-Z]?)?)\s*$/i);
+      if (match && match[1] && match[1].trim().length >= 2) {
+        const num = match[2].trim();
+        return {
+          cleanQuery: match[1].trim(),
+          streetNumber: num,
+          civic: num,
+          toString() { return num; }
+        };
+      }
+      const matchAlt = trimmed.match(/(?:,\s*|\s+civico\s+|\s+n\.?\s*)(\d{1,4}\s*(?:\/[a-zA-Z]|[a-zA-Z])?)/i);
+      if (matchAlt && matchAlt[1]) {
+        const num = matchAlt[1].trim();
+        const clean = trimmed.replace(matchAlt[0], '').trim();
+        return {
+          cleanQuery: clean || trimmed,
+          streetNumber: num,
+          civic: num,
+          toString() { return num; }
+        };
+      }
+      return { cleanQuery: trimmed, streetNumber: '', civic: '', toString() { return ''; } };
+    }
+    window.extractCivicNumberFromQuery = extractCivicNumberFromQuery;
+
     // Canale Unificato di Risoluzione Geografica Universale (Google Maps Geocoder & Geometria Ufficiale Route)
     async function resolveCanonicalStreetGeometry(streetName, city, province = '', fallbackLat = null, fallbackLng = null) {
-      const cleanCity = resolveCanonicalCityName(city, fallbackLat, fallbackLng);
-      const cleanStreet = extractCivicNumberFromQuery(streetName || '').cleanQuery || streetName || '';
-      const canonicalStreetName = resolveCanonicalStreetName(cleanStreet, cleanCity, fallbackLat, fallbackLng) || cleanStreet;
-      const cityKey = normalizeCityKey(cleanCity);
-      const provCode = normalizeProvinceCode(province, cityKey, fallbackLat, fallbackLng);
-
-      const fallbackResult = {
-        lat: fallbackLat,
-        lng: fallbackLng,
-        city: cleanCity,
-        province: provCode,
-        postalCode: resolveDefaultPostalCode(cityKey),
-        canonicalName: canonicalStreetName,
-        placeId: null,
-        formattedAddress: '',
-        snapped: false
-      };
-
-      if (!window.google || !window.google.maps || !window.google.maps.Geocoder) {
-        return fallbackResult;
-      }
+      const safeStreetName = String(streetName || '').trim();
+      const safeFallbackLat = (fallbackLat != null && !isNaN(Number(fallbackLat))) ? Number(fallbackLat) : null;
+      const safeFallbackLng = (fallbackLng != null && !isNaN(Number(fallbackLng))) ? Number(fallbackLng) : null;
 
       try {
+        const cleanCity = typeof resolveCanonicalCityName === 'function'
+          ? resolveCanonicalCityName(city, safeFallbackLat, safeFallbackLng)
+          : (city || 'Italia');
+
+        let cleanStreet = safeStreetName;
+        if (typeof extractCivicNumberFromQuery === 'function') {
+          const parsed = extractCivicNumberFromQuery(safeStreetName);
+          cleanStreet = (parsed && parsed.cleanQuery) ? parsed.cleanQuery : (typeof parsed === 'string' ? parsed : safeStreetName);
+        }
+
+        const canonicalStreetName = typeof resolveCanonicalStreetName === 'function'
+          ? (resolveCanonicalStreetName(cleanStreet, cleanCity, safeFallbackLat, safeFallbackLng) || cleanStreet)
+          : cleanStreet;
+
+        const cityKey = typeof normalizeCityKey === 'function' ? normalizeCityKey(cleanCity) : 'italia';
+        const provCode = typeof normalizeProvinceCode === 'function'
+          ? normalizeProvinceCode(province, cityKey, safeFallbackLat, safeFallbackLng)
+          : (province || '');
+
+        const defaultPostal = typeof resolveDefaultPostalCode === 'function'
+          ? resolveDefaultPostalCode(cityKey)
+          : '';
+
+        const fallbackResult = {
+          lat: safeFallbackLat,
+          lng: safeFallbackLng,
+          city: cleanCity,
+          province: provCode,
+          postalCode: defaultPostal,
+          canonicalName: canonicalStreetName || safeStreetName,
+          placeId: null,
+          formattedAddress: '',
+          snapped: false
+        };
+
+        if (!window.google || !window.google.maps || !window.google.maps.Geocoder) {
+          return fallbackResult;
+        }
+
         const geocoder = new window.google.maps.Geocoder();
         const addressQuery = provCode && provCode !== 'italia'
           ? `${canonicalStreetName}, ${cleanCity}, ${provCode}, Italia`
@@ -812,8 +862,8 @@
         }
 
         // Ricava il punto medio: se dispone di viewport calcola il centro, altrimenti usa location
-        let geomLat = fallbackLat;
-        let geomLng = fallbackLng;
+        let geomLat = safeFallbackLat;
+        let geomLng = safeFallbackLng;
 
         if (best.geometry) {
           if (best.geometry.viewport) {
@@ -831,24 +881,39 @@
           }
         }
 
-        const addrDetails = extractAddressDetails(best.address_components, best.formatted_address || '', geomLat, geomLng);
+        const addrDetails = typeof extractAddressDetails === 'function'
+          ? extractAddressDetails(best.address_components, best.formatted_address || '', geomLat, geomLng)
+          : { route: canonicalStreetName, city: cleanCity, province: provCode, postalCode: defaultPostal };
+
         const resolvedRouteName = addrDetails.route || canonicalStreetName;
-        const finalCanonicalName = resolveCanonicalStreetName(resolvedRouteName, addrDetails.city || cleanCity, geomLat, geomLng);
+        const finalCanonicalName = typeof resolveCanonicalStreetName === 'function'
+          ? resolveCanonicalStreetName(resolvedRouteName, addrDetails.city || cleanCity, geomLat, geomLng)
+          : resolvedRouteName;
 
         return {
-          lat: geomLat !== null ? Number(geomLat) : fallbackLat,
-          lng: geomLng !== null ? Number(geomLng) : fallbackLng,
+          lat: geomLat !== null ? Number(geomLat) : safeFallbackLat,
+          lng: geomLng !== null ? Number(geomLng) : safeFallbackLng,
           city: addrDetails.city || cleanCity,
           province: addrDetails.province || provCode,
-          postalCode: addrDetails.postalCode || resolveDefaultPostalCode(cityKey),
+          postalCode: addrDetails.postalCode || defaultPostal,
           canonicalName: finalCanonicalName,
           placeId: best.place_id || null,
           formattedAddress: best.formatted_address || '',
           snapped: true
         };
       } catch (err) {
-        console.warn('[resolveCanonicalStreetGeometry] Errore Geocoding Google Maps:', err);
-        return fallbackResult;
+        console.warn('[resolveCanonicalStreetGeometry] Fallback sicuro attivato:', err);
+        return {
+          lat: safeFallbackLat,
+          lng: safeFallbackLng,
+          city: city || 'Italia',
+          province: province || '',
+          postalCode: '',
+          canonicalName: safeStreetName || 'Via Sconosciuta',
+          placeId: null,
+          formattedAddress: '',
+          snapped: false
+        };
       }
     }
 
