@@ -1931,6 +1931,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 dataUrl = canvas.toDataURL('image/jpeg', quality);
                 mimeType = 'image/jpeg';
               }
+              const jpegDataUrl = canvas.toDataURL('image/jpeg', quality);
 
               canvas.toBlob(
                 (blob) => {
@@ -1938,6 +1939,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     resolve({
                       blob,
                       dataUrl,
+                      jpegDataUrl,
                       mimeType,
                       width: targetW,
                       height: targetH,
@@ -1957,6 +1959,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                       resolve({
                         blob: fallbackBlob,
                         dataUrl,
+                        jpegDataUrl,
                         mimeType,
                         width: targetW,
                         height: targetH,
@@ -1980,136 +1983,87 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
       });
     };
 
-    // 1.5 Verifica Visiva AI Preventiva con Google Gemini Flash (Moderazione Multimodale Client-Side con timeout 8s)
+    // 1.5 Verifica Visiva AI Preventiva con Google Gemini 3.8 Flash (Moderazione Multimodale Client-Side)
     async function validatePhotoWithGemini(base64Image) {
       if (!base64Image || typeof base64Image !== 'string') {
-        return { allowed: true, reason: '', fallback: true };
+        return { allowed: false, reason: 'Immagine non valida o assente.' };
       }
 
-      // Timeout di sicurezza di 8 secondi: in caso di assenza momentanea di rete o quota esaurita, consente il caricamento locale
-      const timeoutPromise = new Promise((resolve) => {
-        setTimeout(() => {
-          console.warn('[Gemini Photo Moderation] Timeout di sicurezza di 8s raggiunto, fallback consentito.');
-          resolve({ allowed: true, reason: '', fallback: true });
-        }, 8000);
-      });
+      const cleanBase64 = base64Image.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '');
+      const apiKey = GEMINI_MODERATION_API_KEY;
 
-      const executePhotoValidation = async () => {
-        let mimeType = 'image/webp';
-        let pureBase64 = base64Image.trim();
-
-        if (pureBase64.startsWith('data:')) {
-          const commaIdx = pureBase64.indexOf(',');
-          if (commaIdx !== -1) {
-            const header = pureBase64.slice(5, commaIdx);
-            const semiIdx = header.indexOf(';');
-            const extractedMime = semiIdx !== -1 ? header.slice(0, semiIdx) : header;
-            if (extractedMime && extractedMime.startsWith('image/')) {
-              mimeType = extractedMime;
-            }
-            pureBase64 = pureBase64.slice(commaIdx + 1);
-          }
-        }
-
-        const promptDirectives = `Ruolo: Moderatore di sicurezza per l'app Street Review (recensioni di strade e arredo urbano).
-Analizza l'immagine fornita.
-
-Criteri di RIFIUTO (allowed = false):
-- Nudità, contenuti espliciti, sessuali o ammiccanti.
-- Volti umani in primo piano o chiaramente identificabili (tutela della privacy e del GDPR).
-- Targhe automobilistiche in primissimo piano e totalmente leggibili come soggetto principale.
-- Violenza, armi, sangue o simboli d'odio.
-- Contenuti completamente privi di pertinenza stradale/urbana (es. cibo, screenshot di chat, meme, animali domestici o interni domestici).
-
-Criteri di APPROVAZIONE (allowed = true):
-- Asfalto, buche, crepe, tombini, marciapiedi, caditoie.
-- Parcheggi, strisce blu/bianche, segnaletica stradale verticale e orizzontale.
-- Piste ciclabili, colonnine di ricarica, illuminazione pubblica, cantieri e carreggiate.
-- Panorami di strade cittadine (figure umane o veicoli lontani/di sfondo non riconoscibili sono ammessi).
-
-Rispondi ESCLUSIVAMENTE in formato JSON puro:
-{"allowed": true/false, "reason": "Motivazione breve in italiano in caso di rifiuto"}`;
-
-        const requestBody = JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: promptDirectives },
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [
                 {
-                  inlineData: {
-                    mimeType: mimeType,
-                    data: pureBase64,
-                  },
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-          },
-        });
+                  parts: [
+                    {
+                      text: `Sei il moderatore visivo di sicurezza dell'app Street Review.
+Analizza l'immagine fornita.
+Restituisci TASSATIVAMENTE ed ESCLUSIVAMENTE un JSON valido:
+{ "allowed": boolean, "reason": string }
 
-        // Chiavi API disponibili nel progetto (window.firebaseConfig.apiKey e chiave Generative API configurata)
-        const candidateKeys = Array.from(
-          new Set(
-            [
-              window.firebaseConfig && window.firebaseConfig.apiKey,
-              typeof GEMINI_MODERATION_API_KEY !== 'undefined' ? GEMINI_MODERATION_API_KEY : null,
-            ].filter(Boolean)
-          )
+Imposta allowed: false se l'immagine contiene:
+- Volti umani in primo piano, selfie o persone chiaramente riconoscibili (violazione privacy/GDPR).
+- Nudità, contenuti a sfondo sessuale, osceni o violenti.
+- Targhe automobilistiche in primissimo piano come soggetto principale dello scatto.
+- Oggetti totalmente estranei alla sede stradale o all'arredo urbano (es. animali domestici sul divano, piatti di cibo, screenshot di testo, meme).
+
+Imposta allowed: true per:
+- Carreggiate stradali, asfalto, buche, marciapiedi, tombini, strisce pedonali, cartelli stradali, parcheggi, cantieri o panoramiche urbane generali (anche con pedoni/auto distanti non identificabili).`
+                    },
+                    {
+                      inlineData: {
+                        mimeType: "image/jpeg",
+                        data: cleanBase64
+                      }
+                    }
+                  ]
+                }
+              ],
+              generationConfig: {
+                responseMimeType: "application/json"
+              }
+            })
+          }
         );
 
-        const candidateModels = ['gemini-1.5-flash', 'gemini-2.0-flash'];
-
-        for (const apiKey of candidateKeys) {
-          for (const modelName of candidateModels) {
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-            try {
-              const controller = new AbortController();
-              const abortTimer = setTimeout(() => controller.abort(), 7500);
-
-              const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: requestBody,
-                signal: controller.signal,
-              });
-              clearTimeout(abortTimer);
-
-              if (!response.ok) {
-                const errText = await response.text().catch(() => '');
-                console.warn(`[Gemini Photo Moderation] HTTP ${response.status} su ${modelName}:`, errText);
-                continue;
-              }
-
-              const data = await response.json();
-              const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-              if (!rawText) continue;
-
-              const cleanedJson = rawText
-                .trim()
-                .replace(/^```(?:json)?\s*/i, '')
-                .replace(/\s*```$/, '')
-                .trim();
-              const parsed = JSON.parse(cleanedJson);
-              console.log('[Gemini Photo Moderation Result]', parsed);
-
-              return {
-                allowed: typeof parsed.allowed === 'boolean' ? parsed.allowed : true,
-                reason: String(parsed.reason || '').trim(),
-                fallback: false,
-              };
-            } catch (err) {
-              console.warn(`[Gemini Photo Moderation] Tentativo su ${modelName} non riuscito:`, err);
-            }
-          }
+        if (!response.ok) {
+          console.error("[Gemini Photo Error]", response.status, await response.text());
+          return {
+            allowed: false,
+            httpError: true,
+            reason: `Verifica di sicurezza della foto non riuscita (errore HTTP ${response.status}). Riprova più tardi.`
+          };
         }
 
-        // Fallback resiliente in caso di assenza momentanea di rete o quota esaurita
-        return { allowed: true, reason: '', fallback: true };
-      };
+        const data = await response.json();
+        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const cleanedJson = rawText
+          .trim()
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/\s*```$/, '')
+          .trim();
+        const parsedResult = JSON.parse(cleanedJson);
+        console.log("[Gemini Photo Moderation] Risultato:", parsedResult);
 
-      return Promise.race([executePhotoValidation(), timeoutPromise]);
+        return {
+          allowed: typeof parsedResult.allowed === 'boolean' ? parsedResult.allowed : false,
+          reason: String(parsedResult.reason || '').trim()
+        };
+      } catch (err) {
+        console.error("[Gemini Photo Error]", err);
+        return {
+          allowed: false,
+          httpError: true,
+          reason: "Impossibile completare la verifica di sicurezza della foto. Controlla la connessione e riprova."
+        };
+      }
     }
     window.validatePhotoWithGemini = validatePhotoWithGemini;
 
@@ -13147,14 +13101,13 @@ Rispondi ESCLUSIVAMENTE in formato JSON puro:
               // 1. Compressione automatica client-side (max 1280px lato lungo, WebP/JPEG qualità 0.75)
               const compressed = await compressReviewPhotoClientSide(file, 1280, 0.75);
 
-              // 2. Verifica Visiva AI con Google Gemini Flash prima di consentire il caricamento
-              const moderationVerdict = await validatePhotoWithGemini(compressed.dataUrl);
+              // 2. Verifica Visiva AI con Google Gemini 3.8 Flash prima di consentire il caricamento
+              const moderationVerdict = await validatePhotoWithGemini(compressed.jpegDataUrl || compressed.dataUrl);
 
-              if (moderationVerdict && moderationVerdict.allowed === false) {
-                const reasonText = moderationVerdict.reason || 'contenuto non conforme alle linee guida';
-                rejectedReasons.push(
-                  `⚠️ Foto non idonea: ${reasonText}. Carica solo foto inerenti alla strada senza volti o targhe leggibili.`
-                );
+              if (!moderationVerdict || moderationVerdict.allowed === false) {
+                const alertMsg = "⚠️ Foto non idonea: " + (moderationVerdict?.reason || "sono vietati selfie o volti in primo piano.");
+                alert(alertMsg);
+                rejectedReasons.push(alertMsg);
                 // Rimuovi subito l'anteprima temporanea della foto rifiutata
                 setPendingPhotoPreviews(prev => prev.filter(item => item.tempId !== tempId));
                 if (previewUrl && typeof URL !== 'undefined' && URL.revokeObjectURL) {
