@@ -400,6 +400,22 @@
         lng: 13.8830
       },
       {
+        streetKey: 'via-xxvii-novembre-1943_san-benedetto-del-tronto_ap',
+        legacyKeys: [
+          'via-xxvii-novembre_san-benedetto-del-tronto_ap',
+          'via-xxvii-novembre_san-benedetto-del-tronto',
+          'via-27-novembre_san-benedetto-del-tronto_ap',
+          'via-27-novembre_san-benedetto-del-tronto',
+          'via-27-novembre-1943_san-benedetto-del-tronto_ap'
+        ],
+        name: 'Via XXVII Novembre 1943',
+        city: 'San Benedetto del Tronto',
+        province: 'AP',
+        postalCode: '63074',
+        lat: 42.9491,
+        lng: 13.8765
+      },
+      {
         streetKey: 'via-salaria-centobuchi_monteprandone_ap',
         name: 'Via Salaria (Centobuchi)',
         city: 'Monteprandone',
@@ -436,9 +452,10 @@
     ]);
 
     // Helper di normalizzazione toponomastica completa (preserva 'viale', 'lungomare', 'via', ecc.)
-    const normalizeStreetKey = (name) => {
+    // Include Toponym Aliasing per varianti storiche (es. Via XXVII Novembre -> Via XXVII Novembre 1943 a San Benedetto del Tronto)
+    const normalizeStreetKey = (name, city = '') => {
       if (!name) return '';
-      return name
+      let slug = name
         .toLowerCase()
         .replace(/\bv\.le\b/gi, 'viale')
         .replace(/\bc\.so\b/gi, 'corso')
@@ -446,6 +463,20 @@
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '')
         .trim();
+
+      // Toponym Aliasing San Benedetto del Tronto: variante senza anno -> con anno 1943
+      if (
+        slug === 'via-xxvii-novembre' ||
+        slug === 'via-27-novembre' ||
+        slug === 'xxvii-novembre' ||
+        slug === '27-novembre'
+      ) {
+        const cKey = city ? normalizeCityKey(city) : '';
+        if (!cKey || cKey === 'san-benedetto-del-tronto' || cKey === 'italia') {
+          return 'via-xxvii-novembre-1943';
+        }
+      }
+      return slug;
     };
 
     // Inferenza geografica del comune nel perimetro storico a partire dalle coordinate (solo se dentro la Riviera delle Palme)
@@ -521,6 +552,25 @@
         return String(city).trim();
       }
       return isInsideRivieraBounds(lat, lng) ? 'San Benedetto del Tronto' : 'Italia';
+    };
+
+    // Toponym Aliasing: risoluzione nome canonico della via
+    const resolveCanonicalStreetName = (streetName, city = '', lat = null, lng = null) => {
+      if (!streetName) return '';
+      const cKey = normalizeCityKey(city, lat, lng);
+      const sSlug = String(streetName)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .trim();
+
+      if (
+        (cKey === 'san-benedetto-del-tronto' || (!cKey && isInsideRivieraBounds(lat, lng))) &&
+        (sSlug === 'via-xxvii-novembre' || sSlug === 'via-27-novembre' || sSlug === 'xxvii-novembre' || sSlug === '27-novembre' || sSlug.includes('xxvii-novembre') || sSlug.includes('27-novembre'))
+      ) {
+        return 'Via XXVII Novembre 1943';
+      }
+      return String(streetName).trim();
     };
 
     const resolveDefaultPostalCode = (cityKey) => {
@@ -641,8 +691,12 @@
     // Schema Chiave Composita Universale Rigorosa:
     // ${normalizeStreetName(streetName)}_${normalizeCity(streetCity)}_${normalizeProvince(province || 'italia')}
     const createStreetCompositeKey = (streetName, city, lat, lng, province = '') => {
-      const sKey = normalizeStreetName(streetName);
       const cKey = normalizeCity(city, lat, lng);
+      let sKey = normalizeStreetName(streetName, cKey);
+      if ((cKey === 'san-benedetto-del-tronto' || (!cKey && isInsideRivieraBounds(lat, lng))) &&
+          (sKey === 'via-xxvii-novembre' || sKey === 'via-27-novembre' || sKey === 'xxvii-novembre' || sKey === '27-novembre')) {
+        sKey = 'via-xxvii-novembre-1943';
+      }
       const pKey = normalizeProvince(province, cKey, lat, lng);
       return `${sKey}_${cKey}_${pKey}`;
     };
@@ -650,8 +704,15 @@
     // Verifica equivalenza tra due streetKey con isolamento rigoroso di via, comune e provincia
     const areStreetKeysEquivalent = (keyA, keyB) => {
       if (!keyA || !keyB) return false;
-      const kA = String(keyA).toLowerCase().replace(/^street-/, '').trim();
-      const kB = String(keyB).toLowerCase().replace(/^street-/, '').trim();
+      let kA = String(keyA).toLowerCase().replace(/^street-/, '').trim();
+      let kB = String(keyB).toLowerCase().replace(/^street-/, '').trim();
+      if (kA === kB) return true;
+
+      // Toponym Aliasing San Benedetto del Tronto: via-xxvii-novembre -> via-xxvii-novembre-1943
+      kA = kA.replace(/via-xxvii-novembre(_san-benedetto-del-tronto)/g, 'via-xxvii-novembre-1943$1')
+             .replace(/via-27-novembre(_san-benedetto-del-tronto)/g, 'via-xxvii-novembre-1943$1');
+      kB = kB.replace(/via-xxvii-novembre(_san-benedetto-del-tronto)/g, 'via-xxvii-novembre-1943$1')
+             .replace(/via-27-novembre(_san-benedetto-del-tronto)/g, 'via-xxvii-novembre-1943$1');
       if (kA === kB) return true;
 
       const partsA = kA.split('_');
@@ -725,6 +786,13 @@
         return false;
       }
 
+      // Alias speciale San Benedetto del Tronto per Via XXVII Novembre 1943
+      if (cKeyA === 'san-benedetto-del-tronto' && cKeyB === 'san-benedetto-del-tronto') {
+        const isXXVII_A = sNormA.includes('xxvii-novembre') || sNormA.includes('27-novembre');
+        const isXXVII_B = sNormB.includes('xxvii-novembre') || sNormB.includes('27-novembre');
+        if (isXXVII_A && isXXVII_B) return true;
+      }
+
       // Due vie sono la stessa via SOLO se hanno lo stesso nome normalizzato E lo stesso comune normalizzato
       if (cKeyA && cKeyB && cKeyA !== 'italia' && cKeyB !== 'italia' && cKeyA === cKeyB) {
         return true;
@@ -765,6 +833,11 @@
         const sCompKey = s.streetKey || createStreetCompositeKey(s.name, s.city, s.latitude, s.longitude, sProv);
         if (areStreetKeysEquivalent(sCompKey, candCompKey)) return true;
         if (isSameStreet(s, { name: candName, city: candCity, province: candProv, lat: candLat, lng: candLng, streetKey: candCompKey })) return true;
+        if (sNormCity === 'san-benedetto-del-tronto' && candNormCity === 'san-benedetto-del-tronto') {
+          const sIsXXVII = normalizeStreetName(s.name).includes('xxvii-novembre') || normalizeStreetName(s.name).includes('27-novembre');
+          const candIsXXVII = candNormName.includes('xxvii-novembre') || candNormName.includes('27-novembre');
+          if (sIsXXVII && candIsXXVII) return true;
+        }
         return normalizeStreetName(s.name) === candNormName && sNormCity === candNormCity;
       }) || null;
     };
@@ -819,6 +892,7 @@
         }
         if (resolvedCityKey === 'san-benedetto-del-tronto' && gCNorm === 'san-benedetto-del-tronto') {
           if (sNorm.includes('mazzini') && gSNorm.includes('mazzini')) return true;
+          if ((sNorm.includes('xxvii-novembre') || sNorm.includes('27-novembre')) && (gSNorm.includes('xxvii-novembre') || gSNorm.includes('27-novembre'))) return true;
         }
         if (resolvedCityKey === 'monteprandone' && gCNorm === 'monteprandone') {
           if (sNorm.includes('san-donato') && gSNorm.includes('san-donato')) return true;
@@ -960,6 +1034,7 @@
           (cityKey === 'grottammare' && normName.includes('mazzini') && gSNorm.includes('mazzini')) ||
           (cityKey === 'grottammare' && normName.includes('carducci') && gSNorm.includes('carducci')) ||
           (cityKey === 'grottammare' && normName.includes('firenze') && gSNorm.includes('firenze')) ||
+          (cityKey === 'san-benedetto-del-tronto' && (normName.includes('xxvii-novembre') || normName.includes('27-novembre')) && (gSNorm.includes('xxvii-novembre') || gSNorm.includes('27-novembre'))) ||
           (cityKey === 'monteprandone' && normName.includes('san-donato') && gSNorm.includes('san-donato'));
       });
 
@@ -3450,6 +3525,9 @@ Imposta allowed: true per:
       } else if (normRawName.includes('san-donato') && declaredCityKey === 'monteprandone') {
         baryLat = 42.91209543811305;
         baryLng = 13.860065210654204;
+      } else if ((normRawName.includes('xxvii-novembre') || normRawName.includes('27-novembre')) && declaredCityKey === 'san-benedetto-del-tronto') {
+        baryLat = 42.9491;
+        baryLng = 13.8765;
       }
 
       const anchor = getCanonicalStreetAnchor(rawName, declaredCity, baryLat, baryLng, fallbackMeta.province || sample?.province);
@@ -4903,6 +4981,162 @@ Imposta allowed: true per:
       }
     };
 
+    // Routine Autoritativa di Fusione Toponomastica e Pulizia Database per Via XXVII Novembre 1943 (San Benedetto del Tronto)
+    window.mergeViaXXVIINovembre = async () => {
+      const firestore = window.db;
+      if (!firestore) {
+        console.error("[MergeViaXXVIINovembre] Firestore non disponibile in window.db");
+        return { success: false, error: "Database not connected" };
+      }
+
+      console.log("[MergeViaXXVIINovembre] Avvio fusione toponomastica e pulizia duplicati per Via XXVII Novembre 1943 (San Benedetto del Tronto)...");
+      try {
+        const canonicalLat = 42.9491;
+        const canonicalLng = 13.8765;
+        const canonicalStreetKey = "via-xxvii-novembre-1943_san-benedetto-del-tronto_ap";
+        const canonicalName = "Via XXVII Novembre 1943";
+        const canonicalCity = "San Benedetto del Tronto";
+        const canonicalProvince = "AP";
+        const canonicalPostalCode = "63074";
+
+        // 1. Trova tutte le recensioni relative a Via XXVII Novembre (con o senza 1943) in 'reviews'
+        const reviewsSnap = await firestore.collection('reviews').get();
+        const batch = firestore.batch();
+        let deletedFlashCount = 0;
+        let officialReview = null;
+        let officialDocRef = null;
+
+        reviewsSnap.forEach(docSnap => {
+          const r = docSnap.data();
+          const rName = (r.streetName || r.name || '').toLowerCase();
+          const rKey = (r.streetKey || docSnap.id || '').toLowerCase();
+          const rCity = (r.streetCity || r.city || '').toLowerCase();
+
+          const isXXVII = (rName.includes('xxvii') || rName.includes('27')) && (rName.includes('novembre') || rKey.includes('novembre'));
+          const isSBT = !rCity || rCity.includes('san benedetto') || rKey.includes('san-benedetto');
+
+          if (isXXVII && isSBT) {
+            const isFlashOrDuplicate =
+              r.isFlash === true ||
+              r.reviewType === 'flash' ||
+              Number(r.ratingOverall) === 2.0 ||
+              (!rName.includes('1943') && !rKey.includes('1943'));
+
+            // Rimuovi la recensione Flash duplicata (voto 2.0 o variante senza 1943) per rispettare 1 recensione per utente
+            if (isFlashOrDuplicate && (Number(r.ratingOverall) === 2.0 || !rName.includes('1943'))) {
+              console.log(`[MergeViaXXVIINovembre] Rimozione recensione Flash duplicata ID: ${docSnap.id} (voto: ${r.ratingOverall})`);
+              batch.delete(docSnap.ref);
+              deletedFlashCount++;
+            } else {
+              // Mantieni e aggiorna la recensione ufficiale completa (voto 2.1)
+              officialReview = {
+                ...r,
+                streetName: canonicalName,
+                streetCity: canonicalCity,
+                streetProvince: canonicalProvince,
+                province: canonicalProvince,
+                postalCode: canonicalPostalCode,
+                streetKey: canonicalStreetKey,
+                latitude: canonicalLat,
+                longitude: canonicalLng,
+                ratingOverall: 2.1,
+                rawOverallRating: r.rawOverallRating || 2.1,
+                updatedAt: new Date().toISOString()
+              };
+              officialDocRef = docSnap.ref;
+            }
+          }
+        });
+
+        if (officialDocRef && officialReview) {
+          batch.update(officialDocRef, {
+            streetName: canonicalName,
+            streetCity: canonicalCity,
+            streetProvince: canonicalProvince,
+            province: canonicalProvince,
+            postalCode: canonicalPostalCode,
+            streetKey: canonicalStreetKey,
+            latitude: canonicalLat,
+            longitude: canonicalLng,
+            ratingOverall: 2.1,
+            rawOverallRating: officialReview.rawOverallRating || 2.1,
+            updatedAt: new Date().toISOString()
+          });
+        }
+
+        if (deletedFlashCount > 0 || officialDocRef) {
+          await batch.commit();
+          console.log(`[MergeViaXXVIINovembre] Eliminate ${deletedFlashCount} recensioni duplicate e allineata recensione ufficiale (voto 2.1).`);
+        }
+
+        // 2. Documento 'streets/via-xxvii-novembre-1943_san-benedetto-del-tronto_ap'
+        const officialReviewsList = officialReview ? [officialReview] : [];
+        const canonicalStreetDoc = {
+          streetKey: canonicalStreetKey,
+          streetName: canonicalName,
+          streetCity: canonicalCity,
+          province: canonicalProvince,
+          streetProvince: canonicalProvince,
+          postalCode: canonicalPostalCode,
+          latitude: canonicalLat,
+          longitude: canonicalLng,
+          ratingOverall: 2.1,
+          avgOverallRating: 2.1,
+          reviewCount: 1,
+          reviewsCount: 1,
+          streetType: "🏡 Urbana",
+          reviews: officialReviewsList,
+          updatedAt: new Date().toISOString()
+        };
+
+        await firestore.collection('streets').doc(canonicalStreetKey).set(canonicalStreetDoc, { merge: true });
+        console.log(`[MergeViaXXVIINovembre] Aggiornato documento streets/${canonicalStreetKey} (baricentro ${canonicalLat}, ${canonicalLng}, rating: 2.1, reviewCount: 1)`);
+
+        // 3. Elimina definitivamente da Firestore i documenti duplicati 'streets'
+        const duplicateStreetKeys = [
+          "via-xxvii-novembre_san-benedetto-del-tronto_ap",
+          "via-xxvii-novembre_san-benedetto-del-tronto",
+          "via-27-novembre_san-benedetto-del-tronto_ap",
+          "via-27-novembre_san-benedetto-del-tronto",
+          "street-via-xxvii-novembre_san-benedetto-del-tronto_ap",
+          "street-via-xxvii-novembre_san-benedetto-del-tronto"
+        ];
+
+        for (const dupKey of duplicateStreetKeys) {
+          const dupDoc = await firestore.collection('streets').doc(dupKey).get();
+          if (dupDoc.exists) {
+            await dupDoc.ref.delete();
+            console.log(`[MergeViaXXVIINovembre] Eliminato documento duplicato streets/${dupKey}`);
+          }
+        }
+
+        // Pulizia esaustiva su qualsiasi altro documento streets duplicato privo di '1943'
+        const allStreetsSnap = await firestore.collection('streets').get();
+        for (const sDoc of allStreetsSnap.docs) {
+          if (sDoc.id === canonicalStreetKey) continue;
+          const sData = sDoc.data() || {};
+          const sName = (sData.streetName || sData.name || '').toLowerCase();
+          const sCity = (sData.streetCity || sData.city || '').toLowerCase();
+          const sKey = (sData.streetKey || sDoc.id).toLowerCase();
+          if (
+            (sKey.includes('xxvii-novembre') || sName.includes('xxvii novembre') || sKey.includes('27-novembre')) &&
+            !sKey.includes('1943') &&
+            !sName.includes('1943') &&
+            (!sCity || sCity.includes('san benedetto'))
+          ) {
+            await sDoc.ref.delete();
+            console.log(`[MergeViaXXVIINovembre] Rimosso record orfano streets/${sDoc.id}`);
+          }
+        }
+
+        console.log("[MergeViaXXVIINovembre] Fusione e pulizia toponomastica completate con successo.");
+        return { success: true };
+      } catch (err) {
+        console.error("[MergeViaXXVIINovembre] Errore durante la fusione:", err);
+        throw err;
+      }
+    };
+
     // Tabella di Correzione Forzata Immediata e Autoritativa (streets e reviews) per le vie cablate
     window.forcePinpointFourStreets = async () => {
       const firestore = window.db;
@@ -5029,6 +5263,24 @@ Imposta allowed: true per:
               "contrada-san-donato_monteprandone"
             ],
             matches: (name, city, key) => name.includes("san donato") || key.includes("san-donato")
+          },
+          {
+            id: "via_xxvii_novembre_1943_sbt",
+            streetName: "Via XXVII Novembre 1943",
+            streetCity: "San Benedetto del Tronto",
+            province: "AP",
+            postalCode: "63074",
+            latitude: 42.9491,
+            longitude: 13.8765,
+            streetKey: "via-xxvii-novembre-1943_san-benedetto-del-tronto_ap",
+            legacyKeys: [
+              "via-xxvii-novembre_san-benedetto-del-tronto_ap",
+              "via-xxvii-novembre_san-benedetto-del-tronto",
+              "via-27-novembre_san-benedetto-del-tronto_ap",
+              "via-27-novembre_san-benedetto-del-tronto",
+              "via-27-novembre-1943_san-benedetto-del-tronto_ap"
+            ],
+            matches: (name, city, key) => (name.includes("xxvii") || name.includes("27")) && (name.includes("novembre") || key.includes("novembre"))
           }
         ];
 
@@ -6650,10 +6902,25 @@ Imposta allowed: true per:
                   uiStreet.latitude = 42.990443190632796;
                   uiStreet.longitude = 13.869663126569428;
                   uiStreet.streetKey = 'corso-giuseppe-mazzini_grottammare_ap';
+                } else if ((rawNameSnap.includes('xxvii') || rawNameSnap.includes('27') || rawKeySnap.includes('xxvii-novembre') || rawKeySnap.includes('27-novembre')) && (rawCitySnap.includes('san benedetto') || rawKeySnap.includes('san-benedetto-del-tronto') || !rawCitySnap)) {
+                  uiStreet.name = 'Via XXVII Novembre 1943';
+                  uiStreet.streetCity = 'San Benedetto del Tronto';
+                  uiStreet.city = 'San Benedetto del Tronto';
+                  uiStreet.province = 'AP';
+                  uiStreet.postalCode = '63074';
+                  uiStreet.latitude = 42.9491;
+                  uiStreet.longitude = 13.8765;
+                  uiStreet.streetKey = 'via-xxvii-novembre-1943_san-benedetto-del-tronto_ap';
                 }
 
-                if (!updated.some(u => areStreetKeysEquivalent(u.streetKey || u.id, uiStreet.streetKey || uiStreet.id))) {
+                const existingIdx = updated.findIndex(u => areStreetKeysEquivalent(u.streetKey || u.id, uiStreet.streetKey || uiStreet.id));
+                if (existingIdx === -1) {
                   updated.push(uiStreet);
+                } else {
+                  // Preferisci il documento canonico (con rating 2.1 o con anno 1943)
+                  if (doc.id.includes('1943') || (uiStreet.ratingOverall && uiStreet.ratingOverall > (updated[existingIdx].ratingOverall || 0))) {
+                    updated[existingIdx] = uiStreet;
+                  }
                 }
               });
 
@@ -6733,6 +7000,11 @@ Imposta allowed: true per:
           if (typeof window.forcePinpointFourStreets === 'function') {
             window.forcePinpointFourStreets().catch(err => {
               console.warn('[Startup] ForcePinpoint notice:', err);
+            });
+          }
+          if (typeof window.mergeViaXXVIINovembre === 'function') {
+            window.mergeViaXXVIINovembre().catch(err => {
+              console.warn('[Startup] MergeViaXXVIINovembre notice:', err);
             });
           }
         }, 600);
@@ -7220,9 +7492,10 @@ Imposta allowed: true per:
                     const detectedStreetNumber = addrDetails.streetNumber || queryCivic.streetNumber || '';
                     const rawFallbackName = place.name || (place.formatted_address ? place.formatted_address.split(',')[0] : 'Via Sconosciuta');
                     const cleanedFallbackName = extractCivicNumberFromQuery(rawFallbackName).cleanQuery || rawFallbackName;
-                    const resolvedName = addrDetails.route || cleanedFallbackName;
+                    let resolvedName = addrDetails.route || cleanedFallbackName;
                     const resolvedCity = addrDetails.city;
                     const resolvedProvince = addrDetails.province;
+                    resolvedName = resolveCanonicalStreetName(resolvedName, resolvedCity, exactPinLat, exactPinLng);
                     const compKey = createStreetCompositeKey(resolvedName, resolvedCity, exactPinLat, exactPinLng, resolvedProvince);
 
                     // 1. LOOKUP PREVENTIVO SUI DATI ESISTENTI (strettamente per Nome Via + Comune + Provincia)
@@ -7354,6 +7627,9 @@ Imposta allowed: true per:
 
                   const streetCity = addrDetails.city;
                   const streetProvince = addrDetails.province;
+
+                  // Risoluzione canonica toponomastica immediata (evita sdoppiamento Via XXVII Novembre / 1943)
+                  streetName = resolveCanonicalStreetName(streetName, streetCity, fallbackLat, fallbackLng);
 
                   // Lookup preventivo sui dati esistenti
                   const existingStreet = findExistingStreetInList(streetsRef.current, {
@@ -8085,10 +8361,11 @@ Imposta allowed: true per:
         const rawLat = target.lat ?? target.latitude;
         const rawLng = target.lng ?? target.longitude;
         const civicParsed = extractCivicNumberFromQuery(target.name || '');
-        const cleanTargetName = civicParsed.cleanQuery || target.name;
+        let cleanTargetName = civicParsed.cleanQuery || target.name;
         setPrefilledStreetSegment('');
 
         const targetCity = resolveCanonicalCityName(target.city || target.streetCity, rawLat, rawLng);
+        cleanTargetName = resolveCanonicalStreetName(cleanTargetName, targetCity, rawLat, rawLng);
         const targetCityKey = normalizeCityKey(targetCity, rawLat, rawLng);
         const targetProvince = normalizeProvinceCode(target.province || target.streetProvince || '', targetCityKey, rawLat, rawLng);
         const targetCompKey = target.streetKey || createStreetCompositeKey(cleanTargetName, targetCity, rawLat, rawLng, targetProvince);
