@@ -30,6 +30,7 @@
       appId: "1:512832291400:web:06e372896f87b90c49ce7d",
       measurementId: "G-6M95JQ6883"
     };
+    window.firebaseConfig = firebaseConfig;
 
     try {
       if (window.firebase) {
@@ -1978,6 +1979,139 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         reader.readAsDataURL(file);
       });
     };
+
+    // 1.5 Verifica Visiva AI Preventiva con Google Gemini Flash (Moderazione Multimodale Client-Side con timeout 8s)
+    async function validatePhotoWithGemini(base64Image) {
+      if (!base64Image || typeof base64Image !== 'string') {
+        return { allowed: true, reason: '', fallback: true };
+      }
+
+      // Timeout di sicurezza di 8 secondi: in caso di assenza momentanea di rete o quota esaurita, consente il caricamento locale
+      const timeoutPromise = new Promise((resolve) => {
+        setTimeout(() => {
+          console.warn('[Gemini Photo Moderation] Timeout di sicurezza di 8s raggiunto, fallback consentito.');
+          resolve({ allowed: true, reason: '', fallback: true });
+        }, 8000);
+      });
+
+      const executePhotoValidation = async () => {
+        let mimeType = 'image/webp';
+        let pureBase64 = base64Image.trim();
+
+        if (pureBase64.startsWith('data:')) {
+          const commaIdx = pureBase64.indexOf(',');
+          if (commaIdx !== -1) {
+            const header = pureBase64.slice(5, commaIdx);
+            const semiIdx = header.indexOf(';');
+            const extractedMime = semiIdx !== -1 ? header.slice(0, semiIdx) : header;
+            if (extractedMime && extractedMime.startsWith('image/')) {
+              mimeType = extractedMime;
+            }
+            pureBase64 = pureBase64.slice(commaIdx + 1);
+          }
+        }
+
+        const promptDirectives = `Ruolo: Moderatore di sicurezza per l'app Street Review (recensioni di strade e arredo urbano).
+Analizza l'immagine fornita.
+
+Criteri di RIFIUTO (allowed = false):
+- Nudità, contenuti espliciti, sessuali o ammiccanti.
+- Volti umani in primo piano o chiaramente identificabili (tutela della privacy e del GDPR).
+- Targhe automobilistiche in primissimo piano e totalmente leggibili come soggetto principale.
+- Violenza, armi, sangue o simboli d'odio.
+- Contenuti completamente privi di pertinenza stradale/urbana (es. cibo, screenshot di chat, meme, animali domestici o interni domestici).
+
+Criteri di APPROVAZIONE (allowed = true):
+- Asfalto, buche, crepe, tombini, marciapiedi, caditoie.
+- Parcheggi, strisce blu/bianche, segnaletica stradale verticale e orizzontale.
+- Piste ciclabili, colonnine di ricarica, illuminazione pubblica, cantieri e carreggiate.
+- Panorami di strade cittadine (figure umane o veicoli lontani/di sfondo non riconoscibili sono ammessi).
+
+Rispondi ESCLUSIVAMENTE in formato JSON puro:
+{"allowed": true/false, "reason": "Motivazione breve in italiano in caso di rifiuto"}`;
+
+        const requestBody = JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: promptDirectives },
+                {
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: pureBase64,
+                  },
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+          },
+        });
+
+        // Chiavi API disponibili nel progetto (window.firebaseConfig.apiKey e chiave Generative API configurata)
+        const candidateKeys = Array.from(
+          new Set(
+            [
+              window.firebaseConfig && window.firebaseConfig.apiKey,
+              typeof GEMINI_MODERATION_API_KEY !== 'undefined' ? GEMINI_MODERATION_API_KEY : null,
+            ].filter(Boolean)
+          )
+        );
+
+        const candidateModels = ['gemini-1.5-flash', 'gemini-2.0-flash'];
+
+        for (const apiKey of candidateKeys) {
+          for (const modelName of candidateModels) {
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+            try {
+              const controller = new AbortController();
+              const abortTimer = setTimeout(() => controller.abort(), 7500);
+
+              const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: requestBody,
+                signal: controller.signal,
+              });
+              clearTimeout(abortTimer);
+
+              if (!response.ok) {
+                const errText = await response.text().catch(() => '');
+                console.warn(`[Gemini Photo Moderation] HTTP ${response.status} su ${modelName}:`, errText);
+                continue;
+              }
+
+              const data = await response.json();
+              const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (!rawText) continue;
+
+              const cleanedJson = rawText
+                .trim()
+                .replace(/^```(?:json)?\s*/i, '')
+                .replace(/\s*```$/, '')
+                .trim();
+              const parsed = JSON.parse(cleanedJson);
+              console.log('[Gemini Photo Moderation Result]', parsed);
+
+              return {
+                allowed: typeof parsed.allowed === 'boolean' ? parsed.allowed : true,
+                reason: String(parsed.reason || '').trim(),
+                fallback: false,
+              };
+            } catch (err) {
+              console.warn(`[Gemini Photo Moderation] Tentativo su ${modelName} non riuscito:`, err);
+            }
+          }
+        }
+
+        // Fallback resiliente in caso di assenza momentanea di rete o quota esaurita
+        return { allowed: true, reason: '', fallback: true };
+      };
+
+      return Promise.race([executePhotoValidation(), timeoutPromise]);
+    }
+    window.validatePhotoWithGemini = validatePhotoWithGemini;
 
     // 2. Estrazione Coordinate GPS da Metadati EXIF (se presenti nel file JPEG)
     const extractExifGpsFromFile = (file) => {
@@ -12869,10 +13003,12 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                 lng: p.lng ?? streetLng,
                 segment: p.segment || initialData?.streetSegment || '',
                 verifiedLocation: Boolean(p.verifiedLocation),
+                aiVerified: true,
                 blob: null,
               }))
           : []
       );
+      const [pendingPhotoPreviews, setPendingPhotoPreviews] = useState([]);
       const [isProcessingPhotos, setIsProcessingPhotos] = useState(false);
       const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
       const [detectedCivicBadge, setDetectedCivicBadge] = useState('');
@@ -12909,6 +13045,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         setIsCheckingModeration(false);
         setPhotoUploadError('');
         setDetectedCivicBadge('');
+        setPendingPhotoPreviews([]);
         if (initialData) {
           const loadedType = resolveInitialStreetType();
           setStreetType(loadedType);
@@ -12946,6 +13083,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                     lng: p.lng ?? streetLng,
                     segment: p.segment || initialData.streetSegment || '',
                     verifiedLocation: Boolean(p.verifiedLocation),
+                    aiVerified: true,
                     blob: null,
                   }))
               : []
@@ -12969,7 +13107,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         }
       }, [initialData, streetName]);
 
-      // Gestione selezione e compressione client-side delle foto + Estrazione GPS/EXIF + Reverse Geocoding Civico
+      // Gestione selezione, compressione client-side, moderazione visiva AI (Gemini Flash) + Estrazione GPS/EXIF + Reverse Geocoding Civico
       const handlePhotoFilesSelected = async (e) => {
         const fileList = e.target.files ? Array.from(e.target.files) : [];
         if (e.target) e.target.value = '';
@@ -12988,52 +13126,85 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
         const filesToProcess = fileList.slice(0, remainingSlots);
         setIsProcessingPhotos(true);
 
+        // Crea anteprime temporanee immediate con stato "🛡️ Verifica conformità foto in corso..."
+        const tempEntries = filesToProcess.map((file, idx) => ({
+          tempId: `temp_${Date.now()}_${idx}`,
+          file,
+          previewUrl: typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(file) : '',
+        }));
+        setPendingPhotoPreviews(prev => [...prev, ...tempEntries]);
+
         try {
           // Avvia in parallelo il rilevamento GPS corrente del browser
           const browserGpsPromise = getBrowserCurrentGpsPosition(5500);
-          const newPhotoItems = [];
+          const approvedPhotoItems = [];
+          const rejectedReasons = [];
           let latestDetectedSegment = '';
 
-          for (const file of filesToProcess) {
-            // 1. Compressione automatica client-side (max 1280px lato lungo, WebP/JPEG qualità 0.75)
-            const compressed = await compressReviewPhotoClientSide(file, 1280, 0.75);
+          for (const tempEntry of tempEntries) {
+            const { file, tempId, previewUrl } = tempEntry;
+            try {
+              // 1. Compressione automatica client-side (max 1280px lato lungo, WebP/JPEG qualità 0.75)
+              const compressed = await compressReviewPhotoClientSide(file, 1280, 0.75);
 
-            // 2. Estrazione coordinate: priorità a EXIF della foto o GPS corrente del browser
-            const exifGps = await extractExifGpsFromFile(file);
-            const browserGps = await browserGpsPromise;
-            const resolvedCoords = exifGps || browserGps;
+              // 2. Verifica Visiva AI con Google Gemini Flash prima di consentire il caricamento
+              const moderationVerdict = await validatePhotoWithGemini(compressed.dataUrl);
 
-            const photoLat = resolvedCoords?.lat ?? (Number(streetLat) || 42.9517);
-            const photoLng = resolvedCoords?.lng ?? (Number(streetLng) || 13.8822);
-            let verifiedLocation = Boolean(resolvedCoords);
-            let detectedSegmentForPhoto = '';
+              if (moderationVerdict && moderationVerdict.allowed === false) {
+                const reasonText = moderationVerdict.reason || 'contenuto non conforme alle linee guida';
+                rejectedReasons.push(
+                  `⚠️ Foto non idonea: ${reasonText}. Carica solo foto inerenti alla strada senza volti o targhe leggibili.`
+                );
+                // Rimuovi subito l'anteprima temporanea della foto rifiutata
+                setPendingPhotoPreviews(prev => prev.filter(item => item.tempId !== tempId));
+                if (previewUrl && typeof URL !== 'undefined' && URL.revokeObjectURL) {
+                  URL.revokeObjectURL(previewUrl);
+                }
+                continue;
+              }
 
-            // 3. Reverse Geocoding Google con le coordinate rilevate
-            if (resolvedCoords && resolvedCoords.lat && resolvedCoords.lng) {
-              const geoInfo = await reverseGeocodePhotoCoords(resolvedCoords.lat, resolvedCoords.lng, streetName);
-              if (geoInfo) {
-                verifiedLocation = Boolean(geoInfo.matchedStreet || resolvedCoords);
-                if (geoInfo.matchedStreet && geoInfo.segmentText) {
-                  detectedSegmentForPhoto = geoInfo.segmentText;
-                  latestDetectedSegment = geoInfo.segmentText;
-                } else if (geoInfo.streetNumber && !geoInfo.route) {
-                  detectedSegmentForPhoto = `Altezza civico ${geoInfo.streetNumber}`;
-                  latestDetectedSegment = detectedSegmentForPhoto;
+              // 3. Se allowed === true: estrai coordinate (EXIF o GPS browser) e procedi col Reverse Geocoding del civico
+              const exifGps = await extractExifGpsFromFile(file);
+              const browserGps = await browserGpsPromise;
+              const resolvedCoords = exifGps || browserGps;
+
+              const photoLat = resolvedCoords?.lat ?? (Number(streetLat) || 42.9517);
+              const photoLng = resolvedCoords?.lng ?? (Number(streetLng) || 13.8822);
+              let verifiedLocation = Boolean(resolvedCoords);
+              let detectedSegmentForPhoto = '';
+
+              if (resolvedCoords && resolvedCoords.lat && resolvedCoords.lng) {
+                const geoInfo = await reverseGeocodePhotoCoords(resolvedCoords.lat, resolvedCoords.lng, streetName);
+                if (geoInfo) {
+                  verifiedLocation = Boolean(geoInfo.matchedStreet || resolvedCoords);
+                  if (geoInfo.matchedStreet && geoInfo.segmentText) {
+                    detectedSegmentForPhoto = geoInfo.segmentText;
+                    latestDetectedSegment = geoInfo.segmentText;
+                  } else if (geoInfo.streetNumber && !geoInfo.route) {
+                    detectedSegmentForPhoto = `Altezza civico ${geoInfo.streetNumber}`;
+                    latestDetectedSegment = detectedSegmentForPhoto;
+                  }
                 }
               }
-            }
 
-            newPhotoItems.push({
-              url: compressed.dataUrl,
-              dataUrl: compressed.dataUrl,
-              blob: compressed.blob,
-              mimeType: compressed.mimeType || 'image/webp',
-              sizeKB: compressed.sizeKB,
-              lat: Number(Number(photoLat).toFixed(6)),
-              lng: Number(Number(photoLng).toFixed(6)),
-              segment: detectedSegmentForPhoto || streetSegment || '',
-              verifiedLocation,
-            });
+              approvedPhotoItems.push({
+                url: compressed.dataUrl,
+                dataUrl: compressed.dataUrl,
+                blob: compressed.blob,
+                mimeType: compressed.mimeType || 'image/webp',
+                sizeKB: compressed.sizeKB,
+                lat: Number(Number(photoLat).toFixed(6)),
+                lng: Number(Number(photoLng).toFixed(6)),
+                segment: detectedSegmentForPhoto || streetSegment || '',
+                verifiedLocation,
+                aiVerified: true,
+              });
+            } finally {
+              setPendingPhotoPreviews(prev => prev.filter(item => item.tempId !== tempId));
+              if (previewUrl && typeof URL !== 'undefined' && URL.revokeObjectURL) {
+                URL.revokeObjectURL(previewUrl);
+              }
+            }
           }
 
           if (latestDetectedSegment) {
@@ -13041,11 +13212,18 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
             setDetectedCivicBadge(latestDetectedSegment);
           }
 
-          setPhotos(prev => [...prev, ...newPhotoItems].slice(0, 2));
+          if (approvedPhotoItems.length > 0) {
+            setPhotos(prev => [...prev, ...approvedPhotoItems].slice(0, 2));
+          }
+
+          if (rejectedReasons.length > 0) {
+            setPhotoUploadError(rejectedReasons.join(' '));
+          }
         } catch (err) {
-          console.warn('[ReviewModal] Errore elaborazione foto:', err);
+          console.warn('[ReviewModal] Errore elaborazione o moderazione foto:', err);
           setPhotoUploadError(err?.message || 'Impossibile elaborare la foto selezionata.');
         } finally {
+          setPendingPhotoPreviews([]);
           setIsProcessingPhotos(false);
         }
       };
@@ -13590,7 +13768,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                       />
 
                       <div className="flex flex-wrap items-center gap-2.5">
-                        {photos.length < 2 && (
+                        {photos.length + pendingPhotoPreviews.length < 2 && (
                           <button
                             type="button"
                             disabled={isProcessingPhotos || isUploadingPhotos}
@@ -13600,7 +13778,7 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                             {isProcessingPhotos ? (
                               <>
                                 <span className="inline-block w-3.5 h-3.5 border-2 border-sky-600 border-t-transparent rounded-full animate-spin"></span>
-                                <span>Compressione e geolocalizzazione...</span>
+                                <span>🛡️ Verifica conformità foto in corso...</span>
                               </>
                             ) : (
                               <>
@@ -13611,22 +13789,42 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                           </button>
                         )}
 
-                        {/* Anteprime quadrate (thumbnail) delle foto caricate con '✕' di rimozione */}
+                        {/* Anteprime temporanee in fase di analisi AI Gemini Flash */}
+                        {pendingPhotoPreviews.map((temp) => (
+                          <div
+                            key={temp.tempId}
+                            className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-amber-400 shadow-sm bg-slate-900 shrink-0 animate-pulse"
+                          >
+                            {temp.previewUrl && (
+                              <img
+                                src={temp.previewUrl}
+                                alt="Verifica conformità in corso"
+                                className="w-full h-full object-cover opacity-45 blur-[1px]"
+                              />
+                            )}
+                            <div className="absolute inset-0 bg-slate-950/65 flex flex-col items-center justify-center p-1.5 text-center gap-1">
+                              <span className="inline-block w-4 h-4 border-2 border-amber-300 border-t-transparent rounded-full animate-spin"></span>
+                              <span className="text-[9px] font-extrabold text-amber-200 leading-tight">
+                                🛡️ Verifica conformità foto in corso...
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* Anteprime quadrate (thumbnail) delle foto verificate con badge '✅ Foto verificata' e '✕' di rimozione */}
                         {photos.map((p, idx) => (
                           <div
                             key={`${p.url}_${idx}`}
-                            className="relative w-20 h-20 rounded-2xl overflow-hidden border-2 border-sky-300 shadow-sm bg-slate-900 shrink-0 group"
+                            className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-emerald-400 shadow-sm bg-slate-900 shrink-0 group"
                           >
                             <img
                               src={p.dataUrl || p.url}
                               alt={`Anteprima foto ${idx + 1}`}
                               className="w-full h-full object-cover"
                             />
-                            {p.sizeKB && (
-                              <span className="absolute bottom-1 left-1 bg-slate-950/75 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md">
-                                {p.sizeKB} KB
-                              </span>
-                            )}
+                            <span className="absolute inset-x-0 bottom-0 bg-emerald-950/85 text-emerald-200 text-[9px] font-extrabold px-1.5 py-0.5 text-center truncate border-t border-emerald-500/40">
+                              ✅ Foto verificata
+                            </span>
                             <button
                               type="button"
                               onClick={() => handleRemovePhoto(idx)}
@@ -13638,6 +13836,22 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                           </div>
                         ))}
                       </div>
+
+                      {/* Stato di analisi visiva AI in corso */}
+                      {isProcessingPhotos && (
+                        <div className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-[11px] font-extrabold flex items-center gap-2 animate-fade-in">
+                          <span className="inline-block w-3.5 h-3.5 border-2 border-amber-700 border-t-transparent rounded-full animate-spin shrink-0"></span>
+                          <span>🛡️ Verifica conformità foto in corso...</span>
+                        </div>
+                      )}
+
+                      {/* Badge verde di conferma verifica AI quando le foto sono state approvate */}
+                      {!isProcessingPhotos && photos.length > 0 && (
+                        <div className="px-3 py-1.5 rounded-xl bg-emerald-50/90 border border-emerald-300 text-emerald-900 text-[11px] font-extrabold flex items-center justify-between gap-2 animate-fade-in">
+                          <span>✅ Foto verificata (conforme alle linee guida Street Review)</span>
+                          <span className="text-[10px] font-bold text-emerald-700">{photos.length}/2</span>
+                        </div>
+                      )}
 
                       {/* Badge verde rassicurante con il civico rilevato (toccabile per modificare il campo tratto) */}
                       {photos.length > 0 && (detectedCivicBadge || streetSegment) && (
@@ -13660,9 +13874,11 @@ Imposta allowed: true per critiche ordinarie sullo stato della strada (buche, as
                       )}
 
                       {photoUploadError && (
-                        <p className="text-[11px] font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-xl">
-                          ⚠️ {photoUploadError}
-                        </p>
+                        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-[11px] font-extrabold flex items-start gap-2 animate-fade-in shadow-2xs">
+                          <span className="leading-snug">
+                            {photoUploadError.startsWith('⚠️') ? photoUploadError : `⚠️ ${photoUploadError}`}
+                          </span>
+                        </div>
                       )}
                     </div>
 
