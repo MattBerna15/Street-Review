@@ -3157,19 +3157,84 @@ Imposta allowed: true per:
     };
 
     const TECHNICAL_CATEGORIES = [
-      { key: 'roadSurface', label: 'Manto Stradale (asfalto, buche)', icon: '🛣️' },
-      { key: 'groundSignage', label: 'Segnaletica a terra (strisce, stop)', icon: '🛑' },
-      { key: 'verticalSignage', label: 'Segnaletica verticale (cartelli visibili)', icon: '🪧' },
-      { key: 'parkingQuantity', label: 'Quantità di parcheggi', icon: '🅿️' },
-      { key: 'sidewalkQuality', label: 'Qualità dei marciapiedi', icon: '🚶' },
-      { key: 'lighting', label: 'Illuminazione notturna', icon: '💡' },
-      { key: 'cleanliness', label: 'Pulizia e decoro urbano', icon: '✨' },
-      { key: 'accessibility', label: 'Accessibilità (passeggini / PMR)', icon: '♿' },
-      { key: 'rainDrainage', label: 'Drenaggio piovano (caditoie, tombini)', icon: '🌧️' },
-      { key: 'greeneryShade', label: 'Ombreggiatura e verde (alberi, radici)', icon: '🌳' },
-      { key: 'quietness', label: 'Tranquillità e silenziosità (rumore)', icon: '🤫' },
-      { key: 'intersectionVisibility', label: 'Visibilità incroci (specchi, visuale)', icon: '👀' },
-      { key: 'laneWidth', label: 'Larghezza carreggiata (manovra, spazio)', icon: '↔️' },
+      {
+        key: 'roadSurface',
+        label: 'Manto stradale',
+        icon: '🛣️',
+        description: "Condizione dell'asfalto: assenza di buche, avvallamenti, crepe o toppe sconnesse (1★ dissesto grave/pericoloso, 5★ asfalto perfetto e liscio)."
+      },
+      {
+        key: 'groundSignage',
+        label: 'Segnaletica a terra',
+        icon: '🛑',
+        description: "Visibilità di strisce pedonali, linee di mezzeria, stop e precedenze (1★ sbiadita o invisibile, 5★ nitida e rifatta di recente)."
+      },
+      {
+        key: 'verticalSignage',
+        label: 'Segnaletica verticale',
+        icon: '🪧',
+        description: "Presenza e chiarezza dei cartelli stradali, ben orientati e non coperti da rami o sporcizia (1★ illeggibile o assente, 5★ chiara e completa)."
+      },
+      {
+        key: 'parkingQuantity',
+        label: 'Disponibilità parcheggi',
+        icon: '🅿️',
+        description: "Facilità nel trovare posto auto lungo la via durante la giornata (1★ posti introvabili, 5★ ampia disponibilità e ricambio continuo)."
+      },
+      {
+        key: 'sidewalkQuality',
+        label: 'Marciapiedi',
+        icon: '🚶',
+        description: "Stato della pavimentazione pedonale: larghezza sufficiente, assenza di piastrelle rotte o dislivelli (1★ impraticabili o assenti, 5★ comodi e curati)."
+      },
+      {
+        key: 'lighting',
+        label: 'Illuminazione notturna',
+        icon: '💡',
+        description: "Livello di luce dopo il tramonto: strada ben visibile per pedoni e veicoli senza coni d'ombra bui (1★ strada cupa/buia, 5★ lampioni efficienti e chiari)."
+      },
+      {
+        key: 'cleanliness',
+        label: 'Pulizia e decoro',
+        icon: '✨',
+        description: "Cura generale: assenza di rifiuti abbandonati, degrado o cartacce lungo i bordi e nelle aiuole (1★ trascurata/sporca, 5★ pulita e decorosa)."
+      },
+      {
+        key: 'accessibility',
+        label: 'Accessibilità',
+        icon: '♿',
+        description: "Facilità di transito per passeggini, sedie a rotelle o persone a mobilità ridotta: rampe, scivoli e assenza di ostacoli (1★ barriere insormontabili, 5★ totale accessibilità)."
+      },
+      {
+        key: 'rainDrainage',
+        label: 'Drenaggio piovano',
+        icon: '🌧️',
+        description: "Efficienza di tombini e caditoie durante la pioggia: assenza di allagamenti o pozzanghere giganti (1★ si allaga subito, 5★ deflusso perfetto)."
+      },
+      {
+        key: 'greeneryShade',
+        label: 'Verde e ombreggiatura',
+        icon: '🌳',
+        description: "Presenza di alberi che offrono riparo estivo senza radici che deformano marciapiede o corsia (1★ zero ombra o radici pericolose, 5★ verde curato e piacevole)."
+      },
+      {
+        key: 'quietness',
+        label: 'Silenziosità e quiete',
+        icon: '🤫',
+        description: "Livello di disturbo acustico: da arteria trafficata o movida rumorosa a via residenziale silenziosa (1★ molto rumorosa/caotica, 5★ silenziosa e rilassante)."
+      },
+      {
+        key: 'intersectionVisibility',
+        label: 'Visibilità incroci',
+        icon: '👀',
+        description: "Sicurezza nelle immissioni: presenza di specchi parabolici e visuale libera da ostacoli o auto parcheggiate male (1★ immissione alla cieca, 5★ visuale ampia e chiara)."
+      },
+      {
+        key: 'laneWidth',
+        label: 'Larghezza carreggiata',
+        icon: '↔️',
+        description: "Spazio di manovra e facilità di passaggio tra veicoli senza rischiare gli specchietti (1★ strettoia soffocante, 5★ corsia larga e scorrimento agevole)."
+      },
     ];
 
     const ROAD_OBSTACLE_OPTIONS = [
@@ -5663,6 +5728,19 @@ Imposta allowed: true per:
       const [isLoadingComments, setIsLoadingComments] = useState(false);
       const [selectedStreet, setSelectedStreet] = useState(null);
       const [prefilledStreetSegment, setPrefilledStreetSegment] = useState('');
+      // Tooltip galleggiante informativo parametri tecnici nel drawer Scheda Via
+      const [activeProfileCriteriaTooltip, setActiveProfileCriteriaTooltip] = useState(null);
+
+      useEffect(() => {
+        if (!activeProfileCriteriaTooltip) return;
+        const handleOutsideProfileCriteriaClick = (e) => {
+          if (!e.target.closest('[data-profile-criteria-row]')) {
+            setActiveProfileCriteriaTooltip(null);
+          }
+        };
+        document.addEventListener('pointerdown', handleOutsideProfileCriteriaClick);
+        return () => document.removeEventListener('pointerdown', handleOutsideProfileCriteriaClick);
+      }, [activeProfileCriteriaTooltip]);
       const [sheetSnap, setSheetSnap] = useState('hidden');
       const [isReviewOpen, setIsReviewOpen] = useState(false);
       const [isLocatingGps, setIsLocatingGps] = useState(false);
@@ -11110,26 +11188,11 @@ Imposta allowed: true per:
                     <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Spaccato Categorie (13 Parametri)</h4>
                       {(() => {
-                        const allCategoryEntries = [
-                          ['Manto Stradale', 'roadSurface', selectedStreet.categoryAverages?.roadSurface],
-                          ['Segnaletica a terra', 'groundSignage', selectedStreet.categoryAverages?.groundSignage],
-                          ['Segnaletica verticale', 'verticalSignage', selectedStreet.categoryAverages?.verticalSignage],
-                          ['Quantità parcheggi', 'parkingQuantity', selectedStreet.categoryAverages?.parkingQuantity],
-                          ['Qualità marciapiedi', 'sidewalkQuality', selectedStreet.categoryAverages?.sidewalkQuality],
-                          ['Illuminazione', 'lighting', selectedStreet.categoryAverages?.lighting],
-                          ['Pulizia e Decoro', 'cleanliness', selectedStreet.categoryAverages?.cleanliness],
-                          ['Accessibilità', 'accessibility', selectedStreet.categoryAverages?.accessibility],
-                          ['Drenaggio Piovano', 'rainDrainage', selectedStreet.categoryAverages?.rainDrainage],
-                          ['Ombreggiatura e Verde', 'greeneryShade', selectedStreet.categoryAverages?.greeneryShade],
-                          ['Tranquillità e Silenzio', 'quietness', selectedStreet.categoryAverages?.quietness],
-                          ['Visibilità Incroci', 'intersectionVisibility', selectedStreet.categoryAverages?.intersectionVisibility],
-                          ['Larghezza Carreggiata', 'laneWidth', selectedStreet.categoryAverages?.laneWidth],
-                        ];
-
                         const evaluatedCategories = [];
                         const unratedOrNaCategories = [];
 
-                        allCategoryEntries.forEach(([label, catKey, rawScore]) => {
+                        TECHNICAL_CATEGORIES.forEach(cat => {
+                          const rawScore = selectedStreet.categoryAverages?.[cat.key];
                           const hasValidScore =
                             rawScore !== null &&
                             rawScore !== undefined &&
@@ -11138,9 +11201,20 @@ Imposta allowed: true per:
                             !isNaN(Number(rawScore)) &&
                             Number(rawScore) > 0;
                           if (hasValidScore) {
-                            evaluatedCategories.push({ label, catKey, numScore: Number(rawScore) });
+                            evaluatedCategories.push({
+                              label: cat.label,
+                              catKey: cat.key,
+                              numScore: Number(rawScore),
+                              icon: cat.icon,
+                              description: cat.description
+                            });
                           } else {
-                            unratedOrNaCategories.push({ label, catKey });
+                            unratedOrNaCategories.push({
+                              label: cat.label,
+                              catKey: cat.key,
+                              icon: cat.icon,
+                              description: cat.description
+                            });
                           }
                         });
 
@@ -11149,42 +11223,95 @@ Imposta allowed: true per:
                             {/* IN CIMA: Solo categorie valutate (categoryAverages[cat] !== null) con 5 stelle frazionarie e rating ★ X.X */}
                             {evaluatedCategories.length > 0 ? (
                               <div className="space-y-2.5">
-                                {evaluatedCategories.map(({ label, catKey, numScore }) => (
-                                  <div key={catKey} className="flex items-center justify-between gap-2">
-                                    <span className="font-medium text-slate-700 w-38 sm:w-44 truncate">
-                                      {label}
-                                    </span>
-                                    <div className="flex items-center gap-2 flex-1 justify-end">
-                                      <div className="hidden sm:block flex-1 max-w-[110px] h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                {evaluatedCategories.map(({ label, catKey, numScore, icon, description }, catIdx) => {
+                                  const isTooltipOpen = activeProfileCriteriaTooltip === catKey;
+                                  return (
+                                    <div
+                                      key={catKey}
+                                      data-profile-criteria-row={catKey}
+                                      className="relative flex items-center justify-between gap-2"
+                                    >
+                                      <div
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveProfileCriteriaTooltip(prev => prev === catKey ? null : catKey);
+                                        }}
+                                        className="flex items-center gap-1.5 cursor-pointer select-none group min-w-0 pr-1"
+                                        title="Tocca per visualizzare la guida al voto"
+                                      >
+                                        <span className="font-medium text-slate-700 w-36 sm:w-42 truncate group-hover:text-blue-600 transition-colors">
+                                          {label}
+                                        </span>
+                                        <span
+                                          className="w-3.5 h-3.5 rounded-full bg-slate-200 group-hover:bg-cyan-100 text-[9px] font-bold text-slate-500 group-hover:text-cyan-700 flex items-center justify-center shrink-0 transition-colors"
+                                          aria-label="Info parametro"
+                                        >
+                                          ℹ
+                                        </span>
+                                      </div>
+
+                                      {/* Popover Galleggiante Scheda Via */}
+                                      {isTooltipOpen && (
                                         <div
-                                          className="h-full bg-blue-600 rounded-full transition-all"
-                                          style={{ width: `${(numScore / 5) * 100}%` }}
-                                        />
-                                      </div>
-                                      <div className="flex items-center gap-0.5 select-none shrink-0" aria-label={`${numScore.toFixed(1)} su 5`}>
-                                        {[1, 2, 3, 4, 5].map(starIdx => {
-                                          const fillPct = Math.max(0, Math.min(100, Math.round((numScore - (starIdx - 1)) * 100)));
-                                          return (
-                                            <span key={starIdx} className="relative inline-block text-sm leading-none text-slate-200">
-                                              ★
-                                              {fillPct > 0 && (
-                                                <span
-                                                  className="absolute inset-y-0 left-0 overflow-hidden text-amber-400"
-                                                  style={{ width: `${fillPct}%` }}
-                                                >
-                                                  ★
-                                                </span>
-                                              )}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className={`absolute left-0 right-0 ${catIdx < 2 ? 'top-[calc(100%+6px)]' : 'bottom-[calc(100%+6px)]'} z-50 p-2.5 rounded-xl bg-slate-900/95 text-white text-xs shadow-xl border border-cyan-400/80 backdrop-blur-md animate-fade-in pointer-events-auto`}
+                                        >
+                                          <div className="flex items-start justify-between gap-2 mb-1">
+                                            <span className="font-extrabold text-cyan-300 flex items-center gap-1">
+                                              <span>{icon}</span> {label}
                                             </span>
-                                          );
-                                        })}
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveProfileCriteriaTooltip(null);
+                                              }}
+                                              className="text-slate-400 hover:text-white text-xs px-1 leading-none cursor-pointer"
+                                            >
+                                              ✕
+                                            </button>
+                                          </div>
+                                          <p className="text-[11px] leading-relaxed text-slate-200 font-normal">
+                                            {description}
+                                          </p>
+                                          <div
+                                            className={`absolute ${catIdx < 2 ? '-top-1.5 border-l border-t' : '-bottom-1.5 border-r border-b'} left-6 w-3 h-3 bg-slate-900 border-cyan-400/80 transform rotate-45`}
+                                          />
+                                        </div>
+                                      )}
+
+                                      <div className="flex items-center gap-2 flex-1 justify-end">
+                                        <div className="hidden sm:block flex-1 max-w-[110px] h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                          <div
+                                            className="h-full bg-blue-600 rounded-full transition-all"
+                                            style={{ width: `${(numScore / 5) * 100}%` }}
+                                          />
+                                        </div>
+                                        <div className="flex items-center gap-0.5 select-none shrink-0" aria-label={`${numScore.toFixed(1)} su 5`}>
+                                          {[1, 2, 3, 4, 5].map(starIdx => {
+                                            const fillPct = Math.max(0, Math.min(100, Math.round((numScore - (starIdx - 1)) * 100)));
+                                            return (
+                                              <span key={starIdx} className="relative inline-block text-sm leading-none text-slate-200">
+                                                ★
+                                                {fillPct > 0 && (
+                                                  <span
+                                                    className="absolute inset-y-0 left-0 overflow-hidden text-amber-400"
+                                                    style={{ width: `${fillPct}%` }}
+                                                  >
+                                                    ★
+                                                  </span>
+                                                )}
+                                              </span>
+                                            );
+                                          })}
+                                        </div>
+                                        <span className="font-extrabold text-slate-800 w-10 text-right shrink-0">
+                                          ★ {numScore.toFixed(1)}
+                                        </span>
                                       </div>
-                                      <span className="font-extrabold text-slate-800 w-10 text-right shrink-0">
-                                        ★ {numScore.toFixed(1)}
-                                      </span>
                                     </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             ) : (
                               <p className="text-[11px] font-medium text-slate-500 italic">
@@ -11199,15 +11326,57 @@ Imposta allowed: true per:
                                   Non applicabili o non valutati ({unratedOrNaCategories.length})
                                 </p>
                                 <div className="flex flex-wrap gap-1.5">
-                                  {unratedOrNaCategories.map(({ label, catKey }) => (
-                                    <span
-                                      key={catKey}
-                                      className="text-[10px] font-semibold text-slate-400 bg-slate-100 border border-slate-200/80 px-2 py-0.5 rounded-full inline-flex items-center gap-1"
-                                    >
-                                      <span>{label}</span>
-                                      <span className="text-[9px] font-bold text-slate-400/80">· N/A</span>
-                                    </span>
-                                  ))}
+                                  {unratedOrNaCategories.map(({ label, catKey, icon, description }) => {
+                                    const isTooltipOpen = activeProfileCriteriaTooltip === catKey;
+                                    return (
+                                      <div
+                                        key={catKey}
+                                        data-profile-criteria-row={catKey}
+                                        className="relative inline-block"
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveProfileCriteriaTooltip(prev => prev === catKey ? null : catKey);
+                                          }}
+                                          className="text-[10px] font-semibold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200/80 border border-slate-200/80 px-2 py-0.5 rounded-full inline-flex items-center gap-1 cursor-pointer transition-colors"
+                                          title="Tocca per visualizzare la guida"
+                                        >
+                                          <span>{label}</span>
+                                          <span className="text-[9px] font-bold text-slate-400">· N/A</span>
+                                          <span className="w-3 h-3 rounded-full bg-slate-200 text-[8px] font-bold text-slate-500 flex items-center justify-center">ℹ</span>
+                                        </button>
+
+                                        {isTooltipOpen && (
+                                          <div
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="absolute left-0 bottom-[calc(100%+6px)] z-50 w-64 max-w-[85vw] p-2.5 rounded-xl bg-slate-900/95 text-white text-xs shadow-xl border border-cyan-400/80 backdrop-blur-md animate-fade-in pointer-events-auto"
+                                          >
+                                            <div className="flex items-start justify-between gap-2 mb-1">
+                                              <span className="font-extrabold text-cyan-300 flex items-center gap-1">
+                                                <span>{icon}</span> {label}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setActiveProfileCriteriaTooltip(null);
+                                                }}
+                                                className="text-slate-400 hover:text-white text-xs px-1 leading-none cursor-pointer"
+                                              >
+                                                ✕
+                                              </button>
+                                            </div>
+                                            <p className="text-[11px] leading-relaxed text-slate-200 font-normal">
+                                              {description}
+                                            </p>
+                                            <div className="absolute -bottom-1.5 left-4 w-3 h-3 bg-slate-900 border-r border-b border-cyan-400/80 transform rotate-45" />
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}
@@ -13008,6 +13177,20 @@ Imposta allowed: true per:
       );
       const [isEditingExistingParking, setIsEditingExistingParking] = useState(!hasExistingActiveParkingRules);
       const [hasConfirmedExistingParking, setHasConfirmedExistingParking] = useState(false);
+
+      // Popover / Tooltip galleggiante informativo parametri tecnici
+      const [activeCriteriaTooltip, setActiveCriteriaTooltip] = useState(null);
+
+      useEffect(() => {
+        if (!activeCriteriaTooltip) return;
+        const handleOutsideCriteriaClick = (e) => {
+          if (!e.target.closest('[data-criteria-row]')) {
+            setActiveCriteriaTooltip(null);
+          }
+        };
+        document.addEventListener('pointerdown', handleOutsideCriteriaClick);
+        return () => document.removeEventListener('pointerdown', handleOutsideCriteriaClick);
+      }, [activeCriteriaTooltip]);
       const [hasCyclePath, setHasCyclePath] = useState(initialData?.hasCyclePath || false);
       const [amenities, setAmenities] = useState(initialData?.amenities || []);
       const [roadObstacles, setRoadObstacles] = useState(() => Array.isArray(initialData?.roadObstacles) ? initialData.roadObstacles : []);
@@ -13995,15 +14178,17 @@ Imposta allowed: true per:
 
                     {/* Voti a stelle con pulsante [N/A] accanto a ciascuna voce */}
                     <div className="space-y-2">
-                      {TECHNICAL_CATEGORIES.map(({ key, label, icon }) => {
+                      {TECHNICAL_CATEGORIES.map(({ key, label, icon, description }, catIdx) => {
                         const val = ratings[key];
                         const isNA = val === 'N/A';
                         const isRated = typeof val === 'number' && val >= 1 && val <= 5;
+                        const isTooltipOpen = activeCriteriaTooltip === key;
 
                         return (
                           <div
                             key={key}
-                            className={`flex items-center justify-between p-2.5 rounded-xl border transition-colors ${
+                            data-criteria-row={key}
+                            className={`relative flex items-center justify-between p-2.5 rounded-xl border transition-colors ${
                               isNA
                                 ? 'bg-slate-50/70 border-slate-200 text-slate-400'
                                 : isRated
@@ -14011,7 +14196,14 @@ Imposta allowed: true per:
                                 : 'bg-white border-slate-200 text-slate-700'
                             }`}
                           >
-                            <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveCriteriaTooltip(prev => prev === key ? null : key);
+                              }}
+                              className="flex items-center gap-1.5 min-w-0 pr-2 cursor-pointer select-none group"
+                              title="Tocca per visualizzare la guida al voto"
+                            >
                               <span className="text-sm shrink-0">{icon}</span>
                               <span className={`text-xs truncate ${
                                 isNA
@@ -14022,7 +14214,43 @@ Imposta allowed: true per:
                               }`}>
                                 {label}
                               </span>
+                              <span
+                                className="w-4 h-4 rounded-full bg-slate-100 group-hover:bg-cyan-50 border border-slate-300 group-hover:border-cyan-400 text-[10px] font-bold text-slate-400 group-hover:text-cyan-600 flex items-center justify-center shrink-0 transition-colors"
+                                aria-label="Info parametro"
+                              >
+                                ℹ
+                              </span>
                             </div>
+
+                            {/* Tooltip Galleggiante Opzione B */}
+                            {isTooltipOpen && (
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                className={`absolute left-2 right-2 ${catIdx < 2 ? 'top-[calc(100%+6px)]' : 'bottom-[calc(100%+6px)]'} z-50 p-2.5 rounded-xl bg-slate-900/95 text-white text-xs shadow-xl border border-cyan-400/80 backdrop-blur-md animate-fade-in pointer-events-auto`}
+                              >
+                                <div className="flex items-start justify-between gap-2 mb-1">
+                                  <span className="font-extrabold text-cyan-300 flex items-center gap-1">
+                                    <span>{icon}</span> {label}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveCriteriaTooltip(null);
+                                    }}
+                                    className="text-slate-400 hover:text-white text-xs px-1 leading-none cursor-pointer"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                                <p className="text-[11px] leading-relaxed text-slate-200 font-normal">
+                                  {description}
+                                </p>
+                                <div
+                                  className={`absolute ${catIdx < 2 ? '-top-1.5 border-l border-t' : '-bottom-1.5 border-r border-b'} left-7 w-3 h-3 bg-slate-900 border-cyan-400/80 transform rotate-45`}
+                                />
+                              </div>
+                            )}
 
                             <div className="flex items-center gap-2 shrink-0">
                               <div className="flex gap-0.5 select-none">
