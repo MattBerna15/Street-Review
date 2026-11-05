@@ -12718,7 +12718,9 @@ Imposta allowed: true per:
       const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
       const [detectedCivicBadge, setDetectedCivicBadge] = useState('');
       const [photoUploadError, setPhotoUploadError] = useState('');
-      const photoFileInputRef = useRef(null);
+      const cameraFileInputRef = useRef(null);
+      const galleryFileInputRef = useRef(null);
+      const photoFileInputRef = cameraFileInputRef;
       const streetSegmentInputRef = useRef(null);
       const [moderationError, setModerationError] = useState('');
       const [isCheckingModeration, setIsCheckingModeration] = useState(false);
@@ -12929,6 +12931,24 @@ Imposta allowed: true per:
         } finally {
           setPendingPhotoPreviews([]);
           setIsProcessingPhotos(false);
+        }
+      };
+
+      const handleTriggerCamera = () => {
+        if (cameraFileInputRef.current) {
+          cameraFileInputRef.current.click();
+        } else {
+          const el = document.getElementById('cameraInput');
+          if (el) el.click();
+        }
+      };
+
+      const handleTriggerGallery = () => {
+        if (galleryFileInputRef.current) {
+          galleryFileInputRef.current.click();
+        } else {
+          const el = document.getElementById('galleryInput');
+          if (el) el.click();
         }
       };
 
@@ -13461,9 +13481,19 @@ Imposta allowed: true per:
                         Mostra asfalto, buche, marciapiedi o parcheggi. Evita volti e targhe leggibili.
                       </p>
 
-                      {/* Input file nascosto + Pulsante compatto */}
+                      {/* Input file nascosti: Scatto Diretto Fotocamera (capture="environment") + Selezione Galleria (multiple) */}
                       <input
-                        ref={photoFileInputRef}
+                        ref={cameraFileInputRef}
+                        id="cameraInput"
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handlePhotoFilesSelected}
+                        className="hidden"
+                      />
+                      <input
+                        ref={galleryFileInputRef}
+                        id="galleryInput"
                         type="file"
                         accept="image/*"
                         multiple
@@ -13473,24 +13503,40 @@ Imposta allowed: true per:
 
                       <div className="flex flex-wrap items-center gap-2.5">
                         {photos.length + pendingPhotoPreviews.length < 2 && (
-                          <button
-                            type="button"
-                            disabled={isProcessingPhotos || isUploadingPhotos}
-                            onClick={() => photoFileInputRef.current && photoFileInputRef.current.click()}
-                            className="px-3.5 py-2 rounded-xl bg-white hover:bg-sky-50 active:scale-[0.99] text-slate-800 hover:text-sky-900 border border-slate-300 hover:border-sky-400 font-extrabold text-xs shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
-                          >
-                            {isProcessingPhotos ? (
-                              <>
-                                <span className="inline-block w-3.5 h-3.5 border-2 border-sky-600 border-t-transparent rounded-full animate-spin"></span>
-                                <span>🛡️ Verifica conformità foto in corso...</span>
-                              </>
-                            ) : (
-                              <>
-                                <span>➕</span>
-                                <span>Scatta o Carica Foto</span>
-                              </>
-                            )}
-                          </button>
+                          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                            {/* Pulsante 1: 📸 Scatta Foto (primario / accattivante) */}
+                            <button
+                              type="button"
+                              disabled={isProcessingPhotos || isUploadingPhotos}
+                              onClick={handleTriggerCamera}
+                              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-600 via-indigo-600 to-sky-700 hover:from-sky-700 hover:to-indigo-700 active:scale-[0.98] text-white font-extrabold text-xs shadow-xs hover:shadow-md transition-all cursor-pointer inline-flex items-center justify-center gap-1.5 border border-sky-400/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Scatta direttamente una foto sul posto con la fotocamera posteriore dello smartphone"
+                            >
+                              {isProcessingPhotos ? (
+                                <>
+                                  <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                  <span>Verifica foto...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-sm">📸</span>
+                                  <span>Scatta Foto</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Pulsante 2: 🖼️ Da Galleria (secondario / neutro) */}
+                            <button
+                              type="button"
+                              disabled={isProcessingPhotos || isUploadingPhotos}
+                              onClick={handleTriggerGallery}
+                              className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-700 hover:text-slate-900 font-extrabold text-xs shadow-2xs hover:shadow-xs transition-all cursor-pointer inline-flex items-center justify-center gap-1.5 border border-slate-300 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Seleziona una o più foto già salvate nella galleria del dispositivo"
+                            >
+                              <span className="text-sm">🖼️</span>
+                              <span>Da Galleria</span>
+                            </button>
+                          </div>
                         )}
 
                         {/* Anteprime temporanee in fase di analisi AI Gemini Flash */}
