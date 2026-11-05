@@ -5026,8 +5026,8 @@ Imposta allowed: true per:
           streetCity: "Grottammare",
           province: "AP",
           postalCode: "63066",
-          latitude: 42.990443190632796,
-          longitude: 13.869663126569428,
+          latitude: 42.9905648313222,
+          longitude: 13.87034977200869,
           ratingOverall: grottammareAvg,
           avgOverallRating: grottammareAvg,
           reviewCount: allGrottammareRevsData.length || 1,
@@ -5037,7 +5037,7 @@ Imposta allowed: true per:
           updatedAt: new Date().toISOString()
         };
         await firestore.collection('streets').doc("corso-giuseppe-mazzini_grottammare_ap").set(grottammareStreetMeta, { merge: true });
-        console.log(`[FixMazzini] Scheda streets/corso-giuseppe-mazzini_grottammare_ap ripristinata con successo (rating: ${grottammareAvg}, coordinate reali: 42.990443, 13.869663).`);
+        console.log(`[FixMazzini] Scheda streets/corso-giuseppe-mazzini_grottammare_ap ripristinata con successo (rating: ${grottammareAvg}, coordinate reali: 42.990565, 13.870350).`);
 
         // Pulizia eventuali documenti orfani con vecchie chiavi di Alba Adriatica
         const legacyAlbaSnap = await firestore.collection('streets').doc("via-giuseppe-mazzini_alba-adriatica").get();
@@ -5053,8 +5053,7 @@ Imposta allowed: true per:
       }
     };
 
-    // Routine Autoritativa di Fusione Toponomastica e Pulizia Database per Via XXVII Novembre 1943 (San Benedetto del Tronto)
-    // Motore Universale di Auto-Riparazione Batch delle Coordinate Stradali (Google Maps Geocoder)
+    // Motore Universale di Auto-Riparazione Batch delle Coordinate Stradali (Google Maps Geocoder & geometry.location)
     window.autoHealAllStreetsDatabase = async (onProgress = null) => {
       const firestore = window.db;
       if (!firestore) {
@@ -5080,7 +5079,7 @@ Imposta allowed: true per:
 
         updateStatus(`Riparazione database in corso: 0 di ${total} vie verificate...`);
 
-        // Helper sleep per il rate limiting di 150ms
+        // Helper sleep per il rate limiting tra chiamate geocoder per rispetto quote API Google Maps
         const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
         for (const sDoc of streetsSnap.docs) {
@@ -5098,9 +5097,24 @@ Imposta allowed: true per:
 
           updateStatus(`Riparazione database in corso: ${processed} di ${total} vie verificate... (${streetName})`);
 
-          // Rate limiting di 150ms tra una richiesta e l'altra per rispetto quote API Google Maps
-          await sleep(150);
-          const geom = await resolveCanonicalStreetGeometry(streetName, streetCity, streetProv, curLat, curLng);
+          // 1. Risolvi le coordinate esatte tramite geometry.location della via cercata senza civico
+          let geom = null;
+          const preResolved = typeof lookupCanonicalGoogleMapsRouteCoords === 'function'
+            ? lookupCanonicalGoogleMapsRouteCoords(sDoc.id, streetName, streetCity, streetProv, curLat, curLng)
+            : null;
+
+          if (preResolved && preResolved.lat && preResolved.lng) {
+            geom = {
+              lat: Number(preResolved.lat),
+              lng: Number(preResolved.lng),
+              canonicalName: streetName,
+              city: streetCity,
+              province: streetProv
+            };
+          } else {
+            await sleep(150);
+            geom = await resolveCanonicalStreetGeometry(streetName, streetCity, streetProv, curLat, curLng);
+          }
 
           if (!geom || geom.lat == null || geom.lng == null) {
             continue;
@@ -5115,7 +5129,7 @@ Imposta allowed: true per:
             shouldUpdate = true;
           } else {
             const distKm = getDistanceKm(curLat, curLng, newLat, newLng);
-            if (distKm > 0.001) { // Più di 1 metro di discrepanza rispetto al pin di Google Maps della via
+            if (distKm > 0.001) { // Più di 1 metro di discrepanza rispetto al pin esatto di Google Maps
               shouldUpdate = true;
               console.log(`[AutoHeal] Riallineamento a Google Maps per "${streetName}" (${streetCity}): delta = ${(distKm * 1000).toFixed(1)}m`);
             }
@@ -5176,6 +5190,32 @@ Imposta allowed: true per:
             if (streetRevsUpdated > 0) {
               await batch.commit();
               healedReviewsCount += streetRevsUpdated;
+            }
+          }
+        }
+
+        // 3. Verifica mirata speciale per le vie critiche (Corso Giuseppe Mazzini Grottammare, Viale dello Sport, Via G. Sacconi SBT)
+        const criticalStreets = [
+          { key: 'corso-giuseppe-mazzini_grottammare_ap', lat: 42.9905648313222, lng: 13.87034977200869, name: 'Corso Giuseppe Mazzini', city: 'Grottammare' },
+          { key: 'viale-dello-sport_san-benedetto-del-tronto_ap', lat: 42.9348846, lng: 13.8897294, name: 'Viale dello Sport', city: 'San Benedetto del Tronto' },
+          { key: 'via-g-sacconi_san-benedetto-del-tronto_ap', lat: 42.9507081, lng: 13.8760518, name: 'Via G Sacconi', city: 'San Benedetto del Tronto' }
+        ];
+
+        for (const crit of criticalStreets) {
+          const docRef = firestore.collection('streets').doc(crit.key);
+          const snap = await docRef.get();
+          if (snap.exists) {
+            const d = snap.data() || {};
+            const distKm = getDistanceKm(d.latitude, d.longitude, crit.lat, crit.lng);
+            if (distKm > 0.001) {
+              const nowIso = new Date().toISOString();
+              await docRef.set({ latitude: crit.lat, longitude: crit.lng, updatedAt: nowIso }, { merge: true });
+              const rSnap = await firestore.collection('reviews').where('streetKey', '==', crit.key).get();
+              if (!rSnap.empty) {
+                const b = firestore.batch();
+                rSnap.forEach(rd => b.update(rd.ref, { latitude: crit.lat, longitude: crit.lng, updatedAt: nowIso }));
+                await b.commit();
+              }
             }
           }
         }
