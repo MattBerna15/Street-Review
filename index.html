@@ -8,7 +8,15 @@
   <!-- Favicon Logo Ufficiale -->
   <link rel="icon" type="image/jpeg" href="assets/logo.jpg" />
   <link rel="icon" type="image/png" href="assets/favicon.png" />
-  <link rel="apple-touch-icon" href="assets/logo.jpg" />
+
+  <!-- PWA & Mobile Web App Meta Tags -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Street Review">
+  <link rel="apple-touch-icon" href="assets/logo.jpg">
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -175,6 +183,15 @@
 
   <script type="text/babel">
     const { useState, useEffect, useRef, useMemo } = React;
+
+    // Registrazione del Service Worker PWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('[PWA] Service Worker registrato con successo, scope:', reg.scope))
+          .catch(err => console.error('[PWA] Errore registrazione Service Worker:', err));
+      });
+    }
 
     const db = window.db;
 
@@ -11438,6 +11455,9 @@ Imposta allowed: true per:
             isOpen={isPrivacyOpen}
             onClose={() => setIsPrivacyOpen(false)}
           />
+
+          {/* 11. BANNER ADATTIVO INSTALLAZIONE PWA (ANDROID & IOS) */}
+          <InstallPromptBanner isDrawerOpen={Boolean(selectedStreet && sheetSnap !== 'hidden')} />
         </div>
       );
     }
@@ -14682,6 +14702,161 @@ Imposta allowed: true per:
               </button>
             </div>
           </div>
+        </div>
+      );
+    }
+
+    // --- BANNER INSTALLAZIONE PWA (ADAPTIVE INSTALL PROMPT) ---
+    function InstallPromptBanner({ isDrawerOpen }) {
+      const [deferredPrompt, setDeferredPrompt] = useState(null);
+      const [bannerType, setBannerType] = useState(null); // 'prompt' | 'ios' | null
+      const [isVisible, setIsVisible] = useState(false);
+
+      useEffect(() => {
+        const isStandalone =
+          (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+          (window.navigator && window.navigator.standalone === true);
+
+        if (isStandalone) {
+          return;
+        }
+
+        let isDismissed = false;
+        try {
+          isDismissed = localStorage.getItem('pwa_banner_dismissed') === 'true';
+        } catch (e) {
+          isDismissed = false;
+        }
+
+        if (isDismissed) {
+          return;
+        }
+
+        // 1. Gestione Android / Chrome: intercettazione prima del prompt nativo
+        const handleBeforeInstallPrompt = (e) => {
+          e.preventDefault();
+          setDeferredPrompt(e);
+          setBannerType('prompt');
+          setIsVisible(true);
+        };
+
+        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+        // 2. Gestione iOS / Safari: se aperto nel browser e non in standalone
+        const ua = window.navigator.userAgent || '';
+        const isIos = /iPad|iPhone|iPod/.test(ua) || (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
+        if (isIos && !isStandalone) {
+          setBannerType('ios');
+          setIsVisible(true);
+        }
+
+        // 3. Nascondi se installato
+        const handleAppInstalled = () => {
+          setIsVisible(false);
+          setDeferredPrompt(null);
+          setBannerType(null);
+        };
+
+        window.addEventListener('appinstalled', handleAppInstalled);
+
+        return () => {
+          window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+          window.removeEventListener('appinstalled', handleAppInstalled);
+        };
+      }, []);
+
+      const handleDismiss = () => {
+        try {
+          localStorage.setItem('pwa_banner_dismissed', 'true');
+        } catch (e) {}
+        setIsVisible(false);
+      };
+
+      const handleInstallClick = async () => {
+        if (!deferredPrompt) return;
+        try {
+          await deferredPrompt.prompt();
+          const choiceResult = await deferredPrompt.userChoice;
+          if (choiceResult && choiceResult.outcome === 'accepted') {
+            console.log("[PWA] Installazione accettata dall'utente");
+          }
+        } catch (err) {
+          console.error('[PWA] Errore prompt di installazione:', err);
+        }
+        setDeferredPrompt(null);
+        setIsVisible(false);
+      };
+
+      if (!isVisible || !bannerType || isDrawerOpen) {
+        return null;
+      }
+
+      return (
+        <div
+          className="fixed z-30 transition-all duration-300 animate-slide-up left-3 right-3 sm:left-auto sm:right-6 sm:max-w-md bg-[#1e293b] text-white rounded-2xl p-3.5 sm:p-4 border border-cyan-400/50 shadow-[0_10px_35px_rgba(0,0,0,0.45)] ring-1 ring-amber-400/40 backdrop-blur-md"
+          style={{ bottom: 'max(14px, env(safe-area-inset-bottom))' }}
+        >
+          {bannerType === 'prompt' ? (
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <img
+                  src="assets/logo.jpg"
+                  alt="Street Review"
+                  className="w-10 h-10 rounded-xl object-cover border border-cyan-400/60 shadow-xs shrink-0"
+                />
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-[13px] font-bold text-slate-100 leading-snug">
+                    📲 Installa <strong className="text-cyan-300">Street Review</strong> sulla tua Home per un accesso rapido
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleInstallClick}
+                  className="px-3.5 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer whitespace-nowrap border border-cyan-300/40"
+                >
+                  Installa
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDismiss}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                  title="Chiudi"
+                  aria-label="Chiudi"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <img
+                  src="assets/logo.jpg"
+                  alt="Street Review"
+                  className="w-10 h-10 rounded-xl object-cover border border-cyan-400/60 shadow-xs shrink-0 mt-0.5"
+                />
+                <div className="min-w-0 text-xs sm:text-[13px] text-slate-200 leading-snug">
+                  <p className="font-bold text-cyan-300">
+                    📲 Aggiungi alla Home
+                  </p>
+                  <p className="text-[11px] sm:text-xs text-slate-300 mt-1">
+                    Tocca il tasto Condividi (in basso su Safari) e seleziona <strong className="text-amber-300">"Aggiungi alla schermata Home"</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleDismiss}
+                className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                title="Chiudi"
+                aria-label="Chiudi"
+              >
+                ✕
+              </button>
+            </div>
+          )}
         </div>
       );
     }
