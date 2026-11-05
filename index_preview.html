@@ -658,9 +658,182 @@
       }) || null;
     };
 
-    // Ricerca punto di ancoraggio canonico dal gazetteer con vincolo territoriale rigido
-        // Ricerca punto di ancoraggio canonico dal gazetteer con vincolo territoriale rigido sul comune dichiarato
-        // Ricerca punto di ancoraggio canonico dal gazetteer con vincolo territoriale rigido sul comune dichiarato
+    // Dizionario autoritativo delle coordinate ufficiali Google Maps (geometry.location cercando la sola via senza civico)
+    // garantisce allineamento istantaneo al millimetro sulla sede stradale e previene regressioni da viewport o confini comunali.
+    const CANONICAL_GOOGLE_MAPS_ROUTE_COORDS = {
+      'contrada-san-donato_monteprandone_ap': { lat: 42.9119776, lng: 13.8595395 },
+      'contrada-tesino_ripatransone_ap': { lat: 42.982155, lng: 13.8189979 },
+      'corso-giuseppe-mazzini_grottammare_ap': { lat: 42.9905648313222, lng: 13.87034977200869 },
+      'corso-mazzini_grottammare_ap': { lat: 42.9905648313222, lng: 13.87034977200869 },
+      'isola-di-arturo_grottammare_ap': { lat: 42.9862388, lng: 13.8640603 },
+      'molo-sud_san-benedetto-del-tronto_ap': { lat: 42.956197, lng: 13.8915758 },
+      'piazza-g-carducci_grottammare_ap': { lat: 42.9630862, lng: 13.8755691 },
+      'piazza-kursaal_grottammare_ap': { lat: 42.9913912, lng: 13.8709639 },
+      'piazza-maggiore_bologna_bo': { lat: 44.493945, lng: 11.3432071 },
+      'strada-statale-16var_san-benedetto-del-tronto_ap': { lat: 42.9140503, lng: 13.8974979 },
+      'via-a-gramsci_grottammare_ap': { lat: 42.9895714, lng: 13.8701234 },
+      'via-alessandro-volta_grottammare_ap': { lat: 42.9818215, lng: 13.8677061 },
+      'via-antonio-de-curtis_grottammare_ap': { lat: 42.9826817, lng: 13.8707755 },
+      'via-antonio-meucci_grottammare_ap': { lat: 42.9814696, lng: 13.8665762 },
+      'via-ascoli-piceno_grottammare_ap': { lat: 42.9644236, lng: 13.8722133 },
+      'via-attilio-bruni_san-benedetto-del-tronto_ap': { lat: 42.9523841, lng: 13.8866289 },
+      'via-ballestra_grottammare_ap': { lat: 42.9856763, lng: 13.8704295 },
+      'via-bellini_grottammare_ap': { lat: 42.9907623, lng: 13.8666437 },
+      'via-boito_grottammare_ap': { lat: 42.9859796, lng: 13.863868 },
+      'via-cairoli_cupra-marittima_ap': { lat: 43.0252076, lng: 13.8596177 },
+      'via-cantiere_grottammare_ap': { lat: 42.9921373, lng: 13.8693612 },
+      'via-carnello_isola-del-liri_fr': { lat: 41.6861083, lng: 13.5924672 },
+      'via-castelfidardo_cupra-marittima_ap': { lat: 43.0251734, lng: 13.8592233 },
+      'via-castelfidardo_grottammare_ap': { lat: 42.9896641, lng: 13.8696779 },
+      'via-catullo_san-benedetto-del-tronto_ap': { lat: 42.9412111, lng: 13.8889161 },
+      'via-cavallotti_grottammare_ap': { lat: 42.991743, lng: 13.8684905 },
+      'via-c-battisti_grottammare_ap': { lat: 42.9878672, lng: 13.8694376 },
+      'via-cesare-lombroso_san-benedetto-del-tronto_ap': { lat: 42.9413271, lng: 13.88691 },
+      'via-clara-maffei_san-benedetto-del-tronto_ap': { lat: 42.9291846, lng: 13.8953187 },
+      'via-colle-di-cadibona_san-benedetto-del-tronto_ap': { lat: 42.9527735, lng: 13.8684124 },
+      'via-conquiste_san-benedetto-del-tronto_ap': { lat: 42.9504385, lng: 13.8726576 },
+      'via-cristoforo-colombo_san-benedetto-del-tronto_ap': { lat: 42.9558727, lng: 13.8828994 },
+      'via-c-sforza_san-benedetto-del-tronto_ap': { lat: 42.9326359, lng: 13.8916628 },
+      'via-dandolo-enrico_san-benedetto-del-tronto_ap': { lat: 42.9589226, lng: 13.885781 },
+      'via-dei-piceni_grottammare_ap': { lat: 42.9878648, lng: 13.869963 },
+      'via-della-liberazione_san-benedetto-del-tronto_ap': { lat: 42.9381023, lng: 13.8814434 },
+      'via-della-pace_grottammare_ap': { lat: 42.9834542, lng: 13.8519569 },
+      'via-della-rinascita_grottammare_ap': { lat: 42.9828426, lng: 13.8534929 },
+      'via-delle-fosse-ardeatine_san-lazzaro-di-savena_bo': { lat: 44.4629515, lng: 11.405967 },
+      'via-del-mare_san-benedetto-del-tronto_ap': { lat: 42.9155621, lng: 13.8967201 },
+      'via-del-mercato_cupra-marittima_ap': { lat: 43.0265667, lng: 13.858899 },
+      'via-de-nardis_grottammare_ap': { lat: 42.9910998, lng: 13.8659953 },
+      'via-domenico-cimarosa_ascoli-piceno_ap': { lat: 42.8682079, lng: 13.5604632 },
+      'via-domenico-scarlatti_san-benedetto-del-tronto_ap': { lat: 42.9193454, lng: 13.897444 },
+      'via-don-alessandro-verdecchia_grottammare_ap': { lat: 42.9917462, lng: 13.8682433 },
+      'via-elio-fileni_san-benedetto-del-tronto_ap': { lat: 42.9496269, lng: 13.8763708 },
+      'via-ettore-maiorana_grottammare_ap': { lat: 42.9825973, lng: 13.8657142 },
+      'via-fabio-filzi_ascoli-piceno_ap': { lat: 42.8588768, lng: 13.5803415 },
+      'via-firenze_grottammare_ap': { lat: 42.9624729, lng: 13.8709523 },
+      'via-francesco-crispi_san-benedetto-del-tronto_ap': { lat: 42.9500471, lng: 13.8797363 },
+      'via-galileo-galilei_grottammare_ap': { lat: 42.982717, lng: 13.8669362 },
+      'via-giacomo-leopardi_cupra-marittima_ap': { lat: 43.0248817, lng: 13.8595295 },
+      'via-giacomo-leopardi_grottammare_ap': { lat: 42.9900417, lng: 13.8694008 },
+      'via-giacomo-zanella_san-benedetto-del-tronto_ap': { lat: 42.9621689, lng: 13.8762516 },
+      'via-gian-lorenzo-bernini_san-benedetto-del-tronto_ap': { lat: 42.9521561, lng: 13.8725372 },
+      'via-gianna-manzini_san-benedetto-del-tronto_ap': { lat: 42.9106145, lng: 13.8833557 },
+      'via-gino-moretti_san-benedetto-del-tronto_ap': { lat: 42.9490118, lng: 13.8798842 },
+      'via-gioacchino-rossini_san-benedetto-del-tronto_ap': { lat: 42.9503008, lng: 13.8758417 },
+      'via-giordano-bruno_grottammare_ap': { lat: 42.9904387, lng: 13.86847 },
+      'via-giovanni-marradi_san-benedetto-del-tronto_ap': { lat: 42.9561452, lng: 13.8743745 },
+      'via-giovanni-sgambati_san-benedetto-del-tronto_ap': { lat: 42.9273684, lng: 13.8938462 },
+      'via-giuseppe-garibaldi_grottammare_ap': { lat: 42.9887777, lng: 13.8694334 },
+      'via-giuseppe-mazzini_alba-adriatica_te': { lat: 42.8327225, lng: 13.9258481 },
+      'via-g-puccini_grottammare_ap': { lat: 42.9903601, lng: 13.8656362 },
+      'via-g-rossini_grottammare_ap': { lat: 42.9918373, lng: 13.8659848 },
+      'via-g-sacconi_grottammare_ap': { lat: 42.982552, lng: 13.872164 },
+      'via-g-sacconi_san-benedetto-del-tronto_ap': { lat: 42.9507081, lng: 13.8760518 },
+      'via-giuseppe-sacconi_san-benedetto-del-tronto_ap': { lat: 42.9507081, lng: 13.8760518 },
+      'via-ida-baccini_san-benedetto-del-tronto_ap': { lat: 42.9143801, lng: 13.8847531 },
+      'via-i-malavoglia_grottammare_ap': { lat: 42.9880006, lng: 13.8648184 },
+      'via-irnerio_bologna_bo': { lat: 44.499682, lng: 11.3504553 },
+      'via-laureati_grottammare_ap': { lat: 42.9908573, lng: 13.8693745 },
+      'via-l-da-vinci_grottammare_ap': { lat: 42.9845536, lng: 13.8706881 },
+      'viale-alcide-de-gasperi_san-benedetto-del-tronto_ap': { lat: 42.94562, lng: 13.8831099 },
+      'viale-alfredo-scipioni_san-benedetto-del-tronto_ap': { lat: 42.9313831, lng: 13.8948335 },
+      'viale-andrea-pazienza_san-benedetto-del-tronto_ap': { lat: 42.9506799, lng: 13.8880712 },
+      'viale-bruno-buozzi_san-benedetto-del-tronto_ap': { lat: 42.9507343, lng: 13.8853335 },
+      'viale-della-vittoria_alba-adriatica_te': { lat: 42.8359095, lng: 13.9257732 },
+      'viale-delle-querce_altidona_fm': { lat: 43.1043905, lng: 13.8384572 },
+      'viale-dello-sport_san-benedetto-del-tronto_ap': { lat: 42.9348846, lng: 13.8897294 },
+      'viale-emidio-cellini_ripatransone_ap': { lat: 42.9967042, lng: 13.7626168 },
+      'viale-gorizia_cupra-marittima_ap': { lat: 43.0252913, lng: 13.8571794 },
+      'viale-marconi_san-benedetto-del-tronto_ap': { lat: 42.9389806, lng: 13.8906856 },
+      'viale-marinai-d-italia_san-benedetto-del-tronto_ap': { lat: 42.9536316, lng: 13.8851007 },
+      'via-leonida-bissolati_san-benedetto-del-tronto_ap': { lat: 42.9174774, lng: 13.899837 },
+      'viale-secondo-moretti_san-benedetto-del-tronto_ap': { lat: 42.9517091, lng: 13.8821657 },
+      'viale-stazione_cupra-marittima_ap': { lat: 43.0233287, lng: 13.8598527 },
+      'viale-trieste_san-benedetto-del-tronto_ap': { lat: 42.9463422, lng: 13.8873401 },
+      'via-luciano-manara_san-benedetto-del-tronto_ap': { lat: 42.9492856, lng: 13.8710773 },
+      'via-luigi-dari_san-benedetto-del-tronto_ap': { lat: 42.9554053, lng: 13.8826768 },
+      'via-malta_cupra-marittima_ap': { lat: 43.0259994, lng: 13.8579603 },
+      'via-marconi_grottammare_ap': { lat: 42.9878792, lng: 13.8687988 },
+      'via-marcovaldo_grottammare_ap': { lat: 42.9884614, lng: 13.8645427 },
+      'via-marina_grottammare_ap': { lat: 42.9935268, lng: 13.8695063 },
+      'via-marina_porto-sant-elpidio_fm': { lat: 43.2420194, lng: 13.7698385 },
+      'via-mario-curzi_san-benedetto-del-tronto_ap': { lat: 42.9503757, lng: 13.8813606 },
+      'via-monfalcone_san-benedetto-del-tronto_ap': { lat: 42.9461489, lng: 13.8864425 },
+      'via-montebello_san-benedetto-del-tronto_ap': { lat: 42.9533181, lng: 13.8808566 },
+      'via-monte-conero_san-benedetto-del-tronto_ap': { lat: 42.9202903, lng: 13.8919141 },
+      'via-montello_san-benedetto-del-tronto_ap': { lat: 42.9487816, lng: 13.8812042 },
+      'via-monte-san-michele_san-benedetto-del-tronto_ap': { lat: 42.9449277, lng: 13.8824033 },
+      'via-m-spina_grottammare_ap': { lat: 42.9913408, lng: 13.8682323 },
+      'via-napoli_ascoli-piceno_ap': { lat: 42.8504893, lng: 13.5903168 },
+      'via-natale-capriotti_grottammare_ap': { lat: 42.9900583, lng: 13.8681971 },
+      'via-nazario-sauro_grottammare_ap': { lat: 42.9872127, lng: 13.869069 },
+      'via-n-fenili_grottammare_ap': { lat: 42.9914462, lng: 13.8652533 },
+      'via-olindo-pasqualetti_san-benedetto-del-tronto_ap': { lat: 42.950889, lng: 13.8844941 },
+      'via-ottaviani_grottammare_ap': { lat: 42.9910538, lng: 13.8645069 },
+      'via-palmaroli_grottammare_ap': { lat: 42.9944428, lng: 13.8659287 },
+      'via-palmiro-togliatti_san-benedetto-del-tronto_ap': { lat: 42.9386472, lng: 13.8856728 },
+      'via-papa-giovanni-xxiii_san-benedetto-del-tronto_ap': { lat: 42.9497253, lng: 13.8815845 },
+      'via-papiria_fano_pu': { lat: 43.8326478, lng: 13.014222 },
+      'via-pasqualini_san-benedetto-del-tronto_ap': { lat: 42.9522904, lng: 13.887453 },
+      'via-perozzi_grottammare_ap': { lat: 42.9865729, lng: 13.8694173 },
+      'via-piemonte_san-benedetto-del-tronto_ap': { lat: 42.9459206, lng: 13.8852083 },
+      'via-pietro-mascagni_grottammare_ap': { lat: 42.9895914, lng: 13.8662393 },
+      'via-pola_grottammare_ap': { lat: 42.9878677, lng: 13.8703371 },
+      'via-promessi-sposi_grottammare_ap': { lat: 42.9888682, lng: 13.8635138 },
+      'via-riccardo-zandonai_grottammare_ap': { lat: 42.9898007, lng: 13.8650102 },
+      'via-risorgimento_san-benedetto-del-tronto_ap': { lat: 42.9508237, lng: 13.8780468 },
+      'via-roma_san-benedetto-del-tronto_ap': { lat: 42.9537225, lng: 13.8792224 },
+      'via-ruggero-leoncavallo_grottammare_ap': { lat: 42.9899928, lng: 13.8655379 },
+      'via-sabotino_cupra-marittima_ap': { lat: 43.0226678, lng: 13.8600034 },
+      'via-sabotino_san-benedetto-del-tronto_ap': { lat: 42.9479757, lng: 13.8813583 },
+      'via-san-pio-x_san-benedetto-del-tronto_ap': { lat: 42.9357247, lng: 13.8858211 },
+      'via-sant-antonio_grottammare_ap': { lat: 42.9830791, lng: 13.8650457 },
+      'via-spontini_grottammare_ap': { lat: 42.9916308, lng: 13.8650152 },
+      'via-tenente-pompeo-bernardini_grottammare_ap': { lat: 42.9861636, lng: 13.871024 },
+      'via-tibullo_san-benedetto-del-tronto_ap': { lat: 42.9416196, lng: 13.888716 },
+      'via-toscana_san-benedetto-del-tronto_ap': { lat: 42.9455076, lng: 13.8805197 },
+      'via-trento_cupra-marittima_ap': { lat: 43.0248516, lng: 13.8593634 },
+      'via-trento_san-benedetto-del-tronto_ap': { lat: 42.9454275, lng: 13.8867302 },
+      'via-ugo-bassi_san-benedetto-del-tronto_ap': { lat: 42.9499725, lng: 13.8834629 },
+      'via-vincenzo-salvi_grottammare_ap': { lat: 42.9917494, lng: 13.8679942 },
+      'via-viviani_cupra-marittima_ap': { lat: 43.0253871, lng: 13.8575935 },
+      'via-walter-frau_san-benedetto-del-tronto_ap': { lat: 42.9159846, lng: 13.9038653 },
+      'via-xx-settembre_grottammare_ap': { lat: 42.9878672, lng: 13.8694376 },
+      'via-xxvii-novembre_san-benedetto-del-tronto_ap': { lat: 42.9497432, lng: 13.8739091 },
+      'via-xxvii-novembre-1943_san-benedetto-del-tronto_ap': { lat: 42.9497432, lng: 13.8739091 },
+      'via-zuccoli_san-benedetto-del-tronto_ap': { lat: 42.9622251, lng: 13.87557 },
+      'vicolo-dalmata_grottammare_ap': { lat: 42.9891925, lng: 13.8705219 },
+      'vicolo-del-moro_grottammare_ap': { lat: 42.9934128, lng: 13.8697795 },
+      'vicolo-etruria_grottammare_ap': { lat: 42.9891929, lng: 13.8688277 },
+      'vicolo-pineta_grottammare_ap': { lat: 42.992685, lng: 13.8697684 },
+    };
+
+    const lookupCanonicalGoogleMapsRouteCoords = (streetKey, streetName = '', city = '', province = '', lat = null, lng = null) => {
+      if (streetKey) {
+        const cleanKey = String(streetKey).toLowerCase().replace(/^street-/, '').trim();
+        if (CANONICAL_GOOGLE_MAPS_ROUTE_COORDS[cleanKey]) {
+          return CANONICAL_GOOGLE_MAPS_ROUTE_COORDS[cleanKey];
+        }
+      }
+      if (streetName) {
+        const parsed = typeof extractCivicNumberFromQuery === 'function' ? extractCivicNumberFromQuery(streetName) : null;
+        const cleanStreet = (parsed && parsed.cleanQuery) ? parsed.cleanQuery : streetName;
+        const compKey = createStreetCompositeKey(cleanStreet, city, lat, lng, province);
+        if (compKey && CANONICAL_GOOGLE_MAPS_ROUTE_COORDS[compKey]) {
+          return CANONICAL_GOOGLE_MAPS_ROUTE_COORDS[compKey];
+        }
+        const sNorm = normalizeStreetKey(cleanStreet);
+        const cNorm = normalizeCityKey(city, lat, lng);
+        if ((sNorm === 'corso-giuseppe-mazzini' || sNorm === 'corso-mazzini') && cNorm === 'grottammare') {
+          return CANONICAL_GOOGLE_MAPS_ROUTE_COORDS['corso-giuseppe-mazzini_grottammare_ap'];
+        }
+        if ((sNorm === 'via-g-sacconi' || sNorm === 'via-giuseppe-sacconi') && cNorm === 'san-benedetto-del-tronto') {
+          return CANONICAL_GOOGLE_MAPS_ROUTE_COORDS['via-g-sacconi_san-benedetto-del-tronto_ap'];
+        }
+      }
+      return null;
+    };
+
+    // Ricerca punto di ancoraggio canonico con vincolo territoriale rigido sul comune dichiarato
     const getCanonicalStreetAnchor = (streetName, streetCity, fallbackLat, fallbackLng, fallbackProvince = '') => {
       const rawCity = (streetCity && String(streetCity).trim() && streetCity !== 'undefined' && streetCity !== 'null')
         ? String(streetCity).trim()
@@ -670,14 +843,16 @@
       const resolvedCityKey = declaredCityKey || normalizeCityKey(resolvedCity, fallbackLat, fallbackLng);
       const resolvedProvince = normalizeProvince(fallbackProvince, resolvedCityKey, fallbackLat, fallbackLng);
       const defaultPostal = resolveDefaultPostalCode(resolvedCityKey);
+      const canonicalName = resolveCanonicalStreetName(streetName, resolvedCity, fallbackLat, fallbackLng) || streetName;
+      const verifiedCoords = lookupCanonicalGoogleMapsRouteCoords(null, canonicalName, resolvedCity, resolvedProvince, fallbackLat, fallbackLng);
 
       return {
-        lat: fallbackLat,
-        lng: fallbackLng,
+        lat: verifiedCoords ? verifiedCoords.lat : fallbackLat,
+        lng: verifiedCoords ? verifiedCoords.lng : fallbackLng,
         city: resolvedCity,
         province: resolvedProvince,
         postalCode: defaultPostal,
-        canonicalName: resolveCanonicalStreetName(streetName, resolvedCity, fallbackLat, fallbackLng) || streetName
+        canonicalName
       };
     };
 
@@ -804,7 +979,8 @@
     }
     window.extractCivicNumberFromQuery = extractCivicNumberFromQuery;
 
-    // Canale Unificato di Risoluzione Geografica Universale (Google Maps Geocoder & Geometria Ufficiale Route)
+    // Canale Unificato di Risoluzione Geografica Universale:
+    // restituisce SEMPRE E SOLO le coordinate esatte (geometry.location) di Google Maps cercando la sola via SENZA numero civico.
     async function resolveCanonicalStreetGeometry(streetName, city, province = '', fallbackLat = null, fallbackLng = null) {
       const safeStreetName = String(streetName || '').trim();
       const safeFallbackLat = (fallbackLat != null && !isNaN(Number(fallbackLat))) ? Number(fallbackLat) : null;
@@ -815,11 +991,13 @@
           ? resolveCanonicalCityName(city, safeFallbackLat, safeFallbackLng)
           : (city || 'Italia');
 
+        // Rimuovi tassativamente qualsiasi numero civico dalla ricerca della via
         let cleanStreet = safeStreetName;
         if (typeof extractCivicNumberFromQuery === 'function') {
           const parsed = extractCivicNumberFromQuery(safeStreetName);
           cleanStreet = (parsed && parsed.cleanQuery) ? parsed.cleanQuery : (typeof parsed === 'string' ? parsed : safeStreetName);
         }
+        cleanStreet = String(cleanStreet || safeStreetName).replace(/,\s*\d+[a-zA-Z]?(?:\/\d+)?\s*$/i, '').trim();
 
         const canonicalStreetName = typeof resolveCanonicalStreetName === 'function'
           ? (resolveCanonicalStreetName(cleanStreet, cleanCity, safeFallbackLat, safeFallbackLng) || cleanStreet)
@@ -833,6 +1011,22 @@
         const defaultPostal = typeof resolveDefaultPostalCode === 'function'
           ? resolveDefaultPostalCode(cityKey)
           : '';
+
+        // 1. Verifica immediata nel dizionario autoritativo delle coordinate Google Maps verificate (senza civico)
+        const verifiedEntry = lookupCanonicalGoogleMapsRouteCoords(null, canonicalStreetName, cleanCity, provCode, safeFallbackLat, safeFallbackLng);
+        if (verifiedEntry && verifiedEntry.lat && verifiedEntry.lng) {
+          return {
+            lat: Number(verifiedEntry.lat),
+            lng: Number(verifiedEntry.lng),
+            city: cleanCity,
+            province: provCode,
+            postalCode: defaultPostal,
+            canonicalName: canonicalStreetName || safeStreetName,
+            placeId: null,
+            formattedAddress: `${canonicalStreetName}, ${defaultPostal ? defaultPostal + ' ' : ''}${cleanCity}${provCode ? ' ' + provCode : ''}, Italia`,
+            snapped: true
+          };
+        }
 
         const fallbackResult = {
           lat: safeFallbackLat,
@@ -869,32 +1063,56 @@
           return fallbackResult;
         }
 
-        // Ispeziona i risultati filtrando per types.includes('route') (o fallback su street_address / intersection)
-        let best = geoResult.find(r => r.types && r.types.includes('route'));
+        // Filtra i risultati verificando che siano effettivamente assi stradali (route / street_address / intersection)
+        // e che appartengano al comune e CAP richiesto (evitando sconfinamenti di confine tra comuni limitrofi).
+        const isResultInExpectedMunicipality = (r) => {
+          if (!r) return false;
+          const rTypes = r.types || [];
+          const isStreetLevel = rTypes.includes('route') || rTypes.includes('street_address') || rTypes.includes('intersection');
+          if (!isStreetLevel) return false;
+
+          if (!cityKey || cityKey === 'italia') return true;
+
+          const rLoc = getGeometryCenter(r.geometry);
+          const det = extractAddressDetails(r.address_components, r.formatted_address || '', rLoc?.lat, rLoc?.lng);
+          const rCityKey = normalizeCityKey(det.city, rLoc?.lat, rLoc?.lng);
+
+          // Se il risultato dichiara un CAP noto della Riviera diverso da quello del comune cercato, scartalo (es. 63074 su Grottammare)
+          if (defaultPostal && det.postalCode && RIVIERA_LEGACY_CITY_KEYS.has(cityKey) && det.postalCode !== defaultPostal) {
+            return false;
+          }
+          if (rCityKey && rCityKey !== 'italia' && rCityKey !== cityKey) {
+            return false;
+          }
+          return true;
+        };
+
+        const validCandidates = geoResult.filter(isResultInExpectedMunicipality);
+        const pool = validCandidates.length > 0 ? validCandidates : geoResult.filter(r => r.types && r.types.includes('route'));
+
+        let best = pool.find(r => r.types && r.types.includes('route'));
         if (!best) {
-          best = geoResult.find(r => r.types && (r.types.includes('street_address') || r.types.includes('intersection')));
+          best = pool.find(r => r.types && (r.types.includes('street_address') || r.types.includes('intersection')));
         }
         if (!best) {
-          best = geoResult[0];
+          return fallbackResult;
         }
 
-        // Ricava il punto medio: se dispone di viewport calcola il centro, altrimenti usa location
+        // PRIORITÀ ASSOLUTA E TASSATIVA A best.geometry.location:
+        // è la coordinata esatta del Pin di Google Maps cercando la via senza numero civico (MAI usare il centro del viewport!)
         let geomLat = safeFallbackLat;
         let geomLng = safeFallbackLng;
 
         if (best.geometry) {
-          if (best.geometry.viewport) {
-            const ne = typeof best.geometry.viewport.getNorthEast === 'function' ? best.geometry.viewport.getNorthEast() : best.geometry.viewport.northEast;
-            const sw = typeof best.geometry.viewport.getSouthWest === 'function' ? best.geometry.viewport.getSouthWest() : best.geometry.viewport.southWest;
-            const neLat = typeof ne.lat === 'function' ? ne.lat() : Number(ne.lat);
-            const neLng = typeof ne.lng === 'function' ? ne.lng() : Number(ne.lng);
-            const swLat = typeof sw.lat === 'function' ? sw.lat() : Number(sw.lat);
-            const swLng = typeof sw.lng === 'function' ? sw.lng() : Number(sw.lng);
-            geomLat = Number(((neLat + swLat) / 2).toFixed(6));
-            geomLng = Number(((neLng + swLng) / 2).toFixed(6));
-          } else if (best.geometry.location) {
+          if (best.geometry.location) {
             geomLat = typeof best.geometry.location.lat === 'function' ? best.geometry.location.lat() : Number(best.geometry.location.lat);
             geomLng = typeof best.geometry.location.lng === 'function' ? best.geometry.location.lng() : Number(best.geometry.location.lng);
+          } else {
+            const center = getGeometryCenter(best.geometry);
+            if (center) {
+              geomLat = center.lat;
+              geomLng = center.lng;
+            }
           }
         }
 
@@ -906,13 +1124,23 @@
         const finalCanonicalName = typeof resolveCanonicalStreetName === 'function'
           ? resolveCanonicalStreetName(resolvedRouteName, addrDetails.city || cleanCity, geomLat, geomLng)
           : resolvedRouteName;
+        const finalCity = (cityKey && cityKey !== 'italia') ? cleanCity : (addrDetails.city || cleanCity);
+        const finalProv = provCode || addrDetails.province || '';
+        const finalPostal = defaultPostal || addrDetails.postalCode || '';
+
+        if (geomLat !== null && geomLng !== null && !isNaN(Number(geomLat)) && !isNaN(Number(geomLng))) {
+          const compKey = createStreetCompositeKey(finalCanonicalName, finalCity, geomLat, geomLng, finalProv);
+          if (compKey) {
+            CANONICAL_GOOGLE_MAPS_ROUTE_COORDS[compKey] = { lat: Number(geomLat), lng: Number(geomLng) };
+          }
+        }
 
         return {
           lat: geomLat !== null ? Number(geomLat) : safeFallbackLat,
           lng: geomLng !== null ? Number(geomLng) : safeFallbackLng,
-          city: addrDetails.city || cleanCity,
-          province: addrDetails.province || provCode,
-          postalCode: addrDetails.postalCode || defaultPostal,
+          city: finalCity,
+          province: finalProv,
+          postalCode: finalPostal,
           canonicalName: finalCanonicalName,
           placeId: best.place_id || null,
           formattedAddress: best.formatted_address || '',
@@ -3484,11 +3712,14 @@ Imposta allowed: true per:
     const mapStreetDocToUIStreet = (docData, existingStreet = null) => {
       const rawName = docData.streetName || docData.name || '';
       const rawCity = docData.streetCity || docData.city || '';
-      const lat = Number(docData.latitude) || 42.9517;
-      const lng = Number(docData.longitude) || 13.8822;
-      const cityKey = normalizeCityKey(rawCity, lat, lng);
-      const province = docData.province || docData.streetProvince || normalizeProvinceCode('', cityKey, lat, lng);
-      const streetKey = docData.streetKey || docData.id || createStreetCompositeKey(rawName, rawCity, lat, lng, province);
+      const rawLat = Number(docData.latitude) || 42.9517;
+      const rawLng = Number(docData.longitude) || 13.8822;
+      const cityKey = normalizeCityKey(rawCity, rawLat, rawLng);
+      const province = docData.province || docData.streetProvince || normalizeProvinceCode('', cityKey, rawLat, rawLng);
+      const streetKey = docData.streetKey || docData.id || createStreetCompositeKey(rawName, rawCity, rawLat, rawLng, province);
+      const canonicalCoords = lookupCanonicalGoogleMapsRouteCoords(streetKey, rawName, rawCity, province, rawLat, rawLng);
+      const lat = canonicalCoords ? Number(canonicalCoords.lat) : rawLat;
+      const lng = canonicalCoords ? Number(canonicalCoords.lng) : rawLng;
       const canonicalId = 'street-' + streetKey.replace(/[^a-z0-9]/g, '-');
 
       const defaultCats = {};
@@ -4735,8 +4966,8 @@ Imposta allowed: true per:
             province: "AP",
             streetProvince: "AP",
             streetKey: "corso-giuseppe-mazzini_grottammare_ap",
-            latitude: 42.990443190632796,
-            longitude: 13.869663126569428,
+            latitude: 42.9905648313222,
+            longitude: 13.87034977200869,
             ratingOverall: Number(gr.data.ratingOverall) || 3.2,
             updatedAt: new Date().toISOString()
           };
@@ -4747,8 +4978,8 @@ Imposta allowed: true per:
             province: "AP",
             streetProvince: "AP",
             streetKey: "corso-giuseppe-mazzini_grottammare_ap",
-            latitude: 42.990443190632796,
-            longitude: 13.869663126569428,
+            latitude: 42.9905648313222,
+            longitude: 13.87034977200869,
             updatedAt: new Date().toISOString()
           });
         });
@@ -4761,8 +4992,8 @@ Imposta allowed: true per:
             province: "AP",
             streetProvince: "AP",
             streetKey: "corso-giuseppe-mazzini_grottammare_ap",
-            latitude: 42.990443190632796,
-            longitude: 13.869663126569428,
+            latitude: 42.9905648313222,
+            longitude: 13.87034977200869,
             updatedAt: new Date().toISOString()
           };
           allGrottammareRevsData.push(updatedOther);
@@ -4772,8 +5003,8 @@ Imposta allowed: true per:
             province: "AP",
             streetProvince: "AP",
             streetKey: "corso-giuseppe-mazzini_grottammare_ap",
-            latitude: 42.990443190632796,
-            longitude: 13.869663126569428,
+            latitude: 42.9905648313222,
+            longitude: 13.87034977200869,
             updatedAt: new Date().toISOString()
           });
         });
@@ -4878,15 +5109,15 @@ Imposta allowed: true per:
           const newLat = Number(geom.lat);
           const newLng = Number(geom.lng);
 
-          // Calcola distanza tra coordinate correnti e baricentro Google Maps (differenza > 150 metri)
+          // Allinea SEMPRE alle coordinate esatte di Google Maps (geometry.location senza civico, soglia > 1 metro)
           let shouldUpdate = false;
           if (isNaN(curLat) || isNaN(curLng) || curLat === 0 || curLng === 0) {
             shouldUpdate = true;
           } else {
             const distKm = getDistanceKm(curLat, curLng, newLat, newLng);
-            if (distKm > 0.150) { // Più di 150 metri di discrepanza
+            if (distKm > 0.001) { // Più di 1 metro di discrepanza rispetto al pin di Google Maps della via
               shouldUpdate = true;
-              console.log(`[AutoHeal] Discrepanza rilevata per "${streetName}" (${streetCity}): delta = ${(distKm * 1000).toFixed(0)}m`);
+              console.log(`[AutoHeal] Riallineamento a Google Maps per "${streetName}" (${streetCity}): delta = ${(distKm * 1000).toFixed(1)}m`);
             }
           }
 
@@ -4901,15 +5132,17 @@ Imposta allowed: true per:
             }, { merge: true });
             healedStreetsCount++;
 
-            // 2. Aggiornamento a cascata su 'reviews' collegate
+            // 2. Aggiornamento a cascata su TUTTE le 'reviews' collegate (sia per streetKey sia legacy per streetName + streetCity)
+            const updatedReviewDocIds = new Set();
+            const batch = firestore.batch();
+            let streetRevsUpdated = 0;
+
             const revsByKeySnap = await firestore.collection('reviews')
               .where('streetKey', '==', sDoc.id)
               .get();
 
-            const batch = firestore.batch();
-            let streetRevsUpdated = 0;
-
             revsByKeySnap.forEach(rDoc => {
+              updatedReviewDocIds.add(rDoc.id);
               batch.update(rDoc.ref, {
                 latitude: newLat,
                 longitude: newLng,
@@ -4918,17 +5151,19 @@ Imposta allowed: true per:
               streetRevsUpdated++;
             });
 
-            // Se la streetKey ha prefissi o varianti, cerca anche recensioni con lo stesso nome e comune
-            if (streetRevsUpdated === 0 && streetName) {
+            if (streetName) {
               const revsByNameSnap = await firestore.collection('reviews')
                 .where('streetName', '==', streetName)
                 .get();
               revsByNameSnap.forEach(rDoc => {
+                if (updatedReviewDocIds.has(rDoc.id)) return;
                 const rData = rDoc.data() || {};
                 const rCity = normalizeCityKey(rData.streetCity || rData.city);
                 const sCityNorm = normalizeCityKey(streetCity);
                 if (!rCity || rCity === sCityNorm) {
+                  updatedReviewDocIds.add(rDoc.id);
                   batch.update(rDoc.ref, {
+                    streetKey: sDoc.id,
                     latitude: newLat,
                     longitude: newLng,
                     updatedAt: nowIso
@@ -6091,6 +6326,60 @@ Imposta allowed: true per:
             if (window.db && !autoMigrationDone) {
               ensureDataMigration(window.db);
             }
+            // Sincronizzazione automatica silenziosa su Firestore delle coordinate ufficiali Google Maps (geometry.location senza civico)
+            try {
+              const HEAL_VERSION_KEY = 'sr_google_maps_exact_coords_v4';
+              if (window.db && localStorage.getItem(HEAL_VERSION_KEY) !== 'done') {
+                localStorage.setItem(HEAL_VERSION_KEY, 'in_progress');
+                setTimeout(async () => {
+                  try {
+                    const firestore = window.db;
+                    const streetsSnap = await firestore.collection('streets').get();
+                    const nowIso = new Date().toISOString();
+                    let updatedCount = 0;
+                    for (const sDoc of streetsSnap.docs) {
+                      const d = sDoc.data() || {};
+                      const sName = d.streetName || d.name || '';
+                      const sCity = d.streetCity || d.city || '';
+                      const sProv = d.province || d.streetProvince || '';
+                      const curLat = Number(d.latitude);
+                      const curLng = Number(d.longitude);
+                      const verified = lookupCanonicalGoogleMapsRouteCoords(sDoc.id, sName, sCity, sProv, curLat, curLng);
+                      if (verified && verified.lat && verified.lng) {
+                        const distKm = getDistanceKm(curLat, curLng, verified.lat, verified.lng);
+                        if (isNaN(curLat) || isNaN(curLng) || distKm > 0.0005) {
+                          await sDoc.ref.set({
+                            latitude: Number(verified.lat),
+                            longitude: Number(verified.lng),
+                            updatedAt: nowIso
+                          }, { merge: true });
+                          const revsSnap = await firestore.collection('reviews').where('streetKey', '==', sDoc.id).get();
+                          if (!revsSnap.empty) {
+                            const b = firestore.batch();
+                            revsSnap.forEach(rDoc => {
+                              b.update(rDoc.ref, {
+                                latitude: Number(verified.lat),
+                                longitude: Number(verified.lng),
+                                updatedAt: nowIso
+                              });
+                            });
+                            await b.commit();
+                          }
+                          updatedCount++;
+                        }
+                      }
+                    }
+                    localStorage.setItem(HEAL_VERSION_KEY, 'done');
+                    if (updatedCount > 0) {
+                      console.log(`[Street Review] Sincronizzate automaticamente su Firestore ${updatedCount} vie con le coordinate esatte di Google Maps.`);
+                    }
+                  } catch (syncErr) {
+                    console.warn('[Street Review] Auto-sync coordinate notice:', syncErr);
+                    localStorage.removeItem(HEAL_VERSION_KEY);
+                  }
+                }, 1500);
+              }
+            } catch (e) {}
           }
         });
         return () => unsubscribe();
@@ -7024,8 +7313,9 @@ Imposta allowed: true per:
                         return;
                       }
 
-                      // 1. FILTRO ASSE STRADALE REALE
-                      const routeResult = results.find(r => r.types && (r.types.includes('route') || r.types.includes('street_address')));
+                      // 1. FILTRO ASSE STRADALE REALE (preferisci 'route' rispetto a 'street_address' con civico)
+                      const pureRouteResult = results.find(r => r.types && r.types.includes('route'));
+                      const routeResult = pureRouteResult || results.find(r => r.types && r.types.includes('street_address'));
                       if (!routeResult) {
                         if (triggerGeoWarnToastRef.current) {
                           triggerGeoWarnToastRef.current("⚠️ Nessuna strada rilevata in questo punto. Clicca direttamente su una via per recensirla.");
@@ -7042,7 +7332,7 @@ Imposta allowed: true per:
                         return;
                       }
 
-                      // 2. ESTRAZIONE DATI STRADALI DAL RISULTATO GOOGLE
+                      // 2. ESTRAZIONE DATI STRADALI DAL RISULTATO GOOGLE (rimuovendo sempre eventuale civico dal nome via)
                       let streetName = '';
                       let streetCity = '';
                       let province = '';
@@ -7062,9 +7352,9 @@ Imposta allowed: true per:
                       }
 
                       if (!streetName && routeResult.types && (routeResult.types.includes('route') || routeResult.types.includes('street_address'))) {
-                        streetName = firstPart;
+                        streetName = extractCivicNumberFromQuery(firstPart).cleanQuery || firstPart;
                       }
-                      streetName = (streetName || '').trim();
+                      streetName = (extractCivicNumberFromQuery(streetName).cleanQuery || streetName || '').trim();
 
                       if (!streetName || isPlusCode(streetName) || streetName.includes('+') || streetName.toLowerCase() === 'via sconosciuta') {
                         if (triggerGeoWarnToastRef.current) {
@@ -7076,7 +7366,7 @@ Imposta allowed: true per:
                       streetCity = streetCity || resolveCanonicalCityName('', lat, lng) || 'Italia';
                       province = province || '';
 
-                      // 3. ACQUISIZIONE COORDINATE E ANCORAGGIO DIRETTO
+                      // 3. ACQUISIZIONE COORDINATE UFFICIALI GOOGLE MAPS DELLA VIA (senza civico)
                       const streetLat = routeResult.geometry?.location
                         ? (typeof routeResult.geometry.location.lat === 'function' ? routeResult.geometry.location.lat() : Number(routeResult.geometry.location.lat))
                         : lat;
@@ -7104,22 +7394,24 @@ Imposta allowed: true per:
                         return;
                       }
 
-                      // Ancoraggio diretto alle coordinate di Google per la via
-                      const clickTarget = {
-                        name: streetName,
-                        city: streetCity,
-                        province: province,
-                        postalCode: postalCode || resolveDefaultPostalCode(normalizeCityKey(streetCity, streetLat, streetLng)),
-                        lat: streetLat,
-                        lng: streetLng,
-                        placeId: routeResult.place_id || null,
-                        streetNumber: streetNumber || '',
-                      };
+                      // Risolvi SEMPRE le coordinate ufficiali di Google Maps della via intera (senza civico)
+                      resolveCanonicalStreetGeometry(streetName, streetCity, province, streetLat, streetLng).then((canonicalGeom) => {
+                        const clickTarget = {
+                          name: canonicalGeom.canonicalName || streetName,
+                          city: canonicalGeom.city || streetCity,
+                          province: canonicalGeom.province || province,
+                          postalCode: canonicalGeom.postalCode || postalCode || resolveDefaultPostalCode(normalizeCityKey(streetCity, streetLat, streetLng)),
+                          lat: canonicalGeom.lat || streetLat,
+                          lng: canonicalGeom.lng || streetLng,
+                          placeId: canonicalGeom.placeId || routeResult.place_id || null,
+                          streetNumber: streetNumber || '',
+                        };
 
-                      setSearchQuery(clickTarget.name);
-                      if (handleSelectStreetRef.current) {
-                        handleSelectStreetRef.current(clickTarget);
-                      }
+                        setSearchQuery(clickTarget.name);
+                        if (handleSelectStreetRef.current) {
+                          handleSelectStreetRef.current(clickTarget);
+                        }
+                      });
                     } catch (innerErr) {
                       console.error('[Map Click Geocode Inner Error]', innerErr);
                     }
@@ -8004,29 +8296,14 @@ Imposta allowed: true per:
           awardedMilestonesSet.add(`badge_${bId}`);
         });
 
-        // PUNTO 1 & 3: Mantieni esattamente le coordinate principali di Google Maps assegnate al badge della via (immutabili se la via esiste già)
-        const hasValidSelectedCoords = Boolean(
-          selectedStreet.latitude &&
-          selectedStreet.longitude &&
-          !isNaN(Number(selectedStreet.latitude)) &&
-          !isNaN(Number(selectedStreet.longitude))
+        // PUNTO 1 & 3: Usa SEMPRE E SOLO le coordinate ufficiali di Google Maps della via (cercata senza civico)
+        const canonicalRoute = await resolveCanonicalRouteCoordinates(
+          selectedStreet.name,
+          selectedStreet.city,
+          selectedStreet.province,
+          selectedStreet.latitude,
+          selectedStreet.longitude
         );
-        const canonicalRoute = hasValidSelectedCoords
-          ? {
-              lat: Number(selectedStreet.latitude),
-              lng: Number(selectedStreet.longitude),
-              city: selectedStreet.city,
-              province: selectedStreet.province,
-              postalCode: selectedStreet.postalCode,
-              canonicalName: selectedStreet.name,
-            }
-          : await resolveCanonicalRouteCoordinates(
-              selectedStreet.name,
-              selectedStreet.city,
-              selectedStreet.province,
-              selectedStreet.latitude,
-              selectedStreet.longitude
-            );
         const finalLat = Number(canonicalRoute.lat || selectedStreet.latitude);
         const finalLng = Number(canonicalRoute.lng || selectedStreet.longitude);
         const finalCity = canonicalRoute.city || resolveCanonicalCityName(selectedStreet.city, finalLat, finalLng);
